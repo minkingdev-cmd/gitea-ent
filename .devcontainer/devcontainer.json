@@ -3,7 +3,8 @@
   "image": "mcr.microsoft.com/devcontainers/go:1.26-trixie",
   "containerEnv": {
     // override "local" from packaged version
-    "GOTOOLCHAIN": "auto"
+    "GOTOOLCHAIN": "auto",
+    "GOPROXY": "http://mirror.f123.pub/repository/go/"
   },
   "features": {
     // installs nodejs into container

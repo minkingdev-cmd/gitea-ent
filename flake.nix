@@ -82,6 +82,7 @@
               env = {
                 GO = "${go}/bin/go";
                 GOROOT = "${go}/share/go";
+                GOPROXY = "http://mirror.f123.pub/repository/go/";
 
                 TAGS = "";
                 STATIC = "true";

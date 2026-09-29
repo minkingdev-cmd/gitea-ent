@@ -21,6 +21,7 @@ import (
 	"gitea.dev/modules/test"
 	"gitea.dev/modules/util"
 	"gitea.dev/services/auth/source/oauth2"
+	"gitea.dev/services/context"
 	"gitea.dev/services/contexttest"
 
 	"github.com/markbates/goth"
@@ -91,6 +92,36 @@ func TestEnterpriseWeComLoginOnlyWebSurface(t *testing.T) {
 	ctx.SetPathParamRaw("provider", "non-wecom-login-only-source")
 	SignInOAuth(ctx)
 	require.Equal(t, http.StatusForbidden, resp.Code)
+
+	for name, handler := range map[string]func(*context.Context){
+		"link account":          LinkAccount,
+		"link account sign-in":  LinkAccountPostSignIn,
+		"link account sign-up":  LinkAccountPostRegister,
+		"forgot password":       ForgotPasswd,
+		"forgot password post":  ForgotPasswdPost,
+		"reset password":        ResetPasswd,
+		"reset password post":   ResetPasswdPost,
+		"activate account":      Activate,
+		"activate account post": ActivatePost,
+		"non-WeCom two-factor":  TwoFactor,
+		"non-WeCom WebAuthn":    WebAuthn,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, resp := contexttest.MockContext(t, "/user/login")
+			handler(ctx)
+			require.Equal(t, http.StatusForbidden, resp.Code)
+		})
+	}
+
+	ctx, resp = contexttest.MockContext(t, "/user/two_factor", contexttest.MockContextOption{SessionStore: session.NewMockMemStore("oauth-mfa-sid")})
+	require.NoError(t, ctx.Session.Set(session.KeySignInMethod, session.SignInMethodOAuth2))
+	require.True(t, rejectNonWeComSecondFactor(ctx))
+	require.Equal(t, http.StatusForbidden, resp.Code)
+
+	ctx, _ = contexttest.MockContext(t, "/user/two_factor", contexttest.MockContextOption{SessionStore: session.NewMockMemStore("wecom-mfa-sid")})
+	require.NoError(t, ctx.Session.Set(session.KeySignInMethod, session.SignInMethodOAuth2))
+	require.NoError(t, ctx.Session.Set(sessionKeyWeComSecondFactor, true))
+	require.False(t, rejectNonWeComSecondFactor(ctx))
 }
 
 func TestEnterpriseWeComOAuthCallbackCreatesIdentity(t *testing.T) {

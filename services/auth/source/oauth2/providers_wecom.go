@@ -82,7 +82,7 @@ type weComGothProvider struct {
 }
 
 func newWeComGothProvider(cfg weComGothConfig) *weComGothProvider {
-	cfg.OAuthBaseURL = strings.TrimRight(firstNonEmpty(cfg.OAuthBaseURL, "https://open.weixin.qq.com"), "/")
+	cfg.OAuthBaseURL = strings.TrimRight(firstNonEmpty(cfg.OAuthBaseURL, "https://login.work.weixin.qq.com"), "/")
 	return &weComGothProvider{
 		name:         cfg.Name,
 		corpID:       cfg.CorpID,
@@ -107,15 +107,14 @@ func (p *weComGothProvider) Debug(bool) {}
 
 func (p *weComGothProvider) BeginAuth(state string) (goth.Session, error) {
 	values := url.Values{}
+	values.Set("login_type", "CorpApp")
 	values.Set("appid", p.corpID)
-	values.Set("redirect_uri", p.callbackURL)
-	values.Set("response_type", "code")
-	values.Set("scope", "snsapi_base")
-	values.Set("state", state)
 	values.Set("agentid", p.agentID)
+	values.Set("redirect_uri", p.callbackURL)
+	values.Set("state", state)
 
 	return &weComSession{
-		AuthURL: fmt.Sprintf("%s/connect/oauth2/authorize?%s#wechat_redirect", p.oauthBaseURL, values.Encode()),
+		AuthURL: fmt.Sprintf("%s/wwlogin/sso/login?%s", p.oauthBaseURL, values.Encode()),
 		CorpID:  p.corpID,
 		AgentID: p.agentID,
 	}, nil

@@ -1,0 +1,2 @@
+# domain	path	proto	upstream
+gitea.f123.pub	/	http	127.0.0.1:3004

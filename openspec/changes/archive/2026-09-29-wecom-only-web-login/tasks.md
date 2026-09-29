@@ -66,3 +66,11 @@
 - [x] 8.5 Cache WeCom access tokens in memory and reconcile directory snapshots transactionally without retaining stale memberships or active status for missing users.
 - [x] 8.6 Add focused tests for error redaction, disabled-mode rejection, source preflight, source mutation protection, cron execution, cancellation, token reuse, and snapshot reconciliation.
 - [x] 8.7 Update configuration and rollout documentation, run formatting and changed-area lint/tests, and validate the OpenSpec change.
+
+## 9. Exclusive Web login enforcement
+
+- [x] 9.1 Disable reverse-proxy and SSPI automatic Web authentication in Enterprise WeCom login-only mode.
+- [x] 9.2 Reject password recovery, account activation, and OAuth account-link login or registration as alternate Web session creation paths.
+- [x] 9.3 Permit local TOTP, scratch-code, or WebAuthn only as a second factor for a pending login from the configured WeCom source.
+- [x] 9.4 Add focused route and helper tests, run formatting and Go lint, and validate the OpenSpec change.
+- [x] 9.5 Add full HTTP integration and live-listener smoke coverage for WeCom login-only mode, PAT/API token, Git HTTP token, and SSH key, then run the complete SQLite integration suite.

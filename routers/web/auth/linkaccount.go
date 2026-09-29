@@ -45,6 +45,9 @@ func prepareLinkAccountPageData(ctx *context.Context) {
 
 // LinkAccount shows the page where the user can decide to login or create a new account
 func LinkAccount(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	prepareLinkAccountPageData(ctx)
 
 	linkAccountData := oauth2GetLinkAccountData(ctx)
@@ -113,6 +116,9 @@ func handleSignInError(ctx *context.Context, userName string, ptrForm any, tmpl 
 
 // LinkAccountPostSignIn handle the coupling of external account with another account using signIn
 func LinkAccountPostSignIn(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	signInForm := web.GetForm[*forms.SignInForm](ctx)
 
 	ctx.Data["LinkAccountModeSignIn"] = true
@@ -176,6 +182,9 @@ func oauth2LinkAccount(ctx *context.Context, u *user_model.User, linkAccountData
 
 // LinkAccountPostRegister handle the creation of a new account for an external account using signUp
 func LinkAccountPostRegister(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	form := web.GetForm[*forms.RegisterForm](ctx)
 
 	ctx.Data["LinkAccountModeRegister"] = true

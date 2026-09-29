@@ -42,14 +42,31 @@ import (
 )
 
 const (
-	tplSignIn         templates.TplName = "user/auth/signin"          // for sign in page
-	tplSignUp         templates.TplName = "user/auth/signup"          // for sign up page
-	TplActivate       templates.TplName = "user/auth/activate"        // for activate user
-	TplActivatePrompt templates.TplName = "user/auth/activate_prompt" // for showing a message for user activation
+	tplSignIn                   templates.TplName = "user/auth/signin"          // for sign in page
+	tplSignUp                   templates.TplName = "user/auth/signup"          // for sign up page
+	TplActivate                 templates.TplName = "user/auth/activate"        // for activate user
+	TplActivatePrompt           templates.TplName = "user/auth/activate_prompt" // for showing a message for user activation
+	sessionKeyWeComSecondFactor                   = "wecomSecondFactor"
 )
 
 type CommonAuthOptions struct {
 	EnableCaptcha bool
+}
+
+func rejectNonWeComWebLogin(ctx *context.Context) bool {
+	if !setting.EnterpriseWeComLoginOnly() {
+		return false
+	}
+	ctx.HTTPError(http.StatusForbidden)
+	return true
+}
+
+func rejectNonWeComSecondFactor(ctx *context.Context) bool {
+	if !setting.EnterpriseWeComLoginOnly() || (ctx.Session != nil && ctx.Session.Get(session.KeySignInMethod) == session.SignInMethodOAuth2 && ctx.Session.Get(sessionKeyWeComSecondFactor) == true) {
+		return false
+	}
+	ctx.HTTPError(http.StatusForbidden)
+	return true
 }
 
 func prepareCommonAuthPageData(ctx *context.Context, opt CommonAuthOptions) {
@@ -802,6 +819,9 @@ func renderActivationChangeEmail(ctx *context.Context) {
 
 // Activate render activate user page
 func Activate(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	code := ctx.FormString("code")
 
 	if code == "" {
@@ -841,6 +861,9 @@ func Activate(ctx *context.Context) {
 
 // ActivatePost handles account activation with password check
 func ActivatePost(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	code := ctx.FormString("code")
 	if ctx.Doer != nil && ctx.Doer.IsActive {
 		ctx.Redirect(setting.AppSubURL + "/user/activate") // it will redirect again to the correct page

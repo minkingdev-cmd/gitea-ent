@@ -24,6 +24,9 @@ var tplWebAuthn templates.TplName = "user/auth/webauthn"
 
 // WebAuthn shows the WebAuthn login page
 func WebAuthn(ctx *context.Context) {
+	if rejectNonWeComSecondFactor(ctx) {
+		return
+	}
 	ctx.Data["Title"] = ctx.Tr("twofa")
 
 	if performAutoLogin(ctx) {
@@ -161,6 +164,9 @@ func WebAuthnPasskeyLogin(ctx *context.Context) {
 
 // WebAuthnLoginAssertion submits a WebAuthn challenge to the browser
 func WebAuthnLoginAssertion(ctx *context.Context) {
+	if rejectNonWeComSecondFactor(ctx) {
+		return
+	}
 	// Ensure user is in a WebAuthn session.
 	idSess, ok := ctx.Session.Get("twofaUid").(int64)
 	if !ok || idSess == 0 {
@@ -201,6 +207,9 @@ func WebAuthnLoginAssertion(ctx *context.Context) {
 
 // WebAuthnLoginAssertionPost validates the signature and logs the user in
 func WebAuthnLoginAssertionPost(ctx *context.Context) {
+	if rejectNonWeComSecondFactor(ctx) {
+		return
+	}
 	idSess, ok := ctx.Session.Get("twofaUid").(int64)
 	sessionData, okData := ctx.Session.Get("webauthnAssertion").(*webauthn.SessionData)
 	if !ok || !okData || sessionData == nil || idSess == 0 {

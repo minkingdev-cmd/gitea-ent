@@ -5,6 +5,9 @@ package routing
 
 import (
 	"net/http"
+	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"gitea.dev/modules/log"
@@ -34,7 +37,7 @@ func logPrinter(logger log.Logger) func(trigger Event, record *requestRecord) {
 			}
 			// when a request starts, we have no information about the handler function information, we only have the request path
 			req := record.request
-			logRequest(log.TRACE, "router: %s %v %s for %s", startMessage, log.ColoredMethod(req.Method), req.RequestURI, req.RemoteAddr)
+			logRequest(log.TRACE, "router: %s %v %s for %s", startMessage, log.ColoredMethod(req.Method), sanitizedRequestURI(req), req.RemoteAddr)
 			return
 		}
 
@@ -57,7 +60,7 @@ func logPrinter(logger log.Logger) func(trigger Event, record *requestRecord) {
 			}
 			logRequest(logLevel, "router: %s %v %s for %s, elapsed %v @ %s",
 				message,
-				log.ColoredMethod(req.Method), req.RequestURI, req.RemoteAddr,
+				log.ColoredMethod(req.Method), sanitizedRequestURI(req), req.RemoteAddr,
 				log.ColoredTime(time.Since(record.startTime)),
 				handlerFuncInfo,
 			)
@@ -67,7 +70,7 @@ func logPrinter(logger log.Logger) func(trigger Event, record *requestRecord) {
 		if panicErr != nil {
 			logRequest(log.WARN, "router: %s %v %s for %s, panic in %v @ %s, err=%v",
 				failedMessage,
-				log.ColoredMethod(req.Method), req.RequestURI, req.RemoteAddr,
+				log.ColoredMethod(req.Method), sanitizedRequestURI(req), req.RemoteAddr,
 				log.ColoredTime(time.Since(record.startTime)),
 				handlerFuncInfo,
 				panicErr,
@@ -96,9 +99,50 @@ func logPrinter(logger log.Logger) func(trigger Event, record *requestRecord) {
 
 		logRequest(logLevel, "router: %s %v %s for %s, %v %v in %v @ %s",
 			message,
-			log.ColoredMethod(req.Method), req.RequestURI, req.RemoteAddr,
+			log.ColoredMethod(req.Method), sanitizedRequestURI(req), req.RemoteAddr,
 			log.ColoredStatus(status), log.ColoredStatus(status, http.StatusText(status)), log.ColoredTime(time.Since(record.startTime)),
 			handlerFuncInfo,
 		)
 	}
+}
+
+var sensitiveRequestQueryKeys = []string{
+	"access_token",
+	"authorization",
+	"client_secret",
+	"code",
+	"corp_secret",
+	"corpsecret",
+	"id_token",
+	"passwd",
+	"password",
+	"refresh_token",
+	"secret",
+	"token",
+}
+
+func sanitizedRequestURI(req *http.Request) string {
+	if req == nil || req.URL == nil || req.URL.RawQuery == "" {
+		if req == nil {
+			return ""
+		}
+		return req.RequestURI
+	}
+	queries, err := url.ParseQuery(req.URL.RawQuery)
+	if err != nil {
+		return req.URL.EscapedPath() + "?redacted"
+	}
+	redacted := false
+	for key := range queries {
+		if slices.Contains(sensitiveRequestQueryKeys, strings.ToLower(key)) {
+			queries.Set(key, "redacted")
+			redacted = true
+		}
+	}
+	if !redacted {
+		return req.RequestURI
+	}
+	u := *req.URL
+	u.RawQuery = queries.Encode()
+	return u.RequestURI()
 }

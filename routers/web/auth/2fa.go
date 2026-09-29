@@ -26,6 +26,9 @@ var (
 
 // TwoFactor shows the user a two-factor authentication page.
 func TwoFactor(ctx *context.Context) {
+	if rejectNonWeComSecondFactor(ctx) {
+		return
+	}
 	ctx.Data["Title"] = ctx.Tr("twofa")
 
 	if performAutoLogin(ctx) {
@@ -43,6 +46,9 @@ func TwoFactor(ctx *context.Context) {
 
 // TwoFactorPost validates a user's two-factor authentication token.
 func TwoFactorPost(ctx *context.Context) {
+	if rejectNonWeComSecondFactor(ctx) {
+		return
+	}
 	form := web.GetForm[*forms.TwoFactorAuthForm](ctx)
 	ctx.Data["Title"] = ctx.Tr("twofa")
 
@@ -93,6 +99,9 @@ func TwoFactorPost(ctx *context.Context) {
 
 // TwoFactorScratch shows the scratch code form for two-factor authentication.
 func TwoFactorScratch(ctx *context.Context) {
+	if rejectNonWeComSecondFactor(ctx) {
+		return
+	}
 	ctx.Data["Title"] = ctx.Tr("twofa_scratch")
 
 	if performAutoLogin(ctx) {
@@ -110,6 +119,9 @@ func TwoFactorScratch(ctx *context.Context) {
 
 // TwoFactorScratchPost validates and invalidates a user's two-factor scratch token.
 func TwoFactorScratchPost(ctx *context.Context) {
+	if rejectNonWeComSecondFactor(ctx) {
+		return
+	}
 	form := web.GetForm[*forms.TwoFactorScratchAuthForm](ctx)
 	ctx.Data["Title"] = ctx.Tr("twofa_scratch")
 

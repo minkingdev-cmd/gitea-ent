@@ -39,7 +39,7 @@ var EnterpriseWeCom = EnterpriseWeComConfig{
 	SyncTags:         true,
 	HTTPTimeout:      15 * time.Second,
 	APIBaseURL:       "https://qyapi.weixin.qq.com",
-	OAuthBaseURL:     "https://open.weixin.qq.com",
+	OAuthBaseURL:     "https://login.work.weixin.qq.com",
 }
 
 func loadEnterpriseWeComFrom(rootCfg ConfigProvider) {
@@ -57,7 +57,7 @@ func loadEnterpriseWeComFrom(rootCfg ConfigProvider) {
 		SyncTags:         sec.Key("SYNC_TAGS").MustBool(true),
 		HTTPTimeout:      sec.Key("HTTP_TIMEOUT").MustDuration(15 * time.Second),
 		APIBaseURL:       strings.TrimRight(sec.Key("API_BASE_URL").MustString("https://qyapi.weixin.qq.com"), "/"),
-		OAuthBaseURL:     strings.TrimRight(sec.Key("OAUTH_BASE_URL").MustString("https://open.weixin.qq.com"), "/"),
+		OAuthBaseURL:     strings.TrimRight(sec.Key("OAUTH_BASE_URL").MustString("https://login.work.weixin.qq.com"), "/"),
 	}
 	cfg.CorpSecret = loadSecret(sec, "CORP_SECRET_URI", "CORP_SECRET")
 

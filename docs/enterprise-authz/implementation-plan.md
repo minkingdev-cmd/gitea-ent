@@ -97,7 +97,7 @@ SYNC_DEPARTMENTS = true
 SYNC_TAGS = true
 HTTP_TIMEOUT = 15s
 API_BASE_URL = https://qyapi.weixin.qq.com
-OAUTH_BASE_URL = https://open.weixin.qq.com
+OAUTH_BASE_URL = https://login.work.weixin.qq.com
 
 [cron.sync_enterprise_wecom_directory]
 ENABLED = true
@@ -123,7 +123,7 @@ FAIL_CLOSED_ON_ERROR = true
 | `AUTO_CREATE_USER=true` | 企业微信成员首次登录时自动创建 Gitea 用户；用户名从 `USERNAME_TEMPLATE` 派生并做冲突处理。 |
 | `SYNC_DEPARTMENTS` / `SYNC_TAGS` | 是否同步企业微信部门和标签，用作授权映射来源。 |
 | `HTTP_TIMEOUT` | 单次企业微信 HTTP 请求超时。 |
-| `API_BASE_URL` / `OAUTH_BASE_URL` | 企业微信 API 与网页授权地址；仅在内网代理、私有网关或测试端点下覆盖默认值。 |
+| `API_BASE_URL` / `OAUTH_BASE_URL` | 企业微信 API 与浏览器 Web/扫码 OAuth 登录地址；仅在内网代理、私有网关或测试端点下覆盖默认值。 |
 
 安全上线顺序：先在 `ENABLED=false` 下配置凭据并创建与 `LOGIN_SOURCE_NAME` 同名的 active WeCom OAuth2 source；再以 `ENABLED=true, LOGIN_ONLY=false` 灰度验证；最后开启 `LOGIN_ONLY=true`。login-only 启动预检失败时，应先回退 `LOGIN_ONLY=false`，不得通过手工修改认证数据绕过检查。
 
@@ -214,10 +214,13 @@ GET /user/login
 | --- | --- |
 | 本地用户名密码 Web 登录 | 表单隐藏；POST `/user/login` 返回 403。 |
 | 本地注册 | 禁用。 |
+| 密码找回、密码重置、账号激活 | 禁用，不能作为建立 Web session 的旁路。 |
+| OAuth 账号绑定中的本地密码登录或注册 | 禁用；企业微信使用专用身份绑定流程。 |
 | OpenID 登录/注册 | 禁用。 |
 | Passkey Web 登录 | 禁用。 |
 | 非企业微信 OAuth2 source | 不展示，不允许发起登录。 |
-| Reverse proxy Web auth | 默认禁用；如内网网关必须使用，应作为独立方案评审。 |
+| Reverse proxy Web auth / SSPI | 禁用，不能自动建立 Web session。 |
+| TOTP、scratch code、WebAuthn 二次验证 | 仅允许继续由企业微信 OAuth 发起的 pending login。 |
 | SSH key | 保持原逻辑。 |
 | PAT | 保持原逻辑。 |
 | Git HTTP token | 保持原逻辑。 |
@@ -752,7 +755,7 @@ secret、token、私钥和外部系统凭据不得写入 metadata 明文。
 - [ ] 确认企业微信应用类型、可信回调域、`CORP_ID`、`AGENT_ID`、secret 管理方式。
 - [ ] 验证企业微信网页授权能返回稳定 `userid`。
 - [ ] 验证应用可见范围可以读取所需部门、成员和标签数据。
-- [ ] 确认只关闭 Web 密码/注册/OpenID/Passkey/其它 OAuth2 登录，不改变 SSH key、PAT、Git HTTP token 行为。
+- [ ] 确认关闭 Web 密码、注册、账号恢复、账号激活、账号绑定登录、OpenID、Passkey、reverse-proxy、SSPI 和其它 OAuth2 登录，不改变 SSH key、PAT、Git HTTP token 行为。
 - [ ] 补充 OpenSpec 或等价变更任务清单。
 
 ### Phase 1：企业微信唯一 Web 登录和身份绑定
@@ -762,7 +765,7 @@ secret、token、私钥和外部系统凭据不得写入 metadata 明文。
 - [ ] 实现企业微信 OAuth code flow、callback、state 校验、corp/agent 校验。
 - [ ] 新增 `enterprise_wecom_identity` 及必要 migration。
 - [ ] 首次企业微信登录自动创建或绑定 Gitea user。
-- [ ] 企业模式下隐藏并拒绝本地 Web 密码登录、注册、OpenID、Passkey、其它 OAuth2 登录源。
+- [ ] 企业模式下隐藏并拒绝全部非企业微信 Web 登录入口，仅允许企业微信登录后的本地 MFA 续接。
 - [ ] 增加 SSH key、PAT、Git HTTP token 不受企业微信登录改造影响的回归测试。
 
 ### Phase 2：企业微信通讯录同步和授权映射

@@ -33,6 +33,9 @@ var (
 
 // ForgotPasswd render the forget password page
 func ForgotPasswd(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	ctx.Data["Title"] = ctx.Tr("auth.forgot_password_title")
 
 	if setting.MailService == nil {
@@ -50,6 +53,9 @@ func ForgotPasswd(ctx *context.Context) {
 
 // ForgotPasswdPost response for forget password request
 func ForgotPasswdPost(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	ctx.Data["Title"] = ctx.Tr("auth.forgot_password_title")
 
 	if setting.MailService == nil {
@@ -150,6 +156,9 @@ func commonResetPassword(ctx *context.Context) (*user_model.User, *auth.TwoFacto
 
 // ResetPasswd render the account recovery page
 func ResetPasswd(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	ctx.Data["IsResetForm"] = true
 
 	commonResetPassword(ctx)
@@ -162,6 +171,9 @@ func ResetPasswd(ctx *context.Context) {
 
 // ResetPasswdPost response from account recovery request
 func ResetPasswdPost(ctx *context.Context) {
+	if rejectNonWeComWebLogin(ctx) {
+		return
+	}
 	u, twofa := commonResetPassword(ctx)
 	if ctx.Written() {
 		return

@@ -100,6 +100,10 @@ type AuthMiddleware struct {
 	MiddlewareHandler func(*context.Context)
 }
 
+func allowAutomaticWebSignIn() bool {
+	return !setting.EnterpriseWeComLoginOnly()
+}
+
 func newWebAuthMiddleware() *AuthMiddleware {
 	type keyAllowOAuth2 struct{}
 	type keyAllowBasic struct{}
@@ -120,7 +124,7 @@ func newWebAuthMiddleware() *AuthMiddleware {
 	webAuth.AllowOAuth2 = middlewareSetContextValue(keyAllowOAuth2{}, true)
 	webAuth.AllowDeployToken = middlewareSetContextValue(keyAllowDeployToken{}, true)
 
-	enableSSPI := setting.IsWindows && auth_model.IsSSPIEnabled(graceful.GetManager().ShutdownContext())
+	enableSSPI := allowAutomaticWebSignIn() && setting.IsWindows && auth_model.IsSSPIEnabled(graceful.GetManager().ShutdownContext())
 	webAuth.MiddlewareHandler = func(ctx *context.Context) {
 		allowBasic := ctx.GetContextValue(keyAllowBasic{}) == true
 		allowOAuth2 := ctx.GetContextValue(keyAllowOAuth2{}) == true
@@ -144,7 +148,7 @@ func newWebAuthMiddleware() *AuthMiddleware {
 		// For example: accessing git via http, access rss feeds, downloading attachments, etc
 		isSessionless := allowOAuth2 || allowBasic || allowDeployToken
 
-		if setting.Service.EnableReverseProxyAuth {
+		if allowAutomaticWebSignIn() && setting.Service.EnableReverseProxyAuth {
 			// reverse-proxy should before Session, otherwise the header will be ignored if user has login
 			group.Add(&auth_service.ReverseProxy{CreateSession: !isSessionless})
 		}

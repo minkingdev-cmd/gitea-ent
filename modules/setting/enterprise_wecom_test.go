@@ -30,6 +30,7 @@ func TestLoadEnterpriseWeComDefaults(t *testing.T) {
 	require.True(t, EnterpriseWeCom.SyncDepartments)
 	require.True(t, EnterpriseWeCom.SyncTags)
 	require.Equal(t, 15*time.Second, EnterpriseWeCom.HTTPTimeout)
+	require.Equal(t, "https://login.work.weixin.qq.com", EnterpriseWeCom.OAuthBaseURL)
 	require.Empty(t, EnterpriseWeCom.CorpID)
 	require.Empty(t, EnterpriseWeCom.AgentID)
 	require.Empty(t, EnterpriseWeCom.CorpSecret)

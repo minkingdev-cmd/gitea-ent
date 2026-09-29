@@ -539,7 +539,11 @@ func handleOAuth2SignIn(ctx *context.Context, authSource *auth.Source, u *user_m
 		}
 	}
 
-	handleTwoFactorRequired(ctx, u, false, map[string]any{session.KeySignInMethod: session.SignInMethodOAuth2})
+	secondFactorSession := map[string]any{session.KeySignInMethod: session.SignInMethodOAuth2}
+	if oauth2.IsConfiguredWeComSource(authSource) {
+		secondFactorSession[sessionKeyWeComSecondFactor] = true
+	}
+	handleTwoFactorRequired(ctx, u, false, secondFactorSession)
 }
 
 // OAuth2UserLoginCallback attempts to handle the callback from the OAuth2 provider and if successful

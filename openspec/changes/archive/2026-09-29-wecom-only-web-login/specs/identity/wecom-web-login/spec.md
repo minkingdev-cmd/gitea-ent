@@ -17,7 +17,15 @@ When Enterprise WeCom login-only mode is enabled, the system SHALL allow Web sig
 
 #### Scenario: Non-WeCom Web sign-in sources are unavailable
 - **WHEN** Enterprise WeCom login-only mode is enabled
-- **THEN** the system does not offer local registration, OpenID, Passkey, or non-WeCom OAuth2 Web sign-in as usable Web sign-in methods
+- **THEN** the system does not offer local registration, password recovery, account-link password or registration, OpenID, Passkey, reverse-proxy, SSPI, or non-WeCom OAuth2 Web sign-in as usable Web sign-in methods
+
+#### Scenario: WeCom login may continue required local MFA
+- **WHEN** a successful login from the configured WeCom source requires an enrolled local second factor
+- **THEN** the system allows only that pending WeCom login to continue through TOTP, scratch-code, or WebAuthn second-factor verification
+
+#### Scenario: Non-WeCom second-factor sessions are rejected
+- **WHEN** Enterprise WeCom login-only mode is enabled and a pending second-factor session was not initiated by the configured WeCom login source
+- **THEN** the system rejects the second-factor request without creating a Web session
 
 ### Requirement: WeCom callback identity validation
 The system SHALL validate every Enterprise WeCom Web login callback before creating or updating a Gitea Web session.

@@ -222,6 +222,10 @@ func changeRepoTeam(ctx *context.APIContext, add bool) {
 }
 
 func canChangeOrgRepoTeam(ctx *context.APIContext) bool {
+	if err := repo_service.CheckEnterpriseRepoAuthorizationChange(ctx, ctx.Doer, ctx.Repo.Repository); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return false
+	}
 	canChange := access_model.CanDoerManageOrgRepoCollaboratorTeam(ctx, ctx.Repo.Repository, &ctx.Repo.Permission)
 	if !canChange {
 		ctx.APIError(http.StatusForbidden, "No permission to change organization repository's team")

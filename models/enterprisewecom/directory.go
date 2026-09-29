@@ -7,20 +7,22 @@ import (
 	"context"
 
 	"gitea.dev/models/db"
+	"gitea.dev/modules/json"
 	"gitea.dev/modules/timeutil"
 )
 
 type Department struct {
-	ID           int64  `xorm:"pk autoincr"`
-	CorpID       string `xorm:"VARCHAR(128) NOT NULL UNIQUE(corp_department)"`
-	DepartmentID int64  `xorm:"NOT NULL UNIQUE(corp_department)"`
-	ParentID     int64
-	Name         string
-	Order        int64
-	LastSyncUnix timeutil.TimeStamp
-	SyncVersion  int64              `xorm:"INDEX NOT NULL DEFAULT 0"`
-	CreatedUnix  timeutil.TimeStamp `xorm:"created"`
-	UpdatedUnix  timeutil.TimeStamp `xorm:"updated"`
+	ID            int64  `xorm:"pk autoincr"`
+	CorpID        string `xorm:"VARCHAR(128) NOT NULL UNIQUE(corp_department)"`
+	DepartmentID  int64  `xorm:"NOT NULL UNIQUE(corp_department)"`
+	ParentID      int64
+	Name          string
+	LeaderUserIDs string `xorm:"leader_user_ids TEXT"`
+	Order         int64
+	LastSyncUnix  timeutil.TimeStamp
+	SyncVersion   int64              `xorm:"INDEX NOT NULL DEFAULT 0"`
+	CreatedUnix   timeutil.TimeStamp `xorm:"created"`
+	UpdatedUnix   timeutil.TimeStamp `xorm:"updated"`
 }
 
 func (*Department) TableName() string {
@@ -55,6 +57,7 @@ type Membership struct {
 	WeComUserID  string         `xorm:"wecom_userid VARCHAR(255) NOT NULL UNIQUE(corp_member_target)"`
 	Kind         MembershipKind `xorm:"VARCHAR(32) NOT NULL UNIQUE(corp_member_target)"`
 	TargetID     int64          `xorm:"NOT NULL UNIQUE(corp_member_target)"`
+	IsLeader     bool           `xorm:"INDEX NOT NULL DEFAULT false"`
 	LastSyncUnix timeutil.TimeStamp
 	SyncVersion  int64              `xorm:"INDEX NOT NULL DEFAULT 0"`
 	CreatedUnix  timeutil.TimeStamp `xorm:"created"`
@@ -79,7 +82,7 @@ func UpsertDepartment(ctx context.Context, dept *Department) error {
 	}
 	if has {
 		dept.ID = existing.ID
-		_, err = db.GetEngine(ctx).ID(existing.ID).Cols("parent_id", "name", "order", "last_sync_unix", "sync_version").Update(dept)
+		_, err = db.GetEngine(ctx).ID(existing.ID).Cols("parent_id", "name", "leader_user_ids", "order", "last_sync_unix", "sync_version").Update(dept)
 		return err
 	}
 	return db.Insert(ctx, dept)
@@ -110,10 +113,32 @@ func UpsertMembership(ctx context.Context, membership *Membership) error {
 	}
 	if has {
 		membership.ID = existing.ID
-		_, err = db.GetEngine(ctx).ID(existing.ID).Cols("last_sync_unix", "sync_version").Update(membership)
+		_, err = db.GetEngine(ctx).ID(existing.ID).Cols("is_leader", "last_sync_unix", "sync_version").Update(membership)
 		return err
 	}
 	return db.Insert(ctx, membership)
+}
+
+func EncodeLeaderUserIDs(userIDs []string) string {
+	if len(userIDs) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(userIDs)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func DecodeLeaderUserIDs(encoded string) []string {
+	if encoded == "" {
+		return nil
+	}
+	var userIDs []string
+	if err := json.Unmarshal([]byte(encoded), &userIDs); err != nil {
+		return nil
+	}
+	return userIDs
 }
 
 func ReconcileDirectorySnapshot(ctx context.Context, corpID string, syncDepartments, syncTags bool, syncVersion int64) error {

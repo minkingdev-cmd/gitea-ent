@@ -31,6 +31,11 @@ func AuthShared(ctx *context.Base, sessionStore auth_service.SessionStore, authM
 		ctx.Data[middleware.ContextDataKeySignedUser] = ar.Doer
 		ctx.Data["SignedUserID"] = ar.Doer.ID
 		ctx.Data["IsAdmin"] = ar.Doer.IsAdmin
+		canAccessAdminPanel, accessErr := context.CanUserAccessSiteAdminPanel(ctx, ar.Doer)
+		if accessErr != nil {
+			log.Error("Unable to resolve site admin panel access for user %d: %v", ar.Doer.ID, accessErr)
+		}
+		ctx.Data["CanAccessAdminPanel"] = canAccessAdminPanel
 
 		if sessionStore != nil {
 			if uid := auth_service.ImpersonatorUserID(sessionStore); uid != 0 {

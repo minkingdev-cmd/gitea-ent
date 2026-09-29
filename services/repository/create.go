@@ -204,6 +204,9 @@ func initRepository(ctx context.Context, u *user_model.User, repo *repo_model.Re
 func CreateRepositoryDirectly(ctx context.Context, doer, owner *user_model.User,
 	opts CreateRepoOptions, needsUpdateToReady bool,
 ) (*repo_model.Repository, error) {
+	if err := enforceEnterpriseRepoCreationGovernance(ctx, doer, owner, &opts); err != nil {
+		return nil, err
+	}
 	if !doer.CanCreateRepoIn(owner) {
 		return nil, repo_model.ErrReachLimitOfRepo{
 			Limit: owner.MaxRepoCreation,
@@ -328,6 +331,9 @@ func CreateRepositoryDirectly(ctx context.Context, doer, owner *user_model.User,
 		if err = repo_model.UpdateRepositoryColsWithAutoTime(ctx, repo, "status"); err != nil {
 			return nil, fmt.Errorf("UpdateRepositoryCols: %w", err)
 		}
+	}
+	if err = recordEnterpriseRepositoryGovernance(ctx, doer, owner, repo); err != nil {
+		return nil, err
 	}
 
 	return repo, nil

@@ -29,11 +29,41 @@ func TestLoadEnterpriseWeComDefaults(t *testing.T) {
 	require.Equal(t, "{userid}", EnterpriseWeCom.UsernameTemplate)
 	require.True(t, EnterpriseWeCom.SyncDepartments)
 	require.True(t, EnterpriseWeCom.SyncTags)
+	require.False(t, EnterpriseWeCom.ApplyAuthzMappingsOnSync)
+	require.Equal(t, "超管", EnterpriseWeCom.SuperAdminTagName)
 	require.Equal(t, 15*time.Second, EnterpriseWeCom.HTTPTimeout)
 	require.Equal(t, "https://login.work.weixin.qq.com", EnterpriseWeCom.OAuthBaseURL)
 	require.Empty(t, EnterpriseWeCom.CorpID)
 	require.Empty(t, EnterpriseWeCom.AgentID)
 	require.Empty(t, EnterpriseWeCom.CorpSecret)
+}
+
+func TestLoadEnterpriseWeComApplyAuthzMappingsOnSync(t *testing.T) {
+	defer test.MockVariableValue(&EnterpriseWeCom)()
+
+	cfg, err := NewConfigProviderFromData(`
+[enterprise.wecom]
+APPLY_AUTHZ_MAPPINGS_ON_SYNC = true
+`)
+	require.NoError(t, err)
+
+	loadEnterpriseWeComFrom(cfg)
+
+	require.True(t, EnterpriseWeCom.ApplyAuthzMappingsOnSync)
+}
+
+func TestLoadEnterpriseWeComSuperAdminTagName(t *testing.T) {
+	defer test.MockVariableValue(&EnterpriseWeCom)()
+
+	cfg, err := NewConfigProviderFromData(`
+[enterprise.wecom]
+SUPER_ADMIN_TAG_NAME = Gitea Admins
+`)
+	require.NoError(t, err)
+
+	loadEnterpriseWeComFrom(cfg)
+
+	require.Equal(t, "Gitea Admins", EnterpriseWeCom.SuperAdminTagName)
 }
 
 func TestLoadEnterpriseWeComSecretURI(t *testing.T) {

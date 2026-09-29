@@ -2,7 +2,7 @@
 	<div class="user-setting-content">
 		<h4 class="ui top attached header">
 			{{ctx.Locale.Tr "settings.orgs"}}
-			{{if .SignedUser.CanCreateOrganization}}
+			{{if ctx.SignedUserCanCreateOrganization}}
 			<div class="ui right">
 				<a class="ui primary tiny button" href="{{AppSubUrl}}/org/create">{{ctx.Locale.Tr "admin.orgs.new_orga"}}</a>
 			</div>
@@ -36,6 +36,43 @@
 				{{ctx.Locale.Tr "settings.orgs_none"}}
 			{{end}}
 		</div>
+		{{if .EnterpriseWeComRepoGovernance}}
+			<h4 class="ui top attached header">
+				{{ctx.Locale.Tr "settings.enterprise_wecom.org_repo_requests"}}
+			</h4>
+			<div class="ui attached segment">
+				<table class="ui table">
+					<thead>
+						<tr>
+							<th>{{ctx.Locale.Tr "settings.enterprise_wecom.repository"}}</th>
+							<th>{{ctx.Locale.Tr "settings.enterprise_wecom.organization"}}</th>
+							<th>{{ctx.Locale.Tr "settings.enterprise_wecom.status"}}</th>
+							<th>{{ctx.Locale.Tr "settings.enterprise_wecom.reason"}}</th>
+							<th>{{ctx.Locale.Tr "settings.enterprise_wecom.result"}}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{{range .OrgRepoRequests}}
+							<tr>
+								<td>{{.Request.Name}}</td>
+								<td>{{.OrgName}}</td>
+								<td><span class="ui label">{{.Request.Status}}</span></td>
+								<td>{{.Request.Reason}}{{.Request.DecisionReason}}</td>
+								<td>
+									{{if .RepoLink}}
+										<a href="{{.RepoLink}}">{{ctx.Locale.Tr "settings.enterprise_wecom.open_repository"}}</a>
+									{{else}}
+										{{ctx.Locale.Tr "settings.enterprise_wecom.awaiting_review"}}
+									{{end}}
+								</td>
+							</tr>
+						{{else}}
+							<tr><td colspan="5">{{ctx.Locale.Tr "settings.enterprise_wecom.empty_org_repo_requests"}}</td></tr>
+						{{end}}
+					</tbody>
+				</table>
+			</div>
+		{{end}}
 	</div>
 
 <form class="ui small modal form-fetch-action" method="post" id="leave-organization">

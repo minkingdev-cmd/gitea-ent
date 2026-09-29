@@ -44,7 +44,7 @@ func Collaboration(ctx *context.Context) {
 	ctx.Data["OrgName"] = ctx.Repo.Repository.OwnerName
 	ctx.Data["Org"] = ctx.Repo.Repository.Owner
 	ctx.Data["Units"] = unit_model.Units
-	ctx.Data["CanChangeRepoTeamAccess"] = access.CanDoerManageOrgRepoCollaboratorTeam(ctx, ctx.Repo.Repository, &ctx.Repo.Permission)
+	ctx.Data["CanChangeRepoTeamAccess"] = canManageRepoAuthorization(ctx, false) && access.CanDoerManageOrgRepoCollaboratorTeam(ctx, ctx.Repo.Repository, &ctx.Repo.Permission)
 	ctx.HTML(http.StatusOK, tplCollaboration)
 }
 
@@ -99,6 +99,9 @@ func CollaborationPost(ctx *context.Context) {
 		}
 	}
 
+	if !canManageRepoAuthorization(ctx, true) {
+		return
+	}
 	if err = repo_service.AddOrUpdateCollaborator(ctx, ctx.Repo.Repository, u, perm.AccessModeWrite); err != nil {
 		if errors.Is(err, user_model.ErrBlockedUser) {
 			ctx.Flash.Error(ctx.Tr("repo.settings.add_collaborator.blocked_user"))
@@ -126,6 +129,10 @@ func ChangeCollaborationAccessMode(ctx *context.Context) {
 		return
 	}
 	mode := perm.AccessMode(ctx.FormInt("mode"))
+	if !canManageRepoAuthorization(ctx, false) {
+		ctx.Status(http.StatusForbidden)
+		return
+	}
 	if err := repo_service.AddOrUpdateCollaborator(ctx, ctx.Repo.Repository, u, mode); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		log.Error("AddOrUpdateCollaborator: %v", err)
@@ -144,6 +151,9 @@ func DeleteCollaboration(ctx *context.Context) {
 			return
 		}
 	} else {
+		if !canManageRepoAuthorization(ctx, true) {
+			return
+		}
 		if err := repo_service.DeleteCollaboration(ctx, ctx.Repo.Repository, collaborator); err != nil {
 			ctx.Flash.Error("DeleteCollaboration: " + err.Error())
 		} else {
@@ -220,10 +230,25 @@ func DeleteTeam(ctx *context.Context) {
 }
 
 func canManageRepoCollaboratorTeam(ctx *context.Context) bool {
+	if !canManageRepoAuthorization(ctx, true) {
+		return false
+	}
 	canChange := access.CanDoerManageOrgRepoCollaboratorTeam(ctx, ctx.Repo.Repository, &ctx.Repo.Permission)
 	if !canChange {
 		ctx.Flash.Error(ctx.Tr("repo.settings.change_team_access_not_allowed"))
 		ctx.Redirect(ctx.Repo.RepoLink + "/settings/collaboration")
 	}
 	return canChange
+}
+
+func canManageRepoAuthorization(ctx *context.Context, flash bool) bool {
+	err := repo_service.CheckEnterpriseRepoAuthorizationChange(ctx, ctx.Doer, ctx.Repo.Repository)
+	if err == nil {
+		return true
+	}
+	if flash {
+		ctx.Flash.Error(ctx.Tr("error.permission_denied"))
+		ctx.Redirect(ctx.Repo.RepoLink + "/settings/collaboration")
+	}
+	return false
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gitea.dev/models/db"
+	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/perm"
 	repo_model "gitea.dev/models/repo"
@@ -627,6 +628,120 @@ func TestCreateOrganization4(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, db.IsErrNameReserved(err))
 	unittest.CheckConsistencyFor(t, &organization.Organization{}, &organization.Team{})
+}
+
+func TestCreateOrganizationEnterpriseWeComNonSuperAdminCannotCreateOrg(t *testing.T) {
+	assert.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled: true,
+		CorpID:  "corp-org-guard",
+		AgentID: "1000002",
+	})()
+
+	ordinaryAdmin := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	err := organization.CreateOrganization(t.Context(), &organization.Organization{Name: "blocked-non-super-org"}, ordinaryAdmin)
+	require.Error(t, err)
+	assert.True(t, organization.IsErrUserNotAllowedCreateOrg(err))
+	unittest.AssertNotExistsBean(t, &organization.Organization{Name: "blocked-non-super-org", Type: user_model.UserTypeOrganization})
+}
+
+func TestCreateOrganizationEnterpriseWeComSuperAdminCreatesAdditionalOrg(t *testing.T) {
+	assert.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled: true,
+		CorpID:  "corp-org-additional",
+		AgentID: "1000002",
+	})()
+
+	superAdmin := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	require.NoError(t, db.Insert(t.Context(), &wecom_model.AdminAuthority{
+		CorpID:       "corp-org-additional",
+		AgentID:      "1000002",
+		WeComUserID:  "additional.super",
+		AuthType:     wecom_model.AdminAuthorityAuthTypeManagement,
+		IsManagement: true,
+		IsActive:     true,
+	}))
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{
+		UserID:      superAdmin.ID,
+		CorpID:      "corp-org-additional",
+		WeComUserID: "additional.super",
+		Status:      wecom_model.IdentityStatusActive,
+	})
+	require.NoError(t, err)
+
+	err = organization.CreateOrganization(t.Context(), &organization.Organization{Name: "super-admin-extra-org"}, superAdmin)
+	require.NoError(t, err)
+	unittest.AssertExistsAndLoadBean(t, &organization.Organization{Name: "super-admin-extra-org", Type: user_model.UserTypeOrganization})
+}
+
+func TestCreateOrganizationEnterpriseWeComSuperAdminCreatesForOrdinaryOwner(t *testing.T) {
+	assert.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled: true,
+		CorpID:  "corp-org-owner",
+		AgentID: "1000002",
+	})()
+
+	superAdmin := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	ordinaryOwner := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	require.NoError(t, db.Insert(t.Context(), &wecom_model.AdminAuthority{
+		CorpID:       "corp-org-owner",
+		AgentID:      "1000002",
+		WeComUserID:  "owner.super",
+		AuthType:     wecom_model.AdminAuthorityAuthTypeManagement,
+		IsManagement: true,
+		IsActive:     true,
+	}))
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{
+		UserID:      superAdmin.ID,
+		CorpID:      "corp-org-owner",
+		WeComUserID: "owner.super",
+		Status:      wecom_model.IdentityStatusActive,
+	})
+	require.NoError(t, err)
+
+	err = organization.CreateOrganizationForOwner(t.Context(), &organization.Organization{Name: "super-admin-owned-org"}, ordinaryOwner, superAdmin)
+	require.NoError(t, err)
+	created := unittest.AssertExistsAndLoadBean(t, &organization.Organization{Name: "super-admin-owned-org", Type: user_model.UserTypeOrganization})
+	unittest.AssertExistsAndLoadBean(t, &organization.OrgUser{OrgID: created.ID, UID: ordinaryOwner.ID})
+}
+
+func TestCreateOrganizationEnterpriseWeComSuperAdminBootstrapsFirstOrg(t *testing.T) {
+	assert.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled: true,
+		CorpID:  "corp-org-bootstrap",
+		AgentID: "1000002",
+	})()
+	_, err := db.GetEngine(t.Context()).Where("type = ?", user_model.UserTypeOrganization).Delete(new(user_model.User))
+	require.NoError(t, err)
+
+	ordinary := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	err = organization.CreateOrganization(t.Context(), &organization.Organization{Name: "ordinary-bootstrap-denied"}, ordinary)
+	require.Error(t, err)
+	assert.True(t, organization.IsErrUserNotAllowedCreateOrg(err))
+
+	superAdmin := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	require.NoError(t, db.Insert(t.Context(), &wecom_model.AdminAuthority{
+		CorpID:       "corp-org-bootstrap",
+		AgentID:      "1000002",
+		WeComUserID:  "bootstrap.super",
+		AuthType:     wecom_model.AdminAuthorityAuthTypeManagement,
+		IsManagement: true,
+		IsActive:     true,
+	}))
+	_, _, err = wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{
+		UserID:      superAdmin.ID,
+		CorpID:      "corp-org-bootstrap",
+		WeComUserID: "bootstrap.super",
+		Status:      wecom_model.IdentityStatusActive,
+	})
+	require.NoError(t, err)
+
+	err = organization.CreateOrganization(t.Context(), &organization.Organization{Name: "single-bootstrap-org"}, superAdmin)
+	require.NoError(t, err)
+	unittest.AssertExistsAndLoadBean(t, &organization.Organization{Name: "single-bootstrap-org", Type: user_model.UserTypeOrganization})
 }
 
 func TestOrAnyRepoUnitPermission(t *testing.T) {

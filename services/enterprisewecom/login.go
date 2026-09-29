@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	auth_model "gitea.dev/models/auth"
 	wecom_model "gitea.dev/models/enterprisewecom"
 	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/log"
 	"gitea.dev/modules/optional"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
@@ -29,6 +31,16 @@ type OAuthIdentity struct {
 	UserID  string
 	Name    string
 	Email   string
+}
+
+var refreshAdminAuthorityForLogin = func(ctx context.Context, identity *OAuthIdentity) error {
+	_, err := RefreshAdminAuthoritySnapshot(ctx, NewClientFromSettings(), AdminAuthorityRefreshOptions{
+		CorpID:  identity.CorpID,
+		AgentID: identity.AgentID,
+		Trigger: "login",
+		RunID:   fmt.Sprintf("login-%d", timeutil.TimeStampNow()),
+	})
+	return err
 }
 
 func AuthenticateOAuthLogin(ctx context.Context, authSource *auth_model.Source, existingUser, currentUser *user_model.User, gothUser goth.User) (*user_model.User, error) {
@@ -50,7 +62,7 @@ func AuthenticateOAuthLogin(ctx context.Context, authSource *auth_model.Source, 
 		return nil, err
 	}
 	if has {
-		if !bound.ActiveForLogin() {
+		if bound.Status != wecom_model.IdentityStatusActive && bound.Status != wecom_model.IdentityStatusOutOfScope {
 			recordLoginDeny(ctx, nil, identity, authSource, string(bound.Status))
 			return nil, fmt.Errorf("%w: identity status %s", ErrWeComDenied, bound.Status)
 		}
@@ -63,6 +75,9 @@ func AuthenticateOAuthLogin(ctx context.Context, authSource *auth_model.Source, 
 			return nil, fmt.Errorf("%w: bound user is not an individual", ErrWeComDenied)
 		}
 		if err := upsertIdentity(ctx, authSource, u, identity); err != nil {
+			return nil, err
+		}
+		if err := refreshAndPromoteProtectedAdminsAfterLogin(ctx, identity); err != nil {
 			return nil, err
 		}
 		recordLoginSuccess(ctx, u, identity, authSource)
@@ -92,12 +107,23 @@ func AuthenticateOAuthLogin(ctx context.Context, authSource *auth_model.Source, 
 		recordLoginDeny(ctx, u, identity, authSource, "identity_already_bound")
 		return nil, err
 	}
+	if err := refreshAndPromoteProtectedAdminsAfterLogin(ctx, identity); err != nil {
+		return nil, err
+	}
 	audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComIdentityBind, u,
 		"external_id", wecom_model.MakeExternalID(identity.CorpID, identity.UserID),
 		"login_source_id", authSource.ID,
 	)
 	recordLoginSuccess(ctx, u, identity, authSource)
 	return u, nil
+}
+
+func refreshAndPromoteProtectedAdminsAfterLogin(ctx context.Context, identity *OAuthIdentity) error {
+	if err := refreshAdminAuthorityForLogin(ctx, identity); err != nil && !errors.Is(err, ErrWeComAuthorityUnsupported) {
+		log.Warn("Unable to refresh Enterprise WeCom administrator authority during login: %v", err)
+	}
+	_, err := PromoteProtectedAdmins(ctx, ProtectedAdminResolveOptions{CorpID: identity.CorpID, AgentID: identity.AgentID})
+	return err
 }
 
 func OAuthIdentityFromGoth(gothUser goth.User) (*OAuthIdentity, error) {

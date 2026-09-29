@@ -1361,6 +1361,239 @@
         }
       }
     },
+    "/enterprise/wecom/mappings": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "List Enterprise WeCom authorization mappings",
+        "operationId": "enterpriseWeComAuthzMappingList",
+        "parameters": [
+          {
+            "type": "boolean",
+            "description": "include disabled mappings",
+            "name": "include_inactive",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseWeComAuthzMappingList"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          }
+        }
+      },
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Create an Enterprise WeCom authorization mapping",
+        "operationId": "enterpriseWeComAuthzMappingCreate",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/EnterpriseWeComAuthzMappingOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/EnterpriseWeComAuthzMapping"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          }
+        }
+      }
+    },
+    "/enterprise/wecom/mappings/apply": {
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Apply Enterprise WeCom authorization mappings",
+        "operationId": "enterpriseWeComAuthzMappingApply",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/EnterpriseWeComAuthzReconcileOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseWeComAuthzReconcileResult"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          }
+        }
+      }
+    },
+    "/enterprise/wecom/mappings/dry-run": {
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Dry-run Enterprise WeCom authorization mapping reconciliation",
+        "operationId": "enterpriseWeComAuthzMappingDryRun",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/EnterpriseWeComAuthzReconcileOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseWeComAuthzReconcileResult"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          }
+        }
+      }
+    },
+    "/enterprise/wecom/mappings/{id}": {
+      "get": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Get an Enterprise WeCom authorization mapping",
+        "operationId": "enterpriseWeComAuthzMappingGet",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "mapping id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseWeComAuthzMapping"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      },
+      "delete": {
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Disable an Enterprise WeCom authorization mapping",
+        "operationId": "enterpriseWeComAuthzMappingDelete",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "mapping id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/empty"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          }
+        }
+      },
+      "patch": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Update an Enterprise WeCom authorization mapping",
+        "operationId": "enterpriseWeComAuthzMappingUpdate",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "mapping id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/EnterpriseWeComAuthzMappingOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseWeComAuthzMapping"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          }
+        }
+      }
+    },
     "/gitignore/templates": {
       "get": {
         "produces": [
@@ -29456,6 +29689,240 @@
       },
       "x-go-package": "gitea.dev/modules/structs"
     },
+    "EnterpriseWeComAuthzMapping": {
+      "type": "object",
+      "title": "EnterpriseWeComAuthzMapping represents an Enterprise WeCom authorization mapping.",
+      "properties": {
+        "active": {
+          "type": "boolean",
+          "x-go-name": "Active"
+        },
+        "corp_id": {
+          "type": "string",
+          "x-go-name": "CorpID"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Created"
+        },
+        "created_by": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "CreatedBy"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "org_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "OrgID"
+        },
+        "source_id": {
+          "type": "string",
+          "x-go-name": "SourceID"
+        },
+        "source_type": {
+          "type": "string",
+          "x-go-name": "SourceType"
+        },
+        "target_type": {
+          "type": "string",
+          "x-go-name": "TargetType"
+        },
+        "team_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "TeamID"
+        },
+        "updated": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Updated"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseWeComAuthzMappingOption": {
+      "type": "object",
+      "title": "EnterpriseWeComAuthzMappingOption options for creating or updating an Enterprise WeCom authorization mapping.",
+      "required": [
+        "source_type",
+        "source_id",
+        "target_type"
+      ],
+      "properties": {
+        "corp_id": {
+          "type": "string",
+          "x-go-name": "CorpID"
+        },
+        "org_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "OrgID"
+        },
+        "source_id": {
+          "type": "string",
+          "x-go-name": "SourceID"
+        },
+        "source_type": {
+          "type": "string",
+          "x-go-name": "SourceType"
+        },
+        "target_type": {
+          "type": "string",
+          "x-go-name": "TargetType"
+        },
+        "team_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "TeamID"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseWeComAuthzMembershipChange": {
+      "type": "object",
+      "title": "EnterpriseWeComAuthzMembershipChange represents a planned or applied membership change.",
+      "properties": {
+        "mapping_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "MappingID"
+        },
+        "org_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "OrgID"
+        },
+        "target_type": {
+          "type": "string",
+          "x-go-name": "TargetType"
+        },
+        "team_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "TeamID"
+        },
+        "user_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "UserID"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseWeComAuthzReconcileOption": {
+      "type": "object",
+      "title": "EnterpriseWeComAuthzReconcileOption options for dry-running or applying Enterprise WeCom authorization mappings.",
+      "properties": {
+        "apply_id": {
+          "type": "string",
+          "x-go-name": "ApplyID"
+        },
+        "corp_id": {
+          "type": "string",
+          "x-go-name": "CorpID"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseWeComAuthzReconcileResult": {
+      "type": "object",
+      "title": "EnterpriseWeComAuthzReconcileResult represents a dry-run or apply reconciliation result.",
+      "properties": {
+        "additions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EnterpriseWeComAuthzMembershipChange"
+          },
+          "x-go-name": "Additions"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "Errors"
+        },
+        "protected_removals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EnterpriseWeComAuthzMembershipChange"
+          },
+          "x-go-name": "ProtectedRemovals"
+        },
+        "removals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EnterpriseWeComAuthzMembershipChange"
+          },
+          "x-go-name": "Removals"
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EnterpriseWeComAuthzSkippedIdentity"
+          },
+          "x-go-name": "Skipped"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseWeComAuthzSkippedIdentity": {
+      "type": "object",
+      "title": "EnterpriseWeComAuthzSkippedIdentity represents a WeCom identity skipped during reconciliation.",
+      "properties": {
+        "bound_user_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "BoundUserID"
+        },
+        "mapping_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "MappingID"
+        },
+        "reason": {
+          "type": "string",
+          "x-go-name": "Reason"
+        },
+        "source_id": {
+          "type": "string",
+          "x-go-name": "SourceID"
+        },
+        "source_type": {
+          "type": "string",
+          "x-go-name": "SourceType"
+        },
+        "status": {
+          "type": "string",
+          "x-go-name": "Status"
+        },
+        "target_org_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "TargetOrgID"
+        },
+        "target_team_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "TargetTeamID"
+        },
+        "target_type": {
+          "type": "string",
+          "x-go-name": "TargetType"
+        },
+        "wecom_userid": {
+          "type": "string",
+          "x-go-name": "WeComUserID"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
     "ExternalTracker": {
       "description": "ExternalTracker represents settings for external tracker",
       "type": "object",
@@ -34384,6 +34851,27 @@
       "description": "EmptyRepository",
       "schema": {
         "$ref": "#/definitions/APIError"
+      }
+    },
+    "EnterpriseWeComAuthzMapping": {
+      "description": "EnterpriseWeComAuthzMapping",
+      "schema": {
+        "$ref": "#/definitions/EnterpriseWeComAuthzMapping"
+      }
+    },
+    "EnterpriseWeComAuthzMappingList": {
+      "description": "EnterpriseWeComAuthzMappingList",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/EnterpriseWeComAuthzMapping"
+        }
+      }
+    },
+    "EnterpriseWeComAuthzReconcileResult": {
+      "description": "EnterpriseWeComAuthzReconcileResult",
+      "schema": {
+        "$ref": "#/definitions/EnterpriseWeComAuthzReconcileResult"
       }
     },
     "FileDeleteResponse": {

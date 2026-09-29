@@ -32,6 +32,31 @@
 | 外部账号绑定 | `models/user/external_login_user.go`、OAuth2 sign-in sync | 存储企业微信 `userid` 到 Gitea 用户的绑定关系；必要时补充企业微信专属同步状态表。 |
 | Web 登录开关 | `modules/setting/service.go`、`routers/web/auth/auth.go`、`templates/user/auth/signin_inner.tmpl` | 复用 `ENABLE_PASSWORD_SIGNIN_FORM`、`ENABLE_BASIC_AUTHENTICATION`、OpenID、Passkey 等开关，企业模式下强制只展示企业微信登录。 |
 | 单 OAuth2 自动跳转 | `routers/web/auth/auth.go:performAutoLoginOAuth2` | 企业模式下只有一个启用的企业微信登录源时，`/user/login` 自动跳转企业微信。 |
+| 企业微信登录基线 | `services/enterprisewecom`、`tests/integration/enterprise_wecom_auth_test.go` | 已验证 login-only 下本地密码、注册、OpenID、Passkey、反向代理、SSPI 和非 WeCom OAuth Web 登录被拦截，同时 SSH key、PAT/API token、Git HTTP token 保持原生 Gitea 行为。 |
+| 企业微信授权映射 Phase 2 | `models/enterprisewecom`、`services/enterprisewecom`、`routers/api/v1/enterprisewecom` | 已采用 additive mapping 和 managed-membership 表，将企业微信 user/department/tag 映射到既有 Gitea org/team，并支持 dry-run、manual apply、可选 post-sync apply、审计和 Swagger。 |
+
+## 当前实施补充：自动化、超级管理员与组织仓库治理
+
+`enterprise-wecom-admin-ui-super-admin` 变更将 Phase 2 的人工维护式映射升级为定时自动化治理：
+
+- **定时自动化范围**：`sync_enterprise_wecom_directory` 成功提交通讯录快照后，刷新企微管理员权限快照，按确定性规则生成 mapping/team/team-admin 状态，执行受管成员关系对账，保存 run history，并记录安全审计摘要。失败的通讯录同步、管理员权限刷新或派生/对账错误不得清空上一份有效权限快照，也不得提交部分授权变更。
+- **生成规则**：企微部门生成 `dept-{department_id}-{normalized_name}` 团队，企微标签生成 `tag-{tag_id}-{normalized_name}` 能力团队；部门/标签成员只从已绑定且 active 的企微身份投影到 Gitea 用户；缺失、歧义、未绑定、离职/不可见成员记录为 skipped/unresolved，不做宽泛兜底授权。
+- **团队管理员来源**：团队管理员状态只来自企微 API 元数据，例如部门详情 `department_leader` 与成员详情 `is_leader_in_dept`。Gitea 当前 `team_user` 没有单成员“团队管理员”列，因此实现会把企微 leader 持久化为 `GeneratedTeamAdmin`、纳入对应受管团队的 managed membership、展示/审计其派生状态；不会把 leader 加入 Owners 团队或把整队提升为 owner 来模拟本地团队管理员。标签 API 本身不提供管理员信号时，标签团队标记为 unresolved/system-managed，不允许本地管理员手工补一个团队管理员。
+- **超级管理员来源**：系统超级管理员优先由企微管理员变更回调和管理员列表 API 自动识别；对于当前自建应用模式，使用企微通讯录标签 `超管` 作为自动权限来源，并通过 `tag/list` + `tag/get` 在登录和定时任务中同步该标签的显式成员。本地用户名、本地用户 ID、环境变量或手工填写的企微 `userid` 都不是可信来源。`auth_type=1` 或 `超管` 标签显式成员会被映射为受保护的 Gitea site admin；`auth_type=0` 消息权限用户不会获得本地 root 权限。
+- **受保护账号**：普通 site admin 不能编辑、删除、重命名、模拟登录、修改 SSH key/徽章/邮箱或把受保护超级管理员移出组织；受保护管理员也不能自删、自禁用、自降级。
+- **organization 创建策略**：只有企微派生的系统超级管理员可以创建 organization；普通成员和非企微超级管理员的普通 site admin 均禁止创建，即使本地 Gitea `AllowCreateOrganization` 或 site-admin 身份原本允许。系统不自动删除或修复既有 organization。
+- **组织仓库审批**：普通成员不能直接创建组织仓库，只能向目标 organization 提交组织仓库请求；发起申请不要求 requester 已经是该 Gitea organization 的本地成员或 owner-team 成员。提交后跳转到用户设置中的 organization 页面展示“我的组织仓库申请”及 pending/approved/rejected 状态，避免被误解为已创建但不可见的仓库。企微派生系统超级管理员审批后创建 Private 组织仓库，记录 requester 为仓库 creator，并授予 requester 等效的管理权限。拒绝不会创建仓库，审批/拒绝均写入审计。
+- **个人仓库配额**：普通成员可在自己命名空间创建个人 Private 仓库，无需审批；每人最多 10 个个人仓库，达到配额后拒绝创建并审计。组织仓库不计入个人配额。
+- **Private 默认与授权守卫**：企业微信治理启用时，受管创建路径强制 Private；仓库 collaborator/team 授权变更仅允许仓库记录 creator、owner-level 权限用户或企微派生系统超级管理员执行，普通 site admin 身份本身不足以授权。
+- **管理后台与只读 UI 边界**：企业微信治理启用时，`/-/admin*` 管理后台入口和直接 URL 均需要通过企微派生系统超级管理员鉴权；本地 Gitea site-admin 身份本身不再足以看到或访问管理后台。`/-/admin/enterprise/wecom*` 继续使用现有 Gitea admin layout，面向企微派生系统超级管理员展示定时任务、最近运行、生成 mapping/team/team-admin、管理员权限快照、organization 创建治理状态、审批队列与审计入口；页面不提供 mapping/team/team-admin 的本地创建、编辑、dry-run 或 apply 操作。
+- **回滚**：可先关闭 cron/callback 或关闭 `enterprise.wecom.ENABLED` 使自动化停止；已存在的 Gitea 用户、团队、成员关系、仓库 collaborator、SSH key、PAT 与 Git HTTP token 仍是普通 Gitea 状态，按既有运维流程处理。
+
+### 迁移判断
+
+- **DB migration：需要**。已通过 `modelmigration` 增加企微管理员权限快照、生成 mapping/team/team-admin 状态、对账运行历史、组织仓库请求、仓库 creator/governance metadata 等 additive 表，不修改 SSH key、PAT、Git HTTP token、既有用户、既有组织或既有仓库 schema 语义。
+- **OpenFGA：不需要**。本仓库仍使用 Gitea 本地用户、团队和仓库权限模型表达授权，不引入 OpenFGA relation/tuple。
+- **Keycloak：不需要**。企业微信仅作为 Web 登录和目录/权限来源，不改变 Keycloak realm、client、mapper、claim 或用户属性。
+- **Swagger：仅 API 合约变化时生成**。当前产品 UI 为 server-rendered 只读页面；保留的 mapping API 已转换为 generated 状态读取与手动 mutation 拒绝语义时才需要重新生成 Swagger。
 
 ## 总体架构
 
@@ -95,6 +120,8 @@ AUTO_CREATE_USER = true
 USERNAME_TEMPLATE = {userid}
 SYNC_DEPARTMENTS = true
 SYNC_TAGS = true
+SUPER_ADMIN_TAG_NAME = 超管
+APPLY_AUTHZ_MAPPINGS_ON_SYNC = false
 HTTP_TIMEOUT = 15s
 API_BASE_URL = https://qyapi.weixin.qq.com
 OAUTH_BASE_URL = https://login.work.weixin.qq.com
@@ -122,6 +149,7 @@ FAIL_CLOSED_ON_ERROR = true
 | `LOGIN_SOURCE_NAME` | 唯一允许用于企业微信 Web 登录的 active OAuth2 source 名称。 |
 | `AUTO_CREATE_USER=true` | 企业微信成员首次登录时自动创建 Gitea 用户；用户名从 `USERNAME_TEMPLATE` 派生并做冲突处理。 |
 | `SYNC_DEPARTMENTS` / `SYNC_TAGS` | 是否同步企业微信部门和标签，用作授权映射来源。 |
+| `APPLY_AUTHZ_MAPPINGS_ON_SYNC=false` | 成功通讯录同步后是否自动应用企业微信授权映射；默认关闭，推荐先创建映射并反复 dry-run/manual apply 验证后再开启。 |
 | `HTTP_TIMEOUT` | 单次企业微信 HTTP 请求超时。 |
 | `API_BASE_URL` / `OAUTH_BASE_URL` | 企业微信 API 与浏览器 Web/扫码 OAuth 登录地址；仅在内网代理、私有网关或测试端点下覆盖默认值。 |
 
@@ -231,7 +259,7 @@ GET /user/login
 
 ## 数据模型
 
-企业授权后续表建议统一使用 `enterprise_` 前缀。首批 `wecom-only-web-login` 已先落地企业微信身份和目录快照基础表，使用较短的 `wecom_` 前缀以保持改动浅层且聚焦登录边界；后续若扩展为完整授权映射，可在 migration 中补充 `enterprise_*` 表或兼容视图。
+企业授权后续表建议统一使用 `enterprise_` 前缀。首批 `wecom-only-web-login` 已先落地企业微信身份和目录快照基础表，使用较短的 `wecom_` 前缀以保持改动浅层且聚焦登录边界；Phase 2 已通过 `modelmigration` 增加 `enterprise_wecom_authz_mapping` 和 `enterprise_wecom_managed_membership`，不修改 `org_user` / `team_user` schema。
 
 
 ### `wecom_identity`
@@ -293,20 +321,37 @@ GET /user/login
 
 ### `enterprise_wecom_authz_mapping`
 
-把企业微信部门、标签或用户映射到 Gitea 授权目标。
+把企业微信部门、标签或用户映射到既有 Gitea 组织或团队。当前 Phase 2 不引入 repo role overlay 或外部 PDP。
 
 | 字段 | 说明 |
 | --- | --- |
 | `corp_id` | 企业微信 CorpID。 |
-| `wecom_subject_type` | `user`、`department`、`tag`。 |
-| `wecom_subject_id` | `wecom_userid`、部门 ID 或标签 ID。 |
-| `target_type` | `org`、`team`、`enterprise_role`、`repo_role`。 |
-| `target_id` | Gitea 目标 ID。 |
-| `scope_type` / `scope_id` | 映射生效范围，支持 `global`、`org`、`repo`。 |
+| `source_type` | `user`、`department`、`tag`。 |
+| `source_id` | `wecom_userid`、部门 ID 或标签 ID，统一保存为字符串。 |
+| `target_type` | `org` 或 `team`。 |
+| `org_id` | Gitea 组织 ID；team target 会校验 team 属于该 org。 |
+| `team_id` | Gitea 团队 ID；org target 为 `0`。 |
+| `is_active` | 是否参与 reconciliation；删除 API 当前采用 disable 语义。 |
 | `created_by` | 操作者。 |
 | `created_unix` / `updated_unix` | 时间戳。 |
 
-映射应用应幂等：同一同步批次重复执行不得重复添加团队成员或角色绑定。
+映射管理由站点管理员 API 暴露，创建/更新时校验 source 来自当前同步快照、target 为既有 org/team。映射应用应幂等：同一批次重复执行不得重复添加组织或团队成员。
+
+### `enterprise_wecom_managed_membership`
+
+记录哪些 Gitea org/team membership 是由企业微信映射创建，作为安全删除边界。
+
+| 字段 | 说明 |
+| --- | --- |
+| `mapping_id` | 产生该 membership 的映射 ID。 |
+| `user_id` | Gitea 用户 ID，仍是本地授权主体。 |
+| `target_type` | `org` 或 `team`。 |
+| `org_id` | Gitea 组织 ID。 |
+| `team_id` | Gitea 团队 ID；org target 为 `0`。 |
+| `last_apply_unix` | 最近一次 apply 时间。 |
+| `last_seen_apply_id` | 最近一次 reconciliation 批次标识。 |
+
+删除策略只删除有 managed-membership 记录且不再被任何 active mapping 需要的 membership；手工添加的团队成员不会被企业微信 reconciliation 删除；同一用户被多个 mapping 命中时，只要仍有一个 active mapping 需要该 membership，就保留实际团队成员关系。
 
 ### `enterprise_role_definition`
 
@@ -604,6 +649,18 @@ secrets.example
 新增 API 必须复用 Gitea token、session 和现有 repo/org/admin assignment。
 
 
+
+### Phase 2 授权映射上线顺序
+
+1. 部署 mapping / managed-membership migration 和 API/service 代码，保持 `APPLY_AUTHZ_MAPPINGS_ON_SYNC=false`。
+2. 通过 site-admin API 创建 user、department 或 tag 到既有 org/team 的映射。
+3. 调用 dry-run API 检查 planned additions、removals、skipped identities 和 errors；确认 inactive、left、out-of-scope、unbound identity 不会被新增授权。
+4. 手动调用 apply API；重复 apply 应无重复 membership 或额外变更。
+5. 确认 SSH key、PAT/API token、Git HTTP token 与 Web login-only 回归测试保持通过。
+6. 仅当 operators 接受 dry-run/apply 结果后，才设置 `APPLY_AUTHZ_MAPPINGS_ON_SYNC=true`，让成功通讯录同步后自动 apply；失败或未提交的 sync 不触发授权变更。
+
+回滚时先关闭 `APPLY_AUTHZ_MAPPINGS_ON_SYNC` 并停止调用 apply API。已写入的 Gitea org/team membership 是普通 Gitea membership；如需删除，优先通过映射 reconciliation 或 Gitea 管理工具处理，不手工修改 `team_user` / `org_user`。
+
 ### 企业微信身份 API
 
 | API | 权限 |
@@ -611,8 +668,13 @@ secrets.example
 | `GET /api/v1/enterprise/wecom/status` | site admin 或 platform admin。 |
 | `POST /api/v1/enterprise/wecom/sync` | site admin、platform admin 或系统任务 token。 |
 | `GET /api/v1/enterprise/wecom/identities` | site admin 或 platform admin。 |
-| `GET /api/v1/enterprise/wecom/mappings` | site admin 或 platform admin。 |
-| `PUT /api/v1/enterprise/wecom/mappings` | platform admin。 |
+| `GET /api/v1/enterprise/wecom/mappings` | site admin；列出 active mappings，可通过 query 包含 disabled。 |
+| `POST /api/v1/enterprise/wecom/mappings` | site admin；创建 user/department/tag 到 org/team 的映射。 |
+| `GET /api/v1/enterprise/wecom/mappings/{id}` | site admin；读取单条映射。 |
+| `PATCH /api/v1/enterprise/wecom/mappings/{id}` | site admin；更新映射并重新校验 source/target。 |
+| `DELETE /api/v1/enterprise/wecom/mappings/{id}` | site admin；disable 映射，不物理删除。 |
+| `POST /api/v1/enterprise/wecom/mappings/dry-run` | site admin；返回 additions/removals/skips/errors，不写 Gitea membership。 |
+| `POST /api/v1/enterprise/wecom/mappings/apply` | site admin；按 dry-run 同一 planner 应用映射，写 managed-membership 和审计。 |
 
 企业微信 OAuth callback 属于 Web 登录入口，不作为公开管理 API 暴露；callback 必须校验 `state`，并拒绝非配置企业和非成员身份。
 

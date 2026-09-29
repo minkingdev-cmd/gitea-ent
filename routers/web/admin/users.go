@@ -32,6 +32,7 @@ import (
 	auth_service "gitea.dev/services/auth"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/services/forms"
 	"gitea.dev/services/mailer"
 	org_service "gitea.dev/services/org"
@@ -346,12 +347,18 @@ func getTargetBot(ctx *context.Context) *user_model.User {
 
 func NewBotTokenPost(ctx *context.Context) {
 	if u := getTargetBot(ctx); u != nil {
+		if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpCredential, "") {
+			return
+		}
 		user_setting.CreateAccessToken(ctx, u)
 	}
 }
 
 func DeleteBotToken(ctx *context.Context) {
 	if u := getTargetBot(ctx); u != nil {
+		if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpCredential, "") {
+			return
+		}
 		user_setting.DeleteAccessToken(ctx, u)
 	}
 }
@@ -389,6 +396,9 @@ func EditUserPost(ctx *context.Context) {
 	form := web.GetForm[*forms.AdminEditUserForm](ctx)
 	if ctx.HasError() {
 		ctx.HTML(http.StatusOK, tplUserEdit)
+		return
+	}
+	if !guardWebProtectedUserEdit(ctx, u, form) {
 		return
 	}
 
@@ -539,6 +549,9 @@ func ImpersonateUser(ctx *context.Context) {
 		ctx.JSONError(ctx.Tr("admin.users.impersonate_bot_not_allowed"))
 		return
 	}
+	if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpImpersonate, "") {
+		return
+	}
 
 	err = auth_service.ImpersonateUser(ctx.Session, u)
 	if err != nil {
@@ -561,6 +574,9 @@ func DeleteUser(ctx *context.Context) {
 	if u.ID == ctx.Doer.ID {
 		ctx.Flash.Error(ctx.Tr("admin.users.cannot_delete_self"))
 		ctx.Redirect(setting.AppSubURL + "/-/admin/users/" + url.PathEscape(ctx.PathParam("userid")))
+		return
+	}
+	if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpDelete, setting.AppSubURL+"/-/admin/users/"+url.PathEscape(ctx.PathParam("userid"))) {
 		return
 	}
 
@@ -596,6 +612,9 @@ func RemoveUserFromOrg(ctx *context.Context) {
 	}
 
 	orgID := ctx.PathParamInt64("org_id")
+	if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpOrgMembership, "") {
+		return
+	}
 	org, err := org_model.GetOrgByID(ctx, orgID)
 	if err != nil {
 		ctx.ServerError("GetOrgByID", err)
@@ -627,6 +646,9 @@ func RemoveUserFromAllOrgs(ctx *context.Context) {
 		ctx.ServerError("GetUserOrganizations", err)
 		return
 	}
+	if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpOrgMembership, "") {
+		return
+	}
 
 	removedCount := 0
 	for i := range orgs {
@@ -656,6 +678,9 @@ func AvatarPost(ctx *context.Context) {
 	}
 
 	form := web.GetForm[*forms.AvatarForm](ctx)
+	if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpAvatar, setting.AppSubURL+"/-/admin/users/"+strconv.FormatInt(u.ID, 10)) {
+		return
+	}
 	if err := user_setting.UpdateAvatarSetting(ctx, form, u); err != nil {
 		ctx.Flash.Error(err.Error())
 	} else {
@@ -671,10 +696,45 @@ func DeleteAvatar(ctx *context.Context) {
 	if ctx.Written() {
 		return
 	}
+	if !guardWebProtectedUser(ctx, u, wecom_service.ProtectedUserOpAvatar, "") {
+		return
+	}
 
 	if err := user_service.DeleteAvatar(ctx, u); err != nil {
 		ctx.Flash.Error(err.Error())
 	}
 
 	ctx.JSONRedirect(setting.AppSubURL + "/-/admin/users/" + strconv.FormatInt(u.ID, 10))
+}
+
+func guardWebProtectedUser(ctx *context.Context, target *user_model.User, operation wecom_service.ProtectedUserOperation, redirectTo string) bool {
+	if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, target, operation); err != nil {
+		ctx.Flash.Error(err.Error())
+		if redirectTo != "" {
+			ctx.Redirect(redirectTo)
+		} else {
+			ctx.JSONError(err.Error())
+		}
+		return false
+	}
+	return true
+}
+
+func guardWebProtectedUserEdit(ctx *context.Context, target *user_model.User, form *forms.AdminEditUserForm) bool {
+	if !guardWebProtectedUser(ctx, target, wecom_service.ProtectedUserOpEdit, setting.AppSubURL+"/-/admin/users/"+strconv.FormatInt(target.ID, 10)) {
+		return false
+	}
+	if ctx.Doer != nil && target != nil && ctx.Doer.ID == target.ID {
+		switch {
+		case !form.Admin:
+			return guardWebProtectedUser(ctx, target, wecom_service.ProtectedUserOpDemoteSelf, setting.AppSubURL+"/-/admin/users/"+strconv.FormatInt(target.ID, 10))
+		case !form.Active:
+			return guardWebProtectedUser(ctx, target, wecom_service.ProtectedUserOpDeactivateSelf, setting.AppSubURL+"/-/admin/users/"+strconv.FormatInt(target.ID, 10))
+		case form.ProhibitLogin:
+			return guardWebProtectedUser(ctx, target, wecom_service.ProtectedUserOpProhibitLoginSelf, setting.AppSubURL+"/-/admin/users/"+strconv.FormatInt(target.ID, 10))
+		default:
+			return true
+		}
+	}
+	return true
 }

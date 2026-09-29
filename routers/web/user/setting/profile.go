@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/organization"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
@@ -41,6 +42,12 @@ const (
 	tplSettingsOrganization templates.TplName = "user/settings/organization"
 	tplSettingsRepositories templates.TplName = "user/settings/repos"
 )
+
+type orgRepoRequestView struct {
+	Request  *wecom_model.OrgRepoRequest
+	OrgName  string
+	RepoLink string
+}
 
 // Profile render user's profile page
 func Profile(ctx *context.Context) {
@@ -193,6 +200,7 @@ func DeleteAvatar(ctx *context.Context) {
 func Organization(ctx *context.Context) {
 	ctx.Data["Title"] = ctx.Tr("settings.organization")
 	ctx.Data["PageIsSettingsOrganization"] = true
+	ctx.Data["EnterpriseWeComRepoGovernance"] = setting.EnterpriseWeCom.Enabled
 
 	opts := organization.FindOrgOptions{
 		ListOptions: db.ListOptions{
@@ -216,7 +224,47 @@ func Organization(ctx *context.Context) {
 	ctx.Data["Orgs"] = orgs
 	pager := context.NewPagerBuilder(ctx).TotalCount(total).PerPageLimit(opts.PageSize).CurPage(opts.Page).Build()
 	ctx.Data["Page"] = pager
+	if setting.EnterpriseWeCom.Enabled {
+		requests, err := loadOrgRepoRequestViews(ctx)
+		if err != nil {
+			ctx.ServerError("loadOrgRepoRequestViews", err)
+			return
+		}
+		ctx.Data["OrgRepoRequests"] = requests
+	}
 	ctx.HTML(http.StatusOK, tplSettingsOrganization)
+}
+
+func loadOrgRepoRequestViews(ctx *context.Context) ([]orgRepoRequestView, error) {
+	var requests []*wecom_model.OrgRepoRequest
+	if err := db.GetEngine(ctx).
+		Where("requester_id = ?", ctx.Doer.ID).
+		Desc("id").
+		Limit(50).
+		Find(&requests); err != nil {
+		return nil, err
+	}
+
+	views := make([]orgRepoRequestView, 0, len(requests))
+	for _, request := range requests {
+		view := orgRepoRequestView{Request: request, OrgName: fmt.Sprintf("#%d", request.OrgID)}
+		org, err := user_model.GetUserByID(ctx, request.OrgID)
+		if err == nil {
+			view.OrgName = org.DisplayName()
+		} else if !user_model.IsErrUserNotExist(err) {
+			return nil, err
+		}
+		if request.RepoID > 0 {
+			repo, err := repo_model.GetRepositoryByID(ctx, request.RepoID)
+			if err == nil {
+				view.RepoLink = repo.Link()
+			} else if !repo_model.IsErrRepoNotExist(err) {
+				return nil, err
+			}
+		}
+		views = append(views, view)
+	}
+	return views, nil
 }
 
 // Repos display a list of all repositories of the user

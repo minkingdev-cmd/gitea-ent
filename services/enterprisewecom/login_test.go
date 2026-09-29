@@ -4,9 +4,11 @@
 package enterprisewecom
 
 import (
+	"context"
 	"testing"
 
 	auth_model "gitea.dev/models/auth"
+	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
@@ -82,6 +84,80 @@ func TestAuthenticateOAuthLoginDeniesInactiveIdentity(t *testing.T) {
 		},
 	})
 	require.ErrorIs(t, err, ErrWeComDenied)
+}
+
+func TestAuthenticateOAuthLoginReactivatesOutOfScopeIdentity(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:        true,
+		LoginOnly:      true,
+		CorpID:         "corp-1",
+		AgentID:        "1000002",
+		CorpSecret:     "secret",
+		AutoCreateUser: true,
+	})()
+
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{
+		UserID:        1,
+		CorpID:        "corp-1",
+		WeComUserID:   "wangwu",
+		LoginSourceID: 10,
+		Status:        wecom_model.IdentityStatusOutOfScope,
+	})
+	require.NoError(t, err)
+
+	u, err := AuthenticateOAuthLogin(t.Context(), wecomAuthSource(10), nil, nil, goth.User{
+		UserID: "wangwu",
+		RawData: map[string]any{
+			"wecom_corp_id":  "corp-1",
+			"wecom_agent_id": "1000002",
+			"wecom_userid":   "wangwu",
+		},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, u.ID)
+
+	identity, has, err := wecom_model.GetIdentityByCorpAndUserID(t.Context(), "corp-1", "wangwu")
+	require.NoError(t, err)
+	require.True(t, has)
+	require.Equal(t, wecom_model.IdentityStatusActive, identity.Status)
+}
+
+func TestAuthenticateOAuthLoginRefreshesAuthorityBeforePromotion(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:           true,
+		LoginOnly:         true,
+		CorpID:            "corp-1",
+		AgentID:           "1000002",
+		CorpSecret:        "secret",
+		AutoCreateUser:    true,
+		SuperAdminTagName: "超管",
+	})()
+	defer test.MockVariableValue(&refreshAdminAuthorityForLogin, func(ctx context.Context, identity *OAuthIdentity) error {
+		return db.Insert(ctx, &wecom_model.AdminAuthority{
+			CorpID:       identity.CorpID,
+			AgentID:      identity.AgentID,
+			WeComUserID:  identity.UserID,
+			AuthType:     wecom_model.AdminAuthorityAuthTypeManagement,
+			IsManagement: true,
+			IsActive:     true,
+		})
+	})()
+
+	u, err := AuthenticateOAuthLogin(t.Context(), wecomAuthSource(10), nil, nil, goth.User{
+		UserID: "tag.super",
+		RawData: map[string]any{
+			"wecom_corp_id":  "corp-1",
+			"wecom_agent_id": "1000002",
+			"wecom_userid":   "tag.super",
+		},
+	})
+	require.NoError(t, err)
+
+	reloaded, err := user_model.GetUserByID(t.Context(), u.ID)
+	require.NoError(t, err)
+	require.True(t, reloaded.IsAdmin)
 }
 
 func wecomAuthSource(id int64) *auth_model.Source {

@@ -6,6 +6,7 @@ package enterprisewecom
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	audit_model "gitea.dev/models/audit"
@@ -18,16 +19,19 @@ import (
 )
 
 type DepartmentInfo struct {
-	ID       int64
-	ParentID int64
-	Name     string
-	Order    int64
+	ID            int64
+	ParentID      int64
+	Name          string
+	Order         int64
+	LeaderUserIDs []string
 }
 
 type MemberInfo struct {
-	UserID string
-	Name   string
-	Email  string
+	UserID                string
+	Name                  string
+	Email                 string
+	DepartmentIDs         []int64
+	LeaderInDepartmentIDs []int64
 }
 
 type TagInfo struct {
@@ -42,10 +46,15 @@ type DirectoryClient interface {
 	ListTagMembers(ctx context.Context, tagID int64) ([]string, error)
 }
 
+type DepartmentDetailClient interface {
+	GetDepartment(ctx context.Context, departmentID int64) (*DepartmentInfo, error)
+}
+
 type directoryMembership struct {
 	UserID   string
 	Kind     wecom_model.MembershipKind
 	TargetID int64
+	IsLeader bool
 }
 
 type directorySnapshot struct {
@@ -69,6 +78,16 @@ func SyncDirectory(ctx context.Context, client DirectoryClient) error {
 			"reason", "sync_failed",
 		)
 		return err
+	}
+	if setting.EnterpriseWeCom.ApplyAuthzMappingsOnSync {
+		if _, err := ApplyAuthzMappings(ctx, AuthzReconcileOptions{CorpID: corpID, ApplyID: fmt.Sprintf("sync-%d", timeutil.TimeStampNow())}); err != nil {
+			audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncFinish, nil,
+				"corp_id", corpID,
+				"outcome", "error",
+				"reason", "authz_apply_failed",
+			)
+			return err
+		}
 	}
 	audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncFinish, nil,
 		"corp_id", corpID,
@@ -94,13 +113,14 @@ func syncDirectory(ctx context.Context, client DirectoryClient, corpID string) e
 	return db.WithTx(ctx, func(ctx context.Context) error {
 		for _, dept := range snapshot.departments {
 			if err := wecom_model.UpsertDepartment(ctx, &wecom_model.Department{
-				CorpID:       corpID,
-				DepartmentID: dept.ID,
-				ParentID:     dept.ParentID,
-				Name:         dept.Name,
-				Order:        dept.Order,
-				LastSyncUnix: now,
-				SyncVersion:  syncVersion,
+				CorpID:        corpID,
+				DepartmentID:  dept.ID,
+				ParentID:      dept.ParentID,
+				Name:          dept.Name,
+				LeaderUserIDs: wecom_model.EncodeLeaderUserIDs(dept.LeaderUserIDs),
+				Order:         dept.Order,
+				LastSyncUnix:  now,
+				SyncVersion:   syncVersion,
 			}); err != nil {
 				return err
 			}
@@ -127,6 +147,7 @@ func syncDirectory(ctx context.Context, client DirectoryClient, corpID string) e
 				WeComUserID:  membership.UserID,
 				Kind:         membership.Kind,
 				TargetID:     membership.TargetID,
+				IsLeader:     membership.IsLeader,
 				LastSyncUnix: now,
 				SyncVersion:  syncVersion,
 			}); err != nil {
@@ -144,6 +165,12 @@ func fetchDirectorySnapshot(ctx context.Context, client DirectoryClient, syncDep
 		if err != nil {
 			return nil, err
 		}
+		if detailClient, ok := client.(DepartmentDetailClient); ok {
+			departments, err = enrichDepartmentDetails(ctx, detailClient, departments)
+			if err != nil {
+				return nil, err
+			}
+		}
 		snapshot.departments = departments
 		for _, dept := range departments {
 			members, err := client.ListMembers(ctx, dept.ID)
@@ -153,7 +180,7 @@ func fetchDirectorySnapshot(ctx context.Context, client DirectoryClient, syncDep
 			for _, member := range members {
 				snapshot.members[member.UserID] = member
 				snapshot.memberships = append(snapshot.memberships, directoryMembership{
-					UserID: member.UserID, Kind: wecom_model.MembershipDepartment, TargetID: dept.ID,
+					UserID: member.UserID, Kind: wecom_model.MembershipDepartment, TargetID: dept.ID, IsLeader: member.IsLeaderOfDepartment(dept.ID),
 				})
 			}
 		}
@@ -180,6 +207,36 @@ func fetchDirectorySnapshot(ctx context.Context, client DirectoryClient, syncDep
 		}
 	}
 	return snapshot, nil
+}
+
+func enrichDepartmentDetails(ctx context.Context, client DepartmentDetailClient, departments []DepartmentInfo) ([]DepartmentInfo, error) {
+	enriched := make([]DepartmentInfo, 0, len(departments))
+	for _, dept := range departments {
+		detail, err := client.GetDepartment(ctx, dept.ID)
+		if err != nil {
+			return nil, err
+		}
+		if detail == nil {
+			enriched = append(enriched, dept)
+			continue
+		}
+		if detail.Name != "" {
+			dept.Name = detail.Name
+		}
+		if detail.ParentID != 0 {
+			dept.ParentID = detail.ParentID
+		}
+		if detail.Order != 0 {
+			dept.Order = detail.Order
+		}
+		dept.LeaderUserIDs = detail.LeaderUserIDs
+		enriched = append(enriched, dept)
+	}
+	return enriched, nil
+}
+
+func (m MemberInfo) IsLeaderOfDepartment(departmentID int64) bool {
+	return slices.Contains(m.LeaderInDepartmentIDs, departmentID)
 }
 
 func upsertSyncedMember(ctx context.Context, corpID string, member MemberInfo, now timeutil.TimeStamp, syncVersion int64) error {

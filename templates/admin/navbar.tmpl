@@ -13,7 +13,7 @@
 				</a>
 			</div>
 		</details>
-		<details class="item" {{if or .PageIsAdminUsers .PageIsAdminBadges .PageIsAdminEmails .PageIsAdminOrganizations .PageIsAdminAuthentications}}open{{end}}>
+		<details class="item" {{if or .PageIsAdminUsers .PageIsAdminBadges .PageIsAdminEmails .PageIsAdminOrganizations .PageIsAdminAuthentications .PageIsAdminEnterpriseWeCom}}open{{end}}>
 			<summary>{{ctx.Locale.Tr "admin.identity_access"}}</summary>
 			<div class="menu">
 				<a class="{{if .PageIsAdminAuthentications}}active {{end}}item" href="{{AppSubUrl}}/-/admin/auths">
@@ -30,6 +30,9 @@
 				</a>
 				<a class="{{if .PageIsAdminEmails}}active {{end}}item" href="{{AppSubUrl}}/-/admin/emails">
 					{{ctx.Locale.Tr "admin.emails"}}
+				</a>
+				<a class="{{if .PageIsAdminEnterpriseWeCom}}active {{end}}item" href="{{AppSubUrl}}/-/admin/enterprise/wecom">
+					{{ctx.Locale.Tr "admin.enterprise_wecom"}}
 				</a>
 			</div>
 		</details>

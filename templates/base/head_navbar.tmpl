@@ -78,7 +78,7 @@
 							{{svg "octicon-repo-push"}} {{ctx.Locale.Tr "new_migrate"}}
 						</a>
 					{{end}}
-					{{if .SignedUser.CanCreateOrganization}}
+					{{if ctx.SignedUserCanCreateOrganization}}
 					<a class="item" href="{{AppSubUrl}}/org/create">
 						{{svg "octicon-organization"}} {{ctx.Locale.Tr "new_org"}}
 					</a>
@@ -123,7 +123,7 @@
 						{{svg "octicon-question"}}
 						{{ctx.Locale.Tr "help"}}
 					</a>
-					{{if .IsAdmin}}
+					{{if .CanAccessAdminPanel}}
 					<div class="divider"></div>
 					<a class="{{if .PageIsAdmin}}active {{end}}item" href="{{AppSubUrl}}/-/admin">
 						{{svg "octicon-server"}}

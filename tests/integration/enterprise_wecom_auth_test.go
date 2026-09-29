@@ -16,9 +16,13 @@ import (
 
 	auth_model "gitea.dev/models/auth"
 	wecom_model "gitea.dev/models/enterprisewecom"
+	"gitea.dev/models/organization"
+	"gitea.dev/models/unittest"
+	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/test"
 	"gitea.dev/services/auth/source/oauth2"
+	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/tests"
 
 	"github.com/stretchr/testify/assert"
@@ -127,7 +131,9 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 		assert.Positive(t, identity.UserID)
 	})
 
-	t.Run("PAT and Git HTTP token remain valid", func(t *testing.T) {
+	t.Run("PAT and Git HTTP token remain valid after mapping apply", func(t *testing.T) {
+		applyEnterpriseWeComAuthzMappingForUser(t, "corp-integration", "mapped-user2", "user2")
+
 		MakeRequest(t, NewRequest(t, "GET", "/api/v1/user").AddTokenAuth(token), http.StatusOK)
 		resp := MakeRequest(t, NewRequest(t, "GET", "/user2/repo2/info/refs?service=git-upload-pack").AddBasicAuth("user2", token), http.StatusOK)
 		assert.Contains(t, resp.Body.String(), "refs/heads/master")
@@ -145,6 +151,7 @@ func TestEnterpriseWeComLoginOnlySmoke(t *testing.T) {
 		addOAuth2Source(t, sourceName, oauth2.Source{Provider: oauth2.ProviderNameWeCom})
 		withKeyFile(t, "wecom-login-only-ssh", func(keyFile string) {
 			t.Run("CreateUserKey", doAPICreateUserKey(ctx, "wecom-login-only-ssh", keyFile))
+			applyEnterpriseWeComAuthzMappingForUser(t, "corp-smoke", "mapped-ssh-user2", "user2")
 
 			privateKey, err := os.ReadFile(keyFile)
 			require.NoError(t, err)
@@ -203,4 +210,28 @@ func TestEnterpriseWeComLoginOnlySmoke(t *testing.T) {
 			assert.Contains(t, stderr.String(), "You've successfully authenticated with the SSH key named wecom-login-only-ssh.")
 		})
 	})
+}
+
+func applyEnterpriseWeComAuthzMappingForUser(t *testing.T, corpID, wecomUserID, username string) {
+	t.Helper()
+	user := unittest.AssertExistsAndLoadBean(t, &user_model.User{Name: username})
+	org := unittest.AssertExistsAndLoadBean(t, &organization.Organization{ID: 7})
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{
+		UserID:      user.ID,
+		CorpID:      corpID,
+		WeComUserID: wecomUserID,
+		Status:      wecom_model.IdentityStatusActive,
+	})
+	require.NoError(t, err)
+	_, err = wecom_service.CreateAuthzMapping(t.Context(), wecom_service.AuthzMappingOptions{
+		CorpID:     corpID,
+		SourceType: wecom_model.AuthzSourceUser,
+		SourceID:   wecomUserID,
+		TargetType: wecom_model.AuthzTargetOrg,
+		OrgID:      org.ID,
+		ActorID:    user.ID,
+	})
+	require.NoError(t, err)
+	_, err = wecom_service.ApplyAuthzMappings(t.Context(), wecom_service.AuthzReconcileOptions{CorpID: corpID, ActorID: user.ID, ApplyID: "auth-regression"})
+	require.NoError(t, err)
 }

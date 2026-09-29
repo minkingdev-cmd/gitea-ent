@@ -24,6 +24,7 @@ import (
 	"gitea.dev/routers/api/v1/utils"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	wecom_service "gitea.dev/services/enterprisewecom"
 	feed_service "gitea.dev/services/feed"
 	org_service "gitea.dev/services/org"
 	repo_service "gitea.dev/services/repository"
@@ -211,6 +212,9 @@ func CreateTeam(ctx *context.APIContext) {
 	//   "422":
 	//     "$ref": "#/responses/validationError"
 	form := web.GetForm[*api.CreateTeamOption](ctx)
+	if !checkEnterpriseWeComTeamMaintenance(ctx, 0, wecom_service.TeamLocalMaintenanceCreate) {
+		return
+	}
 	team := &organization.Team{
 		OrgID:                   ctx.Org.Organization.ID,
 		Name:                    form.Name,
@@ -269,6 +273,9 @@ func EditTeam(ctx *context.APIContext) {
 
 	form := web.GetForm[*api.EditTeamOption](ctx)
 	team := ctx.Org.Team
+	if !checkEnterpriseWeComTeamMaintenance(ctx, team.ID, wecom_service.TeamLocalMaintenanceEdit) {
+		return
+	}
 	if err := team.LoadUnits(ctx); err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -338,6 +345,9 @@ func DeleteTeam(ctx *context.APIContext) {
 	//   "404":
 	//     "$ref": "#/responses/notFound"
 
+	if !checkEnterpriseWeComTeamMaintenance(ctx, ctx.Org.Team.ID, wecom_service.TeamLocalMaintenanceDelete) {
+		return
+	}
 	if err := org_service.DeleteTeam(ctx, ctx.Org.Team); err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -465,6 +475,9 @@ func AddTeamMember(ctx *context.APIContext) {
 	if ctx.Written() {
 		return
 	}
+	if !checkEnterpriseWeComTeamMaintenance(ctx, ctx.Org.Team.ID, wecom_service.TeamLocalMaintenanceMembership) {
+		return
+	}
 	if err := org_service.AddTeamMember(ctx, ctx.Org.Team, u); err != nil {
 		if errors.Is(err, user_model.ErrBlockedUser) {
 			ctx.APIError(http.StatusForbidden, err.Error())
@@ -506,6 +519,9 @@ func RemoveTeamMember(ctx *context.APIContext) {
 		return
 	}
 
+	if !checkEnterpriseWeComTeamMaintenance(ctx, ctx.Org.Team.ID, wecom_service.TeamLocalMaintenanceMembership) {
+		return
+	}
 	if err := org_service.RemoveTeamMember(ctx, ctx.Org.Team, u); err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -755,6 +771,14 @@ func RemoveTeamRepository(ctx *context.APIContext) {
 		return
 	}
 	ctx.Status(http.StatusNoContent)
+}
+
+func checkEnterpriseWeComTeamMaintenance(ctx *context.APIContext, teamID int64, operation wecom_service.TeamLocalMaintenanceOperation) bool {
+	if err := wecom_service.CanLocallyMaintainTeam(ctx, teamID, operation); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return false
+	}
+	return true
 }
 
 // SearchTeam api for searching teams

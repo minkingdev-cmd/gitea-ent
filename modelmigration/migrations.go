@@ -429,6 +429,10 @@ func prepareMigrationTasks() []*migration {
 		newMigration(353, "Add audit event table", v28.AddAuditEventTable),
 		newMigration(354, "Add Enterprise WeCom identity and directory tables", v28.AddWeComIdentityAndDirectoryTables),
 		newMigration(355, "Add Enterprise WeCom sync version columns", v28.AddEnterpriseWeComSyncVersionColumns),
+		newMigration(356, "Add Enterprise WeCom authorization mapping tables", v28.AddEnterpriseWeComAuthzMappingTables),
+		newMigration(357, "Add Enterprise WeCom automation state tables", v28.AddEnterpriseWeComAutomationStateTables),
+		newMigration(358, "Add Enterprise WeCom directory leadership metadata", v28.AddEnterpriseWeComDirectoryLeadershipMetadata),
+		newMigration(359, "Add Enterprise WeCom repository governance tables", v28.AddEnterpriseWeComRepositoryGovernanceTables),
 	}
 	return preparedMigrations
 }

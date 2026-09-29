@@ -6,7 +6,7 @@
 		{{if (or .ShowFooterVersion .PageIsAdmin)}}
 			<span>
 			{{ctx.Locale.Tr "version"}}:
-			{{if .IsAdmin}}
+			{{if .CanAccessAdminPanel}}
 				<a href="{{AppSubUrl}}/-/admin/config">{{AppVer}}</a>
 			{{else}}
 				{{AppVer}}

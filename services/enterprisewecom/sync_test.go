@@ -11,6 +11,7 @@ import (
 
 	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
+	"gitea.dev/models/organization"
 	"gitea.dev/models/unittest"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/test"
@@ -153,4 +154,49 @@ func (f fakeDirectoryClient) ListTags(context.Context) ([]TagInfo, error) {
 
 func (f fakeDirectoryClient) ListTagMembers(_ context.Context, tagID int64) ([]string, error) {
 	return f.tagMembers[tagID], nil
+}
+
+func TestSyncDirectoryAppliesAuthzMappingsAfterSuccessfulSyncWhenEnabled(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	mockSyncSettings(t, true, false)
+	setting.EnterpriseWeCom.ApplyAuthzMappingsOnSync = true
+	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-1", WeComUserID: "sync-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusOutOfScope})
+	require.NoError(t, err)
+	require.NoError(t, wecom_model.UpsertDepartment(t.Context(), &wecom_model.Department{CorpID: "corp-1", DepartmentID: 2, Name: "研发"}))
+	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	require.NoError(t, err)
+
+	client := fakeDirectoryClient{
+		departments: []DepartmentInfo{{ID: 2, Name: "研发"}},
+		members:     map[int64][]MemberInfo{2: {{UserID: "sync-user"}}},
+	}
+	require.NoError(t, SyncDirectory(t.Context(), client))
+
+	isMember, err := organization.IsTeamMember(t.Context(), team.OrgID, team.ID, 1)
+	require.NoError(t, err)
+	require.True(t, isMember)
+}
+
+func TestSyncDirectoryDoesNotApplyAuthzMappingsAfterFailedSync(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	mockSyncSettings(t, true, true)
+	setting.EnterpriseWeCom.ApplyAuthzMappingsOnSync = true
+	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-1", WeComUserID: "failed-sync-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusOutOfScope})
+	require.NoError(t, err)
+	require.NoError(t, wecom_model.UpsertDepartment(t.Context(), &wecom_model.Department{CorpID: "corp-1", DepartmentID: 2, Name: "研发"}))
+	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	require.NoError(t, err)
+
+	client := fakeDirectoryClient{
+		departments: []DepartmentInfo{{ID: 2, Name: "研发"}},
+		members:     map[int64][]MemberInfo{2: {{UserID: "failed-sync-user"}}},
+		listTagsErr: errors.New("tag request failed"),
+	}
+	require.Error(t, SyncDirectory(t.Context(), client))
+
+	isMember, err := organization.IsTeamMember(t.Context(), team.OrgID, team.ID, 1)
+	require.NoError(t, err)
+	require.False(t, isMember)
 }

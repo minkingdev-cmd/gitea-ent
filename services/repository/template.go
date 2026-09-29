@@ -68,6 +68,11 @@ func GenerateProtectedBranch(ctx context.Context, templateRepo, generateRepo *re
 
 // GenerateRepository generates a repository from a template
 func GenerateRepository(ctx context.Context, doer, owner *user_model.User, templateRepo *repo_model.Repository, opts GenerateRepoOptions) (_ *repo_model.Repository, err error) {
+	createOpts := CreateRepoOptions{Name: opts.Name, IsPrivate: opts.Private}
+	if err := enforceEnterpriseRepoCreationGovernance(ctx, doer, owner, &createOpts); err != nil {
+		return nil, err
+	}
+	opts.Private = createOpts.IsPrivate
 	if !doer.CanCreateRepoIn(owner) {
 		return nil, repo_model.ErrReachLimitOfRepo{
 			Limit: owner.MaxRepoCreation,
@@ -186,6 +191,9 @@ func GenerateRepository(ctx context.Context, doer, owner *user_model.User, templ
 	generateRepo.Status = repo_model.RepositoryReady
 	if err = repo_model.UpdateRepositoryColsWithAutoTime(ctx, generateRepo, "status"); err != nil {
 		return nil, fmt.Errorf("UpdateRepositoryCols: %w", err)
+	}
+	if err = recordEnterpriseRepositoryGovernance(ctx, doer, owner, generateRepo); err != nil {
+		return nil, err
 	}
 
 	notify_service.CreateRepository(ctx, doer, owner, generateRepo)

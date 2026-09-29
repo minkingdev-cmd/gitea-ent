@@ -1,0 +1,142 @@
+{{template "admin/layout_head" (dict "pageClass" "admin enterprise-wecom")}}
+	<div class="admin-setting-content">
+		<h4 class="ui top attached header">
+			{{ctx.Locale.Tr "admin.enterprise_wecom"}}
+		</h4>
+		<div class="ui attached segment">
+			<div class="ui secondary pointing menu">
+				<a class="item {{if eq .EnterpriseWeComTab "overview"}}active{{end}}" href="{{AppSubUrl}}/-/admin/enterprise/wecom">{{ctx.Locale.Tr "admin.enterprise_wecom.overview"}}</a>
+				<a class="item {{if eq .EnterpriseWeComTab "mappings"}}active{{end}}" href="{{AppSubUrl}}/-/admin/enterprise/wecom/generated-mappings">{{ctx.Locale.Tr "admin.enterprise_wecom.generated_mappings"}}</a>
+				<a class="item {{if eq .EnterpriseWeComTab "teams"}}active{{end}}" href="{{AppSubUrl}}/-/admin/enterprise/wecom/generated-teams">{{ctx.Locale.Tr "admin.enterprise_wecom.generated_teams"}}</a>
+				<a class="item {{if eq .EnterpriseWeComTab "runs"}}active{{end}}" href="{{AppSubUrl}}/-/admin/enterprise/wecom/reconciliation-runs">{{ctx.Locale.Tr "admin.enterprise_wecom.reconciliation_runs"}}</a>
+				<a class="item {{if eq .EnterpriseWeComTab "authority"}}active{{end}}" href="{{AppSubUrl}}/-/admin/enterprise/wecom/authority">{{ctx.Locale.Tr "admin.enterprise_wecom.authority"}}</a>
+				<a class="item {{if eq .EnterpriseWeComTab "repo-requests"}}active{{end}}" href="{{AppSubUrl}}/-/admin/enterprise/wecom/org-repo-requests">{{ctx.Locale.Tr "admin.enterprise_wecom.org_repo_requests"}}</a>
+			</div>
+
+			<div class="ui info message">
+				{{ctx.Locale.Tr "admin.enterprise_wecom.read_only_hint"}}
+			</div>
+
+			{{if eq .EnterpriseWeComTab "overview"}}
+				<div class="ui two column stackable grid">
+					<div class="column">
+						<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.schedule"}}</h4>
+						<div class="ui attached segment">
+							<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.enabled"}}:</strong> {{.EnterpriseWeComCron.Enabled}}</div>
+							<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.schedule_expr"}}:</strong> {{.EnterpriseWeComCron.Schedule}}</div>
+							<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.task_status"}}:</strong> {{.EnterpriseWeComCron.Status}}</div>
+							<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.exec_times"}}:</strong> {{.EnterpriseWeComCron.ExecTimes}}</div>
+							<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.next_run"}}:</strong> {{if .EnterpriseWeComCron.Next.IsZero}}-{{else}}{{DateUtils.FullTime .EnterpriseWeComCron.Next}}{{end}}</div>
+							<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.previous_run"}}:</strong> {{if .EnterpriseWeComCron.Prev.IsZero}}-{{else}}{{DateUtils.FullTime .EnterpriseWeComCron.Prev}}{{end}}</div>
+							<div><a href="{{AppSubUrl}}/-/admin/monitor/audit_logs?action=enterprise%3Awecom">{{ctx.Locale.Tr "admin.enterprise_wecom.audit_logs"}}</a></div>
+						</div>
+					</div>
+					<div class="column">
+						<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.single_org"}}</h4>
+						<div class="ui attached segment">
+							<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.org_count"}}:</strong> {{.SingleOrgCount}}</div>
+							{{if .SingleOrgViolation}}<div class="ui warning message">{{ctx.Locale.Tr "admin.enterprise_wecom.single_org_violation"}}</div>{{else}}<div class="ui positive message">{{ctx.Locale.Tr "admin.enterprise_wecom.single_org_ok"}}</div>{{end}}
+						</div>
+					</div>
+				</div>
+				<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.last_run"}}</h4>
+				<div class="ui attached segment">
+					{{with .LastReconcileRun}}
+						<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.run_id"}}:</strong> {{.RunID}}</div>
+						<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.status"}}:</strong> {{.Status}}</div>
+						<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.counts"}}:</strong> {{ctx.Locale.Tr "admin.enterprise_wecom.counts_value" .GeneratedMappings .GeneratedTeams .AddedMemberships .RemovedMemberships .SkippedCount .ErrorCount}}</div>
+					{{else}}
+						{{ctx.Locale.Tr "admin.enterprise_wecom.empty_runs"}}
+					{{end}}
+				</div>
+			{{end}}
+
+			{{if eq .EnterpriseWeComTab "mappings"}}
+				{{template "admin/enterprisewecom/table_mappings" .}}
+			{{end}}
+			{{if eq .EnterpriseWeComTab "teams"}}
+				{{template "admin/enterprisewecom/table_teams" .}}
+			{{end}}
+			{{if eq .EnterpriseWeComTab "runs"}}
+				{{template "admin/enterprisewecom/table_runs" .}}
+			{{end}}
+			{{if eq .EnterpriseWeComTab "authority"}}
+				<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.authority_diagnostics"}}</h4>
+				<div class="ui attached segment">
+					<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.status"}}:</strong> {{.AuthorityDiagnostics.Status}}</div>
+					<div><strong>{{ctx.Locale.Tr "admin.enterprise_wecom.protected_users"}}:</strong> {{len .AuthorityDiagnostics.ProtectedUserIDs}}</div>
+					{{range .AuthorityDiagnostics.Warnings}}
+						<div class="ui warning message">{{.Code}}: {{.Message}} ({{.Count}})</div>
+					{{end}}
+				</div>
+				{{template "admin/enterprisewecom/table_authority" .}}
+			{{end}}
+			{{if eq .EnterpriseWeComTab "repo-requests"}}
+				{{template "admin/enterprisewecom/table_org_repo_requests" .}}
+			{{end}}
+		</div>
+	</div>
+{{template "admin/layout_footer" .}}
+
+{{define "admin/enterprisewecom/table_mappings"}}
+	<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.generated_mappings"}}</h4>
+	<table class="ui attached table">
+		<thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_wecom.source"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.target"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.status"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.reason"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.members"}}</th></tr></thead>
+		<tbody>{{range .GeneratedMappings}}<tr><td>{{.SourceType}}: {{.SourceID}}</td><td>{{.TargetType}} / org {{.OrgID}} / team {{.TeamID}}</td><td>{{.Status}}</td><td>{{.SkipReason}}{{.ErrorMessage}}</td><td>{{.MemberCount}}</td></tr>{{else}}<tr><td colspan="5">{{ctx.Locale.Tr "admin.enterprise_wecom.empty_generated_mappings"}}</td></tr>{{end}}</tbody>
+	</table>
+{{end}}
+
+{{define "admin/enterprisewecom/table_teams"}}
+	<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.generated_teams"}}</h4>
+	<table class="ui attached table">
+		<thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_wecom.source"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.team"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.status"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.admin_status"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.members"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.admins"}}</th></tr></thead>
+		<tbody>{{range .GeneratedTeams}}<tr><td>{{.SourceType}}: {{.SourceID}}</td><td>{{.TeamName}} (#{{.TeamID}})</td><td>{{.Status}}</td><td>{{.AdminStatus}} {{.UnresolvedReason}}</td><td>{{.MemberCount}}</td><td>{{.AdminCount}}</td></tr>{{else}}<tr><td colspan="6">{{ctx.Locale.Tr "admin.enterprise_wecom.empty_generated_teams"}}</td></tr>{{end}}</tbody>
+	</table>
+{{end}}
+
+{{define "admin/enterprisewecom/table_runs"}}
+	<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.reconciliation_runs"}}</h4>
+	<table class="ui attached table">
+		<thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_wecom.run_id"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.trigger"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.status"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.directory"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.authority"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.counts"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.reason"}}</th></tr></thead>
+		<tbody>{{range .ReconcileRuns}}<tr><td>{{.RunID}}</td><td>{{.Trigger}}</td><td>{{.Status}}</td><td>{{.DirectorySyncStatus}}</td><td>{{.AuthorityRefreshStatus}}</td><td>{{ctx.Locale.Tr "admin.enterprise_wecom.counts_value" .GeneratedMappings .GeneratedTeams .AddedMemberships .RemovedMemberships .SkippedCount .ErrorCount}}</td><td>{{.ErrorMessage}}</td></tr>{{else}}<tr><td colspan="7">{{ctx.Locale.Tr "admin.enterprise_wecom.empty_runs"}}</td></tr>{{end}}</tbody>
+	</table>
+{{end}}
+
+{{define "admin/enterprisewecom/table_authority"}}
+	<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.authority_snapshot"}}</h4>
+	<table class="ui attached table">
+		<thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_wecom.wecom_user"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.auth_type"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.management"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.active"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.refresh"}}</th></tr></thead>
+		<tbody>{{range .AdminAuthorities}}<tr><td>{{.WeComUserID}}</td><td>{{.AuthType}}</td><td>{{.IsManagement}}</td><td>{{.IsActive}}</td><td>{{.RefreshTrigger}} / {{.LastRefreshUnix}}</td></tr>{{else}}<tr><td colspan="5">{{ctx.Locale.Tr "admin.enterprise_wecom.empty_authority"}}</td></tr>{{end}}</tbody>
+	</table>
+{{end}}
+
+{{define "admin/enterprisewecom/table_org_repo_requests"}}
+	<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_wecom.org_repo_requests"}}</h4>
+	<table class="ui attached table">
+		<thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_wecom.repository"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.requester"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.status"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.reason"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_wecom.actions"}}</th></tr></thead>
+		<tbody>
+			{{range .OrgRepoRequests}}
+				<tr>
+					<td>{{.Name}} (#{{.RepoID}})</td>
+					<td>{{.RequesterID}}</td>
+					<td>{{.Status}}</td>
+					<td>{{.Reason}}{{.DecisionReason}}</td>
+					<td>
+						{{if and $.EnterpriseWeComSuperAdmin (eq .Status "pending")}}
+							<form class="ui form tw-inline-block" method="post" action="{{AppSubUrl}}/-/admin/enterprise/wecom/org-repo-requests/{{.ID}}/approve">
+								<button class="ui primary tiny button" type="submit">{{ctx.Locale.Tr "admin.enterprise_wecom.approve"}}</button>
+							</form>
+							<form class="ui form tw-inline-block" method="post" action="{{AppSubUrl}}/-/admin/enterprise/wecom/org-repo-requests/{{.ID}}/reject">
+								<button class="ui tiny button" type="submit">{{ctx.Locale.Tr "admin.enterprise_wecom.reject"}}</button>
+							</form>
+						{{else}}
+							{{ctx.Locale.Tr "admin.enterprise_wecom.read_only"}}
+						{{end}}
+					</td>
+				</tr>
+			{{else}}
+				<tr><td colspan="5">{{ctx.Locale.Tr "admin.enterprise_wecom.empty_org_repo_requests"}}</td></tr>
+			{{end}}
+		</tbody>
+	</table>
+{{end}}

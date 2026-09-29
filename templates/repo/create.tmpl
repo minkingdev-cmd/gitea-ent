@@ -46,7 +46,11 @@
 				<div class="inline field">
 					<label>{{ctx.Locale.Tr "repo.visibility"}}</label>
 					<div class="ui checkbox">
-						{{if .IsForcedPrivate}}
+						{{if .EnterpriseWeComRepoGovernance}}
+							<input name="private" type="hidden" value="true">
+							<input name="private" type="checkbox" checked disabled>
+							<label>{{ctx.Locale.Tr "repo.enterprise_wecom.visibility_private"}}</label>
+						{{else if .IsForcedPrivate}}
 							<input name="private" type="checkbox" checked disabled>
 							<label>{{ctx.Locale.Tr "repo.visibility_helper_forced"}}</label>
 						{{else}}
@@ -60,6 +64,13 @@
 					<label for="description">{{ctx.Locale.Tr "repo.repo_desc"}}</label>
 					<textarea id="description" rows="2" name="description" placeholder="{{ctx.Locale.Tr "repo.repo_desc_helper"}}" maxlength="2048">{{.description}}</textarea>
 				</div>
+				{{if .EnterpriseWeComRepoGovernance}}
+					<div class="inline field">
+						<label for="org_repo_request_reason">{{ctx.Locale.Tr "repo.enterprise_wecom.org_repo_request_reason"}}</label>
+						<textarea id="org_repo_request_reason" rows="2" name="org_repo_request_reason" maxlength="2048">{{.org_repo_request_reason}}</textarea>
+						<span class="help">{{ctx.Locale.Tr "repo.enterprise_wecom.org_repo_request_reason_helper"}}</span>
+					</div>
+				{{end}}
 				<div class="inline field">
 					<label>{{ctx.Locale.Tr "repo.template"}}</label>
 					<div id="repo_template_search" class="ui search selection dropdown">

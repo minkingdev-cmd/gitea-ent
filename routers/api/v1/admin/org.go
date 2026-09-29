@@ -47,6 +47,15 @@ func CreateOrg(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 
 	form := web.GetForm[*api.CreateOrgOption](ctx)
+	if err := organization.CheckCreateOrganizationAllowed(ctx, ctx.Doer); err != nil {
+		if organization.IsErrUserNotAllowedCreateOrg(err) || organization.IsErrSingleOrganizationOnly(err) {
+			recordEnterpriseWeComOrganizationCreateDeny(ctx, err)
+			ctx.APIError(http.StatusForbidden, err.Error())
+			return
+		}
+		ctx.APIErrorInternal(err)
+		return
+	}
 
 	visibility := api.VisibleTypePublic
 	if form.Visibility != "" {
@@ -64,12 +73,15 @@ func CreateOrg(ctx *context.APIContext) {
 		Visibility:  visibility,
 	}
 
-	if err := organization.CreateOrganization(ctx, org, ctx.ContextUser); err != nil {
+	if err := organization.CreateOrganizationForOwner(ctx, org, ctx.ContextUser, ctx.Doer); err != nil {
 		if user_model.IsErrUserAlreadyExist(err) ||
 			db.IsErrNameReserved(err) ||
 			db.IsErrNameCharsNotAllowed(err) ||
 			db.IsErrNamePatternNotAllowed(err) {
 			ctx.APIError(http.StatusUnprocessableEntity, err.Error())
+		} else if organization.IsErrUserNotAllowedCreateOrg(err) || organization.IsErrSingleOrganizationOnly(err) {
+			recordEnterpriseWeComOrganizationCreateDeny(ctx, err)
+			ctx.APIError(http.StatusForbidden, err.Error())
 		} else {
 			ctx.APIErrorInternal(err)
 		}
@@ -79,6 +91,17 @@ func CreateOrg(ctx *context.APIContext) {
 	audit.Record(ctx, audit_model.OrganizationCreate, org.AsUser())
 
 	ctx.JSON(http.StatusCreated, convert.ToOrganization(ctx, org))
+}
+
+func recordEnterpriseWeComOrganizationCreateDeny(ctx *context.APIContext, err error) {
+	reason := "organization_creation_not_allowed"
+	if organization.IsErrSingleOrganizationOnly(err) {
+		reason = "single_organization_policy"
+	}
+	audit.Record(ctx, audit_model.EnterpriseWeComOrganizationCreateDeny, nil,
+		"outcome", "denied",
+		"reason", reason,
+	)
 }
 
 // GetAllOrgs API for getting information of all the organizations

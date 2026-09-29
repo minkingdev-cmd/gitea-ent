@@ -162,7 +162,8 @@ func registerSyncRepoLicenses() {
 
 func registerEnterpriseWeComDirectorySync() {
 	RegisterTaskFatal("sync_enterprise_wecom_directory", enterpriseWeComDirectorySyncConfig(), func(ctx context.Context, _ *user_model.User, _ *BaseConfig) error {
-		return enterprisewecom_service.SyncDirectory(ctx, enterprisewecom_service.NewClientFromSettings())
+		_, err := enterprisewecom_service.RunScheduledAutomation(ctx, enterprisewecom_service.NewClientFromSettings())
+		return err
 	})
 }
 

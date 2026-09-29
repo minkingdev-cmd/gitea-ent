@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/perm"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
@@ -73,6 +74,23 @@ func (err ErrUserNotAllowedCreateOrg) Unwrap() error {
 	return util.ErrPermissionDenied
 }
 
+type ErrSingleOrganizationOnly struct {
+	ExistingCount int64
+}
+
+func IsErrSingleOrganizationOnly(err error) bool {
+	_, ok := err.(ErrSingleOrganizationOnly)
+	return ok
+}
+
+func (err ErrSingleOrganizationOnly) Error() string {
+	return fmt.Sprintf("organization creation policy already has %d organization(s)", err.ExistingCount)
+}
+
+func (err ErrSingleOrganizationOnly) Unwrap() error {
+	return util.ErrPermissionDenied
+}
+
 // Organization represents an organization
 type Organization user_model.User
 
@@ -99,6 +117,10 @@ func (org *Organization) IsOrgMember(ctx context.Context, uid int64) (bool, erro
 // CanCreateOrgRepo returns true if given user can create repo in organization
 func (org *Organization) CanCreateOrgRepo(ctx context.Context, uid int64) (bool, error) {
 	return CanCreateOrgRepo(ctx, org.ID, uid)
+}
+
+func CountOrganizations(ctx context.Context) (int64, error) {
+	return db.GetEngine(ctx).Where("type = ?", user_model.UserTypeOrganization).Count(new(user_model.User))
 }
 
 // GetTeam returns named team of organization.
@@ -303,8 +325,15 @@ func (org *Organization) AnyRepoUnitPermission(ctx context.Context, doer *user_m
 
 // CreateOrganization creates record of a new organization.
 func CreateOrganization(ctx context.Context, org *Organization, owner *user_model.User) (err error) {
-	if !owner.CanCreateOrganization() {
+	return CreateOrganizationForOwner(ctx, org, owner, owner)
+}
+
+func CreateOrganizationForOwner(ctx context.Context, org *Organization, owner, actor *user_model.User) (err error) {
+	if owner == nil {
 		return ErrUserNotAllowedCreateOrg{}
+	}
+	if err := CheckCreateOrganizationAllowed(ctx, actor); err != nil {
+		return err
 	}
 
 	if err = user_model.IsUsableUsername(org.Name); err != nil {
@@ -395,6 +424,26 @@ func CreateOrganization(ctx context.Context, org *Organization, owner *user_mode
 		}
 		return nil
 	})
+}
+
+func CheckCreateOrganizationAllowed(ctx context.Context, actor *user_model.User) error {
+	if actor == nil {
+		return ErrUserNotAllowedCreateOrg{}
+	}
+	if !setting.EnterpriseWeCom.Enabled {
+		if !actor.CanCreateOrganization() {
+			return ErrUserNotAllowedCreateOrg{}
+		}
+		return nil
+	}
+	ok, err := wecom_model.IsActiveManagementAuthorityBoundUser(ctx, setting.EnterpriseWeCom.CorpID, setting.EnterpriseWeCom.AgentID, actor.ID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrUserNotAllowedCreateOrg{}
+	}
+	return nil
 }
 
 // GetOrgByName returns organization by given name.

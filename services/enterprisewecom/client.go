@@ -4,6 +4,7 @@
 package enterprisewecom
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,9 +20,10 @@ import (
 )
 
 var (
-	ErrWeComDenied      = errors.New("wecom login denied")
-	ErrWeComDisabled    = errors.New("enterprise wecom is disabled")
-	ErrWeComUnavailable = errors.New("wecom service unavailable")
+	ErrWeComDenied               = errors.New("wecom login denied")
+	ErrWeComDisabled             = errors.New("enterprise wecom is disabled")
+	ErrWeComUnavailable          = errors.New("wecom service unavailable")
+	ErrWeComAuthorityUnsupported = errors.New("wecom administrator authority source is unsupported")
 )
 
 type APIError struct {
@@ -49,12 +51,14 @@ func (e *APIError) Unwrap() error {
 }
 
 type Config struct {
-	CorpID      string
-	CorpSecret  string
-	AgentID     string
-	APIBaseURL  string
-	HTTPTimeout time.Duration
-	HTTPClient  *http.Client
+	CorpID            string
+	CorpSecret        string
+	AgentID           string
+	SuiteAccessToken  string
+	SuperAdminTagName string
+	APIBaseURL        string
+	HTTPTimeout       time.Duration
+	HTTPClient        *http.Client
 }
 
 type Client struct {
@@ -74,6 +78,12 @@ type Member struct {
 	Email    string
 }
 
+type AppAdminInfo struct {
+	UserID     string
+	OpenUserID string
+	AuthType   int
+}
+
 func NewClient(cfg Config) *Client {
 	cfg.APIBaseURL = strings.TrimRight(cfg.APIBaseURL, "/")
 	if cfg.APIBaseURL == "" {
@@ -91,11 +101,12 @@ func NewClient(cfg Config) *Client {
 func NewClientFromSettings() *Client {
 	cfg := setting.EnterpriseWeCom
 	return NewClient(Config{
-		CorpID:      cfg.CorpID,
-		CorpSecret:  cfg.CorpSecret,
-		AgentID:     cfg.AgentID,
-		APIBaseURL:  cfg.APIBaseURL,
-		HTTPTimeout: cfg.HTTPTimeout,
+		CorpID:            cfg.CorpID,
+		CorpSecret:        cfg.CorpSecret,
+		AgentID:           cfg.AgentID,
+		SuperAdminTagName: cfg.SuperAdminTagName,
+		APIBaseURL:        cfg.APIBaseURL,
+		HTTPTimeout:       cfg.HTTPTimeout,
 	})
 }
 
@@ -217,6 +228,106 @@ func (c *Client) getJSON(ctx context.Context, operation, path string, values url
 	return nil
 }
 
+func (c *Client) postJSON(ctx context.Context, operation, path string, values url.Values, body, out any) error {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("%w: %s request is invalid", ErrWeComUnavailable, operation)
+	}
+	endpoint := c.cfg.APIBaseURL + path + "?" + values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("%w: %s request is invalid", ErrWeComUnavailable, operation)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.cfg.HTTPClient.Do(req)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return context.Canceled
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("%w: %s timed out", ErrWeComUnavailable, operation)
+		}
+		return fmt.Errorf("%w: %s request failed", ErrWeComUnavailable, operation)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return &APIError{Operation: operation, StatusCode: resp.StatusCode}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("%w: %s response is invalid", ErrWeComUnavailable, operation)
+	}
+	return nil
+}
+
+func (c *Client) ListAppAdmins(ctx context.Context) ([]AppAdminInfo, error) {
+	if c.cfg.SuiteAccessToken == "" {
+		return c.listTaggedManagementAdmins(ctx)
+	}
+	agentID := any(c.cfg.AgentID)
+	if parsedAgentID, err := strconv.ParseInt(c.cfg.AgentID, 10, 64); err == nil {
+		agentID = parsedAgentID
+	}
+	values := url.Values{}
+	values.Set("suite_access_token", c.cfg.SuiteAccessToken)
+	var resp struct {
+		weComError
+		Admins []struct {
+			UserID     string `json:"userid"`
+			OpenUserID string `json:"open_userid"`
+			AuthType   int    `json:"auth_type"`
+		} `json:"admin"`
+	}
+	if err := c.postJSON(ctx, "list app administrators", "/cgi-bin/service/get_admin_list", values, map[string]any{
+		"auth_corpid": c.cfg.CorpID,
+		"agentid":     agentID,
+	}, &resp); err != nil {
+		return nil, err
+	}
+	if err := resp.Err("list app administrators"); err != nil {
+		return nil, err
+	}
+	admins := make([]AppAdminInfo, 0, len(resp.Admins))
+	for _, admin := range resp.Admins {
+		admins = append(admins, AppAdminInfo{UserID: admin.UserID, OpenUserID: admin.OpenUserID, AuthType: admin.AuthType})
+	}
+	return admins, nil
+}
+
+func (c *Client) listTaggedManagementAdmins(ctx context.Context) ([]AppAdminInfo, error) {
+	tagName := strings.TrimSpace(c.cfg.SuperAdminTagName)
+	if tagName == "" {
+		return nil, ErrWeComAuthorityUnsupported
+	}
+	tags, err := c.ListTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, tag := range tags {
+		if strings.TrimSpace(tag.Name) != tagName {
+			continue
+		}
+		userIDs, err := c.ListTagMembers(ctx, tag.ID)
+		if err != nil {
+			return nil, err
+		}
+		admins := make([]AppAdminInfo, 0, len(userIDs))
+		seen := map[string]struct{}{}
+		for _, userID := range userIDs {
+			userID = strings.TrimSpace(userID)
+			if userID == "" {
+				continue
+			}
+			if _, ok := seen[userID]; ok {
+				continue
+			}
+			seen[userID] = struct{}{}
+			admins = append(admins, AppAdminInfo{UserID: userID, AuthType: 1})
+		}
+		return admins, nil
+	}
+	return []AppAdminInfo{}, nil
+}
+
 func (c *Client) ListDepartments(ctx context.Context) ([]DepartmentInfo, error) {
 	token, err := c.GetAccessToken(ctx)
 	if err != nil {
@@ -227,10 +338,11 @@ func (c *Client) ListDepartments(ctx context.Context) ([]DepartmentInfo, error) 
 	var resp struct {
 		weComError
 		Departments []struct {
-			ID       int64  `json:"id"`
-			ParentID int64  `json:"parentid"`
-			Name     string `json:"name"`
-			Order    int64  `json:"order"`
+			ID            int64    `json:"id"`
+			ParentID      int64    `json:"parentid"`
+			Name          string   `json:"name"`
+			Order         int64    `json:"order"`
+			LeaderUserIDs []string `json:"department_leader"`
 		} `json:"department"`
 	}
 	if err := c.getJSON(ctx, "list departments", "/cgi-bin/department/list", values, &resp); err != nil {
@@ -242,13 +354,47 @@ func (c *Client) ListDepartments(ctx context.Context) ([]DepartmentInfo, error) 
 	departments := make([]DepartmentInfo, 0, len(resp.Departments))
 	for _, dept := range resp.Departments {
 		departments = append(departments, DepartmentInfo{
-			ID:       dept.ID,
-			ParentID: dept.ParentID,
-			Name:     dept.Name,
-			Order:    dept.Order,
+			ID:            dept.ID,
+			ParentID:      dept.ParentID,
+			Name:          dept.Name,
+			Order:         dept.Order,
+			LeaderUserIDs: dept.LeaderUserIDs,
 		})
 	}
 	return departments, nil
+}
+
+func (c *Client) GetDepartment(ctx context.Context, departmentID int64) (*DepartmentInfo, error) {
+	token, err := c.GetAccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	values := url.Values{}
+	values.Set("access_token", token.AccessToken)
+	values.Set("id", strconv.FormatInt(departmentID, 10))
+	var resp struct {
+		weComError
+		Department struct {
+			ID            int64    `json:"id"`
+			ParentID      int64    `json:"parentid"`
+			Name          string   `json:"name"`
+			Order         int64    `json:"order"`
+			LeaderUserIDs []string `json:"department_leader"`
+		} `json:"department"`
+	}
+	if err := c.getJSON(ctx, "get department", "/cgi-bin/department/get", values, &resp); err != nil {
+		return nil, err
+	}
+	if err := resp.Err("get department"); err != nil {
+		return nil, err
+	}
+	return &DepartmentInfo{
+		ID:            resp.Department.ID,
+		ParentID:      resp.Department.ParentID,
+		Name:          resp.Department.Name,
+		Order:         resp.Department.Order,
+		LeaderUserIDs: resp.Department.LeaderUserIDs,
+	}, nil
 }
 
 func (c *Client) ListMembers(ctx context.Context, departmentID int64) ([]MemberInfo, error) {
@@ -263,9 +409,11 @@ func (c *Client) ListMembers(ctx context.Context, departmentID int64) ([]MemberI
 	var resp struct {
 		weComError
 		Users []struct {
-			UserID string `json:"userid"`
-			Name   string `json:"name"`
-			Email  string `json:"email"`
+			UserID         string  `json:"userid"`
+			Name           string  `json:"name"`
+			Email          string  `json:"email"`
+			DepartmentIDs  []int64 `json:"department"`
+			IsLeaderInDept []int   `json:"is_leader_in_dept"`
 		} `json:"userlist"`
 	}
 	if err := c.getJSON(ctx, "list department members", "/cgi-bin/user/list", values, &resp); err != nil {
@@ -276,9 +424,25 @@ func (c *Client) ListMembers(ctx context.Context, departmentID int64) ([]MemberI
 	}
 	members := make([]MemberInfo, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		members = append(members, MemberInfo{UserID: user.UserID, Name: user.Name, Email: user.Email})
+		members = append(members, MemberInfo{
+			UserID:                user.UserID,
+			Name:                  user.Name,
+			Email:                 user.Email,
+			DepartmentIDs:         user.DepartmentIDs,
+			LeaderInDepartmentIDs: leaderDepartmentIDs(user.DepartmentIDs, user.IsLeaderInDept),
+		})
 	}
 	return members, nil
+}
+
+func leaderDepartmentIDs(departmentIDs []int64, isLeaderInDept []int) []int64 {
+	leaders := make([]int64, 0)
+	for idx, departmentID := range departmentIDs {
+		if idx < len(isLeaderInDept) && isLeaderInDept[idx] == 1 {
+			leaders = append(leaders, departmentID)
+		}
+	}
+	return leaders
 }
 
 func (c *Client) ListTags(ctx context.Context) ([]TagInfo, error) {

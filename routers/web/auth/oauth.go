@@ -53,7 +53,7 @@ func rejectDisallowedOAuth2Source(ctx *context.Context, authSource *auth.Source)
 
 func handleWeComOAuthLoginError(ctx *context.Context, err error) {
 	if errors.Is(err, wecom_service.ErrWeComDenied) {
-		log.Info("Denied Enterprise WeCom login from %s [reason=login_denied]", ctx.RemoteAddr())
+		log.Info("Denied Enterprise WeCom login from %s [reason=login_denied, detail=%v]", ctx.RemoteAddr(), err)
 		ctx.HTTPError(http.StatusForbidden)
 		return
 	}

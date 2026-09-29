@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gitea 企业微信自动同步状态原型</title>
+  <style>
+    :root {
+      --body-bg: #f5f5f5; --text: #1f2328; --muted: #6a737d; --border: #d8dee4;
+      --border-light: #eaeef2; --panel: #fff; --menu: #f6f8fa; --primary: #2185d0;
+      --green: #21ba45; --orange: #f2711c; --red: #db2828; --purple: #6435c9; --radius: 4px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--text); background: var(--body-bg); font-size: 14px; }
+    code { background: #f6f8fa; border: 1px solid var(--border-light); border-radius: 3px; padding: 1px 4px; }
+    .topbar { height: 52px; background: #24292f; color: #fff; display: flex; align-items: center; gap: 18px; padding: 0 18px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+    .logo { width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #24292f; display: grid; place-items: center; font-weight: 800; }
+    .topbar .muted { color: #c9d1d9; font-size: 12px; }
+    .page-content { padding: 16px; }
+    .flex-container { display: flex; align-items: flex-start; gap: 16px; width: 100%; }
+    .flex-container-nav { width: 260px; flex: 0 0 260px; }
+    .flex-container-main { min-width: 0; flex: 1; }
+    .vertical.menu { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .header.item { padding: 12px 14px; font-weight: 600; color: var(--muted); background: var(--menu); border-bottom: 1px solid var(--border); }
+    details.item { border-bottom: 1px solid var(--border-light); }
+    summary { list-style: none; padding: 10px 14px; font-weight: 600; }
+    summary::-webkit-details-marker { display: none; }
+    .menu .item { display: block; padding: 9px 22px; color: #57606a; text-decoration: none; }
+    .menu .item.active { color: var(--text); background: #eaf5ff; box-shadow: inset 3px 0 0 var(--primary); }
+    .menu .item.disabled { color: #9aa4af; background: #fafafa; }
+    .admin-setting-content { max-width: 1240px; }
+    .top.attached.header { display: flex; justify-content: space-between; align-items: center; margin: 0; padding: 12px 14px; background: var(--menu); border: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; font-size: 16px; font-weight: 600; }
+    .attached.segment, .attached.table.segment { background: var(--panel); border: 1px solid var(--border); border-top: 0; padding: 14px; }
+    .attached.table.segment { padding: 0; overflow-x: auto; }
+    .bottom.attached.segment { border-radius: 0 0 var(--radius) var(--radius); }
+    .message { border: 1px solid var(--border); background: var(--panel); border-left: 4px solid var(--primary); padding: 12px 14px; margin: 0 0 14px; border-radius: var(--radius); }
+    .message.warning { border-left-color: var(--orange); background: #fff8f0; }
+    .message.negative { border-left-color: var(--red); background: #fff5f5; }
+    .message.positive { border-left-color: var(--green); background: #f3fff5; }
+    .message strong { display: block; margin-bottom: 3px; }
+    .role-switch, .tabs, .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .role-switch { margin-bottom: 14px; }
+    button { border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: var(--radius); padding: 7px 10px; cursor: pointer; font: inherit; }
+    button.active { background: #eaf5ff; border-color: #85c1e9; color: #075985; }
+    .tabs { margin-bottom: 12px; }
+    .tab { display: none; } .tab.active { display: block; }
+    .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; background: #fafbfc; }
+    tr:last-child td { border-bottom: 0; }
+    .label { display: inline-flex; padding: 2px 6px; border: 1px solid var(--border); border-radius: 999px; background: #f6f8fa; color: #57606a; font-size: 12px; white-space: nowrap; }
+    .label.blue { color: #0969da; border-color: #b6d7ff; background: #eef6ff; }
+    .label.green { color: #1a7f37; border-color: #b7e4c7; background: #effff3; }
+    .label.orange { color: #9a6700; border-color: #f4d099; background: #fff8c5; }
+    .label.red { color: #cf222e; border-color: #ffb8b8; background: #fff1f1; }
+    .label.purple { color: #8250df; border-color: #d8c7ff; background: #f5f0ff; }
+    .muted { color: var(--muted); } .small { font-size: 12px; }
+    .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .stat { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: #fff; }
+    .stat b { display: block; font-size: 24px; margin-bottom: 4px; }
+    .view-note { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 980px) { .flex-container { display: block; } .flex-container-nav { width: auto; margin-bottom: 12px; } .two-col, .three-col, .stat-row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="logo">G</span><span>Gitea</span></div>
+    <span class="muted">Site Administration / Enterprise WeCom automation</span>
+  </div>
+
+  <main class="page-content admin enterprise-wecom">
+    <div class="flex-container">
+      <div class="flex-container-nav">
+        <div class="vertical menu">
+          <div class="header item">Site administration</div>
+          <details class="item" open><summary>Maintenance</summary><div class="menu"><a class="item" href="#">Dashboard</a><a class="item" href="#">Self check</a></div></details>
+          <details class="item" open><summary>Identity &amp; access</summary><div class="menu"><a class="item" href="#">Authentication sources</a><a class="item active" data-admin-only="true" href="#">Enterprise WeCom</a><a class="item" href="#">Organizations</a><a class="item" href="#">Users</a><a class="item" href="#">Emails</a></div></details>
+          <details class="item" open><summary>Assets</summary><div class="menu"><a class="item" href="#">Repositories</a><a class="item" href="#">Packages</a></div></details>
+          <details class="item" open><summary>Monitor</summary><div class="menu"><a class="item" href="#">Audit logs</a><a class="item" href="#">Cron tasks</a></div></details>
+        </div>
+      </div>
+
+      <div class="flex-container-main">
+        <div class="role-switch">
+          <button class="active" data-role="site-admin">普通站点管理员视角</button>
+          <button data-role="wecom-admin">企微管理权限用户视角</button>
+          <button data-role="non-admin">普通成员/非管理员视角</button>
+          <button data-role="system">系统任务/API-only 视角</button>
+        </div>
+        <div id="role-message" class="message positive"><strong>当前视角：普通站点管理员</strong>可以查看自动同步状态、生成映射和审计；没有手动维护 mapping 的入口。</div>
+
+        <div class="tabs">
+          <button class="active" data-tab="overview">自动同步总览</button>
+          <button data-tab="generated">生成映射</button>
+          <button data-tab="generated-teams">生成团队</button>
+          <button data-tab="runs">同步运行记录</button>
+          <button data-tab="authority">企微权限快照</button>
+          <button data-tab="protected-user">受保护用户</button>
+          <button data-tab="repo-governance">仓库治理</button>
+          <button data-tab="visibility">权限可见性</button>
+        </div>
+
+        <section id="overview" class="tab active">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Enterprise WeCom automation status <span class="small muted">Read-only</span></h4>
+            <div class="attached segment">
+              <div class="message positive"><strong>自动化策略</strong>企微通讯录按 cron 定时同步；系统自动生成映射、团队、成员关系和团队管理员并自动 apply。管理员不创建、不编辑、不禁用单条 mapping，也不本地维护企微托管团队。</div>
+              <div class="three-col">
+                <div class="message"><strong>Schedule</strong><code>@every 10m</code><br><span class="small muted">Next run: 2026-09-29 16:30</span></div>
+                <div class="message positive"><strong>Last run</strong>success · 2026-09-29 16:20<br><span class="small muted">trigger=cron</span></div>
+                <div class="message warning"><strong>Attention</strong>2 generated targets skipped<br><span class="small muted">missing Gitea team</span></div>
+              </div>
+            </div>
+            <div class="attached segment bottom attached segment">
+              <div class="stat-row">
+                <div class="stat"><b>24</b><span class="muted">generated mappings</span></div>
+                <div class="stat"><b>18</b><span class="muted">generated teams</span></div>
+                <div class="stat"><b>6</b><span class="muted">WeCom-derived team admins</span></div>
+                <div class="stat"><b>38</b><span class="muted">added memberships</span></div>
+                <div class="stat"><b>7</b><span class="muted">removed stale</span></div>
+                <div class="stat"><b>4</b><span class="muted">skipped/unresolved</span></div>
+                <div class="stat"><b>1</b><span class="muted">protected</span></div>
+              </div>
+              <p class="view-note">生产界面应链接到 Gitea 现有 Cron tasks 和 Audit logs；不提供“Run now / Apply now”作为日常维护入口。</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="generated" class="tab">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Generated authorization mappings <span class="small muted">Read-only generated state</span></h4>
+            <div class="attached table segment bottom attached segment">
+              <table>
+                <thead><tr><th>Source</th><th>Derivation rule</th><th>Generated target</th><th>Status</th><th>Last run</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="label blue">department</span> 研发中心 / 后端组</td><td>department path → org/team slug</td><td>engineering / backend</td><td><span class="label green">applied</span></td><td>2026-09-29 16:20</td></tr>
+                  <tr><td><span class="label blue">tag</span> code-reviewers</td><td>tag key → capability team</td><td>platform / reviewers</td><td><span class="label green">applied</span></td><td>2026-09-29 16:20</td></tr>
+                  <tr><td><span class="label blue">department</span> 临时项目组</td><td>department path → org/team slug</td><td>project-lab / temporary</td><td><span class="label orange">skipped: missing team</span></td><td>2026-09-29 16:20</td></tr>
+                  <tr><td><span class="label blue">management admin</span> zhang.super</td><td>WeCom auth_type=1 → protected site admin</td><td>user: zhangsan</td><td><span class="label purple">protected</span></td><td>2026-09-29 16:20</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="generated-teams" class="tab">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Generated teams and team administrators <span class="small muted">Read-only WeCom projection</span></h4>
+            <div class="attached segment">
+              <div class="message"><strong>团队来源</strong>部门生成组织团队，标签生成能力团队；成员和团队管理员均来自企微 API 快照。Gitea 不提供本地团队管理员补录入口。</div>
+            </div>
+            <div class="attached table segment">
+              <table>
+                <thead><tr><th>WeCom source</th><th>Generated Gitea team</th><th>Members</th><th>Team administrators from API</th><th>Status</th><th>Last run</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="label blue">department</span> 研发中心 / 后端组</td><td>engineering / backend</td><td>14 active bound users</td><td><code>department_leader</code>: zhang.super<br><code>is_leader_in_dept</code>: li.ops</td><td><span class="label green">applied</span></td><td>2026-09-29 16:20</td></tr>
+                  <tr><td><span class="label blue">department</span> 研发中心 / QA</td><td>engineering / qa</td><td>7 active bound users</td><td><code>is_leader_in_dept</code>: wang.qa</td><td><span class="label green">applied</span></td><td>2026-09-29 16:20</td></tr>
+                  <tr><td><span class="label blue">tag</span> code-reviewers</td><td>engineering / reviewers</td><td>23 tag users + 2 tag departments</td><td><span class="muted">no administrator signal in tag snapshot</span></td><td><span class="label orange">unresolved admin source</span></td><td>2026-09-29 16:20</td></tr>
+                  <tr><td><span class="label blue">department</span> 临时项目组</td><td>engineering / project-lab</td><td>5 active bound users</td><td><span class="muted">not applied because target policy is unresolved</span></td><td><span class="label orange">skipped: policy target</span></td><td>2026-09-29 16:20</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="attached segment bottom attached segment">
+              <div class="message warning"><strong>本地维护限制</strong>对企微托管团队，本地 Web/API 的创建、删除、重命名、成员编辑、团队管理员编辑都会被拒绝；只有内部定时同步 actor 可以写入这些状态。</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="runs" class="tab">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Scheduled reconciliation runs</h4>
+            <div class="attached table segment bottom attached segment">
+              <table>
+                <thead><tr><th>Run</th><th>Trigger</th><th>Outcome</th><th>Generated</th><th>Added</th><th>Removed</th><th>Skipped/protected</th><th>Audit</th></tr></thead>
+                <tbody>
+                  <tr><td>sync-20260929-1620</td><td>cron</td><td><span class="label green">success</span></td><td>24</td><td>38</td><td>7</td><td>4 / 1</td><td><a href="#">audit log</a></td></tr>
+                  <tr><td>sync-20260929-1610</td><td>cron</td><td><span class="label green">success</span></td><td>24</td><td>0</td><td>0</td><td>4 / 1</td><td><a href="#">audit log</a></td></tr>
+                  <tr><td>sync-20260929-1600</td><td>cron</td><td><span class="label red">failed</span></td><td>not applied</td><td>0</td><td>0</td><td>0 / 0</td><td><a href="#">audit log</a></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="authority" class="tab">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Enterprise WeCom authority snapshot <span class="small muted">Refreshed by callback/schedule</span></h4>
+            <div class="attached segment">
+              <div class="message"><strong>Authority source</strong><code>change_app_admin</code> marks stale; scheduled/callback refresh calls admin-list API. Callback payload alone is not trusted.</div>
+            </div>
+            <div class="attached table segment bottom attached segment">
+              <table>
+                <thead><tr><th>WeCom userid</th><th>auth_type</th><th>Bound Gitea user</th><th>Local effect</th><th>Updated</th></tr></thead>
+                <tbody>
+                  <tr><td>zhang.super</td><td><span class="label green">1 management</span></td><td>zhangsan</td><td><span class="label purple">protected + site admin</span></td><td>16:20</td></tr>
+                  <tr><td>li.ops</td><td><span class="label green">1 management</span></td><td>liops</td><td><span class="label purple">protected + site admin</span></td><td>16:20</td></tr>
+                  <tr><td>bot.notice</td><td><span class="label orange">0 message</span></td><td>not bound</td><td><span class="label">no root grant</span></td><td>16:20</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="protected-user" class="tab">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Admin user page protection example</h4>
+            <div class="attached segment bottom attached segment">
+              <div class="message warning"><strong>普通 site admin 查看受保护用户 zhangsan</strong>编辑认证源、禁用登录、降权、删除、purge、impersonate、重置 2FA、删除 key/token、移出组织等按钮隐藏或 disabled；提交伪造请求仍由后端 403。</div>
+              <table><tbody>
+                <tr><th>User name</th><td>zhangsan</td><th>Site admin</th><td><span class="label purple">managed by WeCom authority</span></td></tr>
+                <tr><th>Auth source</th><td>Enterprise WeCom</td><th>Protected actions</th><td><span class="label red">blocked for other admins</span></td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </section>
+
+
+        <section id="repo-governance" class="tab">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Repository governance <span class="small muted">single organization · approval · private by default</span></h4>
+            <div class="attached segment">
+              <div class="three-col">
+                <div class="message positive"><strong>Single organization</strong><code>engineering</code><br><span class="small muted">Additional organization creation is blocked.</span></div>
+                <div class="message"><strong>Personal repositories</strong>Private only · max 10 per user<br><span class="small muted">No approval under quota.</span></div>
+                <div class="message warning"><strong>Org repositories</strong>Request required<br><span class="small muted">Only WeCom super admin approves.</span></div>
+              </div>
+            </div>
+            <div class="attached table segment">
+              <table>
+                <thead><tr><th>Org repo request</th><th>Requester</th><th>Status</th><th>Approver visibility</th><th>Result</th></tr></thead>
+                <tbody>
+                  <tr><td>engineering/payments-api</td><td>alice</td><td><span class="label orange">pending</span></td><td><span class="label purple">super admin only</span></td><td>not created yet</td></tr>
+                  <tr><td>engineering/mobile-sdk</td><td>bob</td><td><span class="label green">approved</span></td><td><span class="label purple">super admin</span></td><td>Private repo created · creator=bob</td></tr>
+                  <tr><td>engineering/tmp-public-demo</td><td>carol</td><td><span class="label red">rejected</span></td><td><span class="label purple">super admin</span></td><td>no repository</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="attached table segment">
+              <table>
+                <thead><tr><th>Personal repo creation</th><th>Rule</th><th>Example</th><th>Outcome</th></tr></thead>
+                <tbody>
+                  <tr><td>alice/private-notes</td><td>own namespace + Private + count 4/10</td><td>ordinary member</td><td><span class="label green">allowed without approval</span></td></tr>
+                  <tr><td>alice/repo-11</td><td>own namespace + Private + count 10/10</td><td>ordinary member</td><td><span class="label red">blocked by quota</span></td></tr>
+                  <tr><td>bob/public-demo</td><td>non-private visibility</td><td>ordinary member</td><td><span class="label red">rejected / normalized to Private</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="attached table segment bottom attached segment">
+              <table>
+                <thead><tr><th>Repository authorization change</th><th>Actor</th><th>Reason</th><th>Outcome</th></tr></thead>
+                <tbody>
+                  <tr><td>Add collaborator dave to mobile-sdk</td><td>bob</td><td>recorded repository creator</td><td><span class="label green">allowed</span></td></tr>
+                  <tr><td>Add team qa to payments-api</td><td>owner-team member</td><td>owner-level repo permission</td><td><span class="label green">allowed</span></td></tr>
+                  <tr><td>Grant admin to eve</td><td>ordinary site admin</td><td>not creator, not owner-level, not super admin</td><td><span class="label red">403</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="visibility" class="tab">
+          <div class="admin-setting-content">
+            <h4 class="top attached header">Permission visibility matrix</h4>
+            <div class="attached table segment bottom attached segment">
+              <table>
+                <thead><tr><th>Entry / action</th><th>Ordinary member / non-admin</th><th>Ordinary site admin</th><th>WeCom protected management admin</th><th>System job / API-only</th></tr></thead>
+                <tbody>
+                  <tr><td>Admin nav: Enterprise WeCom</td><td><span class="label red">hidden / 403</span></td><td><span class="label red">hidden / 403</span></td><td><span class="label green">visible</span></td><td><span class="label">no UI</span></td></tr>
+                  <tr><td>Generated mapping status</td><td><span class="label red">403</span></td><td><span class="label red">403</span></td><td><span class="label green">read-only</span></td><td><span class="label">writes run state</span></td></tr>
+                  <tr><td>Generated team/team-admin status</td><td><span class="label red">403</span></td><td><span class="label red">403</span></td><td><span class="label green">read-only</span></td><td><span class="label">writes generated teams</span></td></tr>
+                  <tr><td>Manual mapping create/edit/disable</td><td><span class="label red">none</span></td><td><span class="label red">not exposed</span></td><td><span class="label red">not exposed</span></td><td><span class="label">not normal path</span></td></tr>
+                  <tr><td>Manual dry-run/apply</td><td><span class="label red">none</span></td><td><span class="label red">not exposed</span></td><td><span class="label red">not exposed</span></td><td><span class="label green">scheduled apply</span></td></tr>
+                  <tr><td>Manual WeCom-managed team create/member/admin edit</td><td><span class="label red">none</span></td><td><span class="label red">not exposed / 403</span></td><td><span class="label red">not exposed / 403</span></td><td><span class="label green">scheduled reconcile only</span></td></tr>
+                  <tr><td>Create additional organization</td><td><span class="label red">403</span></td><td><span class="label red">blocked</span></td><td><span class="label red">blocked after first org</span></td><td><span class="label">self-check only</span></td></tr>
+                  <tr><td>Request organization repository</td><td><span class="label red">sign-in required</span></td><td><span class="label green">can request</span></td><td><span class="label green">can approve</span></td><td><span class="label">creates after approval</span></td></tr>
+                  <tr><td>Create personal private repository</td><td><span class="label red">sign-in required</span></td><td><span class="label green">allowed under 10</span></td><td><span class="label green">allowed under 10</span></td><td><span class="label">quota checked</span></td></tr>
+                  <tr><td>Grant repository access</td><td><span class="label red">403</span></td><td><span class="label orange">creator/owner only</span></td><td><span class="label green">super admin allowed</span></td><td><span class="label">guarded service</span></td></tr>
+                  <tr><td>Manage protected admin account</td><td><span class="label red">403</span></td><td><span class="label red">blocked</span></td><td><span class="label orange">own safe updates only</span></td><td><span class="label">authority refresh only</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const roleMessages = {
+      'site-admin': ['negative', '当前视角：普通站点管理员', '如果没有企微管理权限，不会看到 Gitea 管理后台入口；直接访问 /-/admin* 返回 403。'],
+      'wecom-admin': ['positive', '当前视角：企微管理权限用户', '由企微 API/callback 识别并保护，本地具备 site admin；其他管理员不能管理该账号，本人也不能自删除/自降权。'],
+      'non-admin': ['negative', '当前视角：普通成员/非管理员', '不会看到 Gitea 管理后台入口；直接访问企业微信状态页时后端返回 403。'],
+      'system': ['warning', '当前视角：系统任务 / API-only', '无 Web UI；通过企微回调、cron 和同步后自动 apply 写入权限快照、生成映射、生成团队、团队管理员和运行结果。']
+    };
+    const roleButtons = document.querySelectorAll('[data-role]');
+    const msg = document.getElementById('role-message');
+    function setRole(role) {
+      roleButtons.forEach((button) => button.classList.toggle('active', button.dataset.role === role));
+      const [kind, title, body] = roleMessages[role];
+      msg.className = `message ${kind}`;
+      msg.innerHTML = `<strong>${title}</strong>${body}`;
+      document.querySelectorAll('[data-admin-only="true"]').forEach((item) => item.classList.toggle('disabled', role === 'non-admin' || role === 'system'));
+    }
+    roleButtons.forEach((button) => button.addEventListener('click', () => setRole(button.dataset.role)));
+    const tabButtons = document.querySelectorAll('[data-tab]');
+    tabButtons.forEach((button) => button.addEventListener('click', () => {
+      tabButtons.forEach((b) => b.classList.toggle('active', b === button));
+      document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.id === button.dataset.tab));
+    }));
+  </script>
+</body>
+</html>

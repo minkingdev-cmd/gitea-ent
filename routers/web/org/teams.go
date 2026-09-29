@@ -28,6 +28,7 @@ import (
 	shared_user "gitea.dev/routers/web/shared/user"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/services/forms"
 	org_service "gitea.dev/services/org"
 	repo_service "gitea.dev/services/repository"
@@ -115,12 +116,18 @@ func TeamsAction(ctx *context.Context) {
 	var err error
 	switch ctx.PathParam("action") {
 	case "join":
+		if denyWeComManagedTeamAction(ctx, wecom_service.TeamLocalMaintenanceMembership) {
+			return
+		}
 		if !ctx.Org.IsOwner {
 			ctx.HTTPError(http.StatusNotFound)
 			return
 		}
 		err = org_service.AddTeamMember(ctx, ctx.Org.Team, ctx.Doer)
 	case "leave":
+		if denyWeComManagedTeamAction(ctx, wecom_service.TeamLocalMaintenanceMembership) {
+			return
+		}
 		err = org_service.RemoveTeamMember(ctx, ctx.Org.Team, ctx.Doer)
 		if err != nil {
 			if org_model.IsErrLastOrgOwner(err) {
@@ -137,6 +144,9 @@ func TeamsAction(ctx *context.Context) {
 		checkIsOrgMemberAndRedirect(ctx, ctx.Org.OrgLink+"/teams/")
 		return
 	case "remove":
+		if denyWeComManagedTeamAction(ctx, wecom_service.TeamLocalMaintenanceMembership) {
+			return
+		}
 		if !ctx.Org.IsOwner {
 			ctx.HTTPError(http.StatusNotFound)
 			return
@@ -164,6 +174,9 @@ func TeamsAction(ctx *context.Context) {
 		checkIsOrgMemberAndRedirect(ctx, ctx.Org.OrgLink+"/teams/"+url.PathEscape(ctx.Org.Team.LowerName))
 		return
 	case "add":
+		if denyWeComManagedTeamAction(ctx, wecom_service.TeamLocalMaintenanceMembership) {
+			return
+		}
 		if !ctx.Org.IsOwner {
 			ctx.HTTPError(http.StatusNotFound)
 			return
@@ -366,6 +379,10 @@ func NewTeamPost(ctx *context.Context) {
 		ctx.HTML(http.StatusOK, tplTeamNew)
 		return
 	}
+	if err := wecom_service.CanLocallyMaintainTeam(ctx, 0, wecom_service.TeamLocalMaintenanceCreate); err != nil {
+		ctx.RenderWithErrDeprecated(ctx.Tr("error.permission_denied"), tplTeamNew, &form)
+		return
+	}
 
 	if t.AccessMode == perm.AccessModeNone {
 		t.Units = paresFormTeamUnits(ctx.Org.Organization.ID, ctx.Req.Form)
@@ -511,6 +528,9 @@ func EditTeam(ctx *context.Context) {
 // EditTeamPost response for modify team information
 func EditTeamPost(ctx *context.Context) {
 	form := web.GetForm[*forms.CreateTeamForm](ctx)
+	if denyWeComManagedTeamAction(ctx, wecom_service.TeamLocalMaintenanceEdit) {
+		return
+	}
 
 	t := ctx.Org.Team
 	teamPermission := perm.ParseAccessMode(form.Permission, perm.AccessModeNone, perm.AccessModeWrite, perm.AccessModeAdmin)
@@ -569,6 +589,9 @@ func EditTeamPost(ctx *context.Context) {
 
 // DeleteTeam response for the delete team request
 func DeleteTeam(ctx *context.Context) {
+	if denyWeComManagedTeamAction(ctx, wecom_service.TeamLocalMaintenanceDelete) {
+		return
+	}
 	if err := org_service.DeleteTeam(ctx, ctx.Org.Team); err != nil {
 		ctx.Flash.Error("DeleteTeam: " + err.Error())
 	} else {
@@ -613,6 +636,11 @@ func TeamInvitePost(ctx *context.Context) {
 		return
 	}
 
+	if err := wecom_service.CanLocallyMaintainTeam(ctx, team.ID, wecom_service.TeamLocalMaintenanceMembership); err != nil {
+		ctx.Flash.Error(ctx.Tr("error.permission_denied"))
+		ctx.Redirect(org.OrganisationLink() + "/teams/" + url.PathEscape(team.LowerName))
+		return
+	}
 	if err := org_service.AddTeamMember(ctx, team, ctx.Doer); err != nil {
 		ctx.ServerError("AddTeamMember", err)
 		return
@@ -623,6 +651,15 @@ func TeamInvitePost(ctx *context.Context) {
 	}
 
 	ctx.Redirect(org.OrganisationLink() + "/teams/" + url.PathEscape(team.LowerName))
+}
+
+func denyWeComManagedTeamAction(ctx *context.Context, operation wecom_service.TeamLocalMaintenanceOperation) bool {
+	if err := wecom_service.CanLocallyMaintainTeam(ctx, ctx.Org.Team.ID, operation); err != nil {
+		ctx.Flash.Error(ctx.Tr("error.permission_denied"))
+		ctx.Redirect(ctx.Org.OrgLink + "/teams")
+		return true
+	}
+	return false
 }
 
 func getTeamInviteFromContext(ctx *context.Context) (*org_model.TeamInvite, *org_model.Organization, *org_model.Team, *user_model.User, error) {

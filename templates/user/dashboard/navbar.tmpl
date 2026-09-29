@@ -35,7 +35,7 @@
 							</a>
 						{{end}}
 					</div>
-					{{if .SignedUser.CanCreateOrganization}}
+					{{if ctx.SignedUserCanCreateOrganization}}
 					<a class="item" href="{{AppSubUrl}}/org/create">
 						{{svg "octicon-plus" 16 "tw-ml-1 tw-mr-5"}}{{ctx.Locale.Tr "new_org"}}
 					</a>

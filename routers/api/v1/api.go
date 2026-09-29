@@ -85,6 +85,7 @@ import (
 	"gitea.dev/modules/web/middleware"
 	"gitea.dev/routers/api/v1/activitypub"
 	"gitea.dev/routers/api/v1/admin"
+	enterprisewecom_router "gitea.dev/routers/api/v1/enterprisewecom"
 	"gitea.dev/routers/api/v1/misc"
 	"gitea.dev/routers/api/v1/notify"
 	"gitea.dev/routers/api/v1/org"
@@ -412,7 +413,12 @@ func reqBasicOrRevProxyAuth() func(ctx *context.APIContext) {
 // reqSiteAdmin user should be the site admin
 func reqSiteAdmin() func(ctx *context.APIContext) {
 	return func(ctx *context.APIContext) {
-		if !ctx.IsUserSiteAdmin() {
+		canAccessAdminPanel, err := ctx.CanAccessSiteAdminPanel()
+		if err != nil {
+			ctx.APIErrorInternal(err)
+			return
+		}
+		if !canAccessAdminPanel {
 			ctx.APIError(http.StatusForbidden, "user should be the site admin")
 			return
 		}
@@ -1883,6 +1889,16 @@ func Routes() *web.Router {
 					Delete(reqToken(), reqTeamMembership(), org.RemoveTeamRepository)
 			})
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), orgAssignment(false, true), reqToken(), checkTokenPublicOnly())
+
+		m.Group("/enterprise/wecom/mappings", func() {
+			m.Get("", enterprisewecom_router.ListAuthzMappings)
+			m.Post("", bind(api.EnterpriseWeComAuthzMappingOption{}), enterprisewecom_router.CreateAuthzMapping)
+			m.Post("/dry-run", bind(api.EnterpriseWeComAuthzReconcileOption{}), enterprisewecom_router.DryRunAuthzMappings)
+			m.Post("/apply", bind(api.EnterpriseWeComAuthzReconcileOption{}), enterprisewecom_router.ApplyAuthzMappings)
+			m.Combo("/{id}").Get(enterprisewecom_router.GetAuthzMapping).
+				Patch(bind(api.EnterpriseWeComAuthzMappingOption{}), enterprisewecom_router.UpdateAuthzMapping).
+				Delete(enterprisewecom_router.DisableAuthzMapping)
+		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryAdmin), reqToken(), reqSiteAdmin())
 
 		m.Group("/admin", func() {
 			m.Group("/cron", func() {

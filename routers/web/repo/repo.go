@@ -75,6 +75,20 @@ func checkContextUser(ctx *context.Context, uid int64) *user_model.User {
 			orgsAvailable = append(orgsAvailable, orgs[i])
 		}
 	}
+	if setting.EnterpriseWeCom.Enabled {
+		requestableOrgs, err := db.Find[organization.Organization](ctx, organization.FindOrgOptions{
+			IncludeVisibility: api.VisibleTypePrivate,
+		})
+		if err != nil {
+			ctx.ServerError("FindOrgOptions", err)
+			return nil
+		}
+		for _, org := range requestableOrgs {
+			if !slices.ContainsFunc(orgsAvailable, func(existing *organization.Organization) bool { return existing.ID == org.ID }) {
+				orgsAvailable = append(orgsAvailable, org)
+			}
+		}
+	}
 	ctx.Data["Orgs"] = orgsAvailable
 
 	// Not equal means current user is an organization.
@@ -103,6 +117,9 @@ func checkContextUser(ctx *context.Context, uid int64) *user_model.User {
 			ctx.ServerError("CanCreateOrgRepo", err)
 			return nil
 		} else if !canCreate {
+			if setting.EnterpriseWeCom.Enabled {
+				return org
+			}
 			ctx.HTTPError(http.StatusForbidden)
 			return nil
 		}
@@ -113,6 +130,9 @@ func checkContextUser(ctx *context.Context, uid int64) *user_model.User {
 }
 
 func getRepoPrivate(ctx *context.Context) bool {
+	if setting.EnterpriseWeCom.Enabled {
+		return true
+	}
 	switch strings.ToLower(setting.Repository.DefaultPrivate) {
 	case setting.RepoCreatingLastUserVisibility:
 		return ctx.Doer.LastRepoVisibility
@@ -132,6 +152,7 @@ func createCommon(ctx *context.Context) {
 	ctx.Data["Licenses"] = repo_module.Licenses
 	ctx.Data["Readmes"] = repo_module.Readmes
 	ctx.Data["IsForcedPrivate"] = setting.Repository.ForcePrivate
+	ctx.Data["EnterpriseWeComRepoGovernance"] = setting.EnterpriseWeCom.Enabled
 	ctx.Data["CanCreateRepoInDoer"] = ctx.Doer.CanCreateRepoIn(ctx.Doer)
 	ctx.Data["MaxCreationLimitOfDoer"] = ctx.Doer.MaxCreationLimit()
 	ctx.Data["SupportedObjectFormats"] = git.DefaultFeatures().SupportedObjectFormats
@@ -281,6 +302,19 @@ func CreatePost(ctx *context.Context) {
 		}
 	}
 
+	if errors.Is(err, repo_service.ErrEnterpriseOrgRepoRequiresApproval) {
+		request, submitErr := repo_service.SubmitOrganizationRepositoryRequest(ctx, ctx.Doer, ctxUser, repo_service.OrganizationRepositoryRequestOptions{
+			Name:        form.RepoName,
+			Description: form.Description,
+			Reason:      form.OrgRepoRequestReason,
+		})
+		if submitErr == nil {
+			ctx.Flash.Success(ctx.Tr("repo.enterprise_wecom.org_repo_request_submitted", request.Name))
+			ctx.Redirect(setting.AppSubURL + "/user/settings/organization")
+			return
+		}
+		err = submitErr
+	}
 	handleCreateError(ctx, ctxUser, err, "CreatePost", tplCreate, &form)
 }
 

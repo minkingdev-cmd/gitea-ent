@@ -10,6 +10,7 @@ import (
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/web"
 	"gitea.dev/services/context"
+	wecom_service "gitea.dev/services/enterprisewecom"
 )
 
 // ListUserBadges lists all badges belonging to a user
@@ -68,6 +69,10 @@ func AddUserBadges(ctx *context.APIContext) {
 
 	form := web.GetForm[*api.UserBadgeOption](ctx)
 	badges := prepareBadgesForReplaceOrAdd(*form)
+	if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, ctx.ContextUser, wecom_service.ProtectedUserOpBadge); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return
+	}
 
 	if err := user_model.AddUserBadges(ctx, ctx.ContextUser, badges); err != nil {
 		ctx.APIErrorInternal(err)
@@ -104,6 +109,10 @@ func DeleteUserBadges(ctx *context.APIContext) {
 
 	form := web.GetForm[*api.UserBadgeOption](ctx)
 	badges := prepareBadgesForReplaceOrAdd(*form)
+	if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, ctx.ContextUser, wecom_service.ProtectedUserOpBadge); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return
+	}
 
 	if err := user_model.RemoveUserBadges(ctx, ctx.ContextUser, badges); err != nil {
 		ctx.APIErrorInternal(err)

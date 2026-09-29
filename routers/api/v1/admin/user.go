@@ -30,6 +30,7 @@ import (
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/services/mailer"
 	user_service "gitea.dev/services/user"
 )
@@ -189,6 +190,9 @@ func EditUser(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 
 	form := web.GetForm[*api.EditUserOption](ctx)
+	if !guardAPIProtectedUserEdit(ctx, form) {
+		return
+	}
 
 	var userType optional.Option[user_model.UserType]
 	if form.Type != "" && form.Type != convert.UserTypeToString(ctx.ContextUser.Type) {
@@ -293,6 +297,9 @@ func DeleteUser(ctx *context.APIContext) {
 		ctx.APIError(http.StatusUnprocessableEntity, "target is an organization but not user")
 		return
 	}
+	if !guardAPIProtectedUser(ctx, wecom_service.ProtectedUserOpDelete) {
+		return
+	}
 
 	// admin should not delete themself
 	if ctx.ContextUser.ID == ctx.Doer.ID {
@@ -344,6 +351,9 @@ func CreatePublicKey(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 
 	form := web.GetForm[*api.CreateKeyOption](ctx)
+	if !guardAPIProtectedUser(ctx, wecom_service.ProtectedUserOpCredential) {
+		return
+	}
 
 	user.CreateUserPublicKey(ctx, *form, ctx.ContextUser.ID)
 }
@@ -374,7 +384,9 @@ func DeleteUserPublicKey(ctx *context.APIContext) {
 	//     "$ref": "#/responses/forbidden"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
-
+	if !guardAPIProtectedUser(ctx, wecom_service.ProtectedUserOpCredential) {
+		return
+	}
 	if err := asymkey_service.DeletePublicKey(ctx, ctx.ContextUser, ctx.PathParamInt64("id")); err != nil {
 		if asymkey_model.IsErrKeyNotExist(err) {
 			ctx.APIErrorNotFound()
@@ -388,6 +400,41 @@ func DeleteUserPublicKey(ctx *context.APIContext) {
 	log.Trace("Key deleted by admin(%s): %s", ctx.Doer.Name, ctx.ContextUser.Name)
 
 	ctx.Status(http.StatusNoContent)
+}
+
+func guardAPIProtectedUser(ctx *context.APIContext, operation wecom_service.ProtectedUserOperation) bool {
+	if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, ctx.ContextUser, operation); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return false
+	}
+	return true
+}
+
+func guardAPIProtectedUserEdit(ctx *context.APIContext, form *api.EditUserOption) bool {
+	if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, ctx.ContextUser, wecom_service.ProtectedUserOpEdit); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return false
+	}
+	if ctx.Doer != nil && ctx.ContextUser != nil && ctx.Doer.ID == ctx.ContextUser.ID {
+		switch {
+		case form.Admin != nil && !*form.Admin:
+			if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, ctx.ContextUser, wecom_service.ProtectedUserOpDemoteSelf); err != nil {
+				ctx.APIError(http.StatusForbidden, err.Error())
+				return false
+			}
+		case form.Active != nil && !*form.Active:
+			if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, ctx.ContextUser, wecom_service.ProtectedUserOpDeactivateSelf); err != nil {
+				ctx.APIError(http.StatusForbidden, err.Error())
+				return false
+			}
+		case form.ProhibitLogin != nil && *form.ProhibitLogin:
+			if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, ctx.ContextUser, wecom_service.ProtectedUserOpProhibitLoginSelf); err != nil {
+				ctx.APIError(http.StatusForbidden, err.Error())
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // SearchUsers API for getting information of the users according the filter conditions
@@ -551,6 +598,9 @@ func RenameUser(ctx *context.APIContext) {
 
 	if ctx.ContextUser.IsOrganization() {
 		ctx.APIError(http.StatusUnprocessableEntity, "target is an organization but not user")
+		return
+	}
+	if !guardAPIProtectedUser(ctx, wecom_service.ProtectedUserOpEdit) {
 		return
 	}
 

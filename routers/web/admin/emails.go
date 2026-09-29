@@ -17,6 +17,7 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
+	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/services/user"
 )
 
@@ -122,6 +123,16 @@ func ActivateEmail(ctx *context.Context) {
 	}
 
 	log.Info("Changing activation for User ID: %d, email: %s, primary: %v to %v", uid, email, primary, activate)
+	target, err := user_model.GetUserByID(ctx, uid)
+	if err != nil {
+		ctx.ServerError("GetUserByID", err)
+		return
+	}
+	if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, target, wecom_service.ProtectedUserOpEmail); err != nil {
+		ctx.Flash.Error(err.Error())
+		ctx.Redirect(setting.AppSubURL + "/-/admin/emails")
+		return
+	}
 
 	if err := user_model.ActivateUserEmail(ctx, uid, email, activate); err != nil {
 		log.Error("ActivateUserEmail(%v,%v,%v): %v", uid, email, activate, err)
@@ -165,6 +176,11 @@ func DeleteEmail(ctx *context.Context) {
 	u, err := user_model.GetUserByID(ctx, ctx.FormInt64("uid"))
 	if err != nil || u == nil {
 		ctx.ServerError("GetUserByID", err)
+		return
+	}
+	if err := wecom_service.CanManageProtectedUser(ctx, ctx.Doer, u, wecom_service.ProtectedUserOpEmail); err != nil {
+		ctx.Flash.Error(err.Error())
+		ctx.JSONRedirect("")
 		return
 	}
 

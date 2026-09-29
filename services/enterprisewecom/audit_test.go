@@ -13,6 +13,7 @@ import (
 	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
+	"gitea.dev/models/organization"
 	"gitea.dev/models/unittest"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/test"
@@ -113,6 +114,28 @@ func TestSyncDirectoryAuditsFailureWithoutSecrets(t *testing.T) {
 	assertNoWeComAuditSecretLeak(t, events)
 }
 
+func TestRefreshAdminAuthorityAuditsOutcomeWithoutSecrets(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:    true,
+		CorpID:     "corp-audit-authority",
+		AgentID:    "1000002",
+		CorpSecret: "corp-secret-value",
+	})()
+	deleteWeComAuditEvents(t)
+
+	_, err := RefreshAdminAuthoritySnapshot(t.Context(), fakeAdminAuthorityClient{err: errors.New("access_token=suite-access-token&code=authorization-code&mobile=13800138000")}, AdminAuthorityRefreshOptions{RunID: "authority-audit"})
+	require.Error(t, err)
+
+	events := weComAuditEvents(t)
+	event := findWeComAuditEvent(t, events, audit_model.EnterpriseWeComAuthorityRefresh)
+	metadata := audit_model.DecodeMetadata(event.Metadata)
+	require.Equal(t, "error", metadata["outcome"])
+	require.Equal(t, "provider_error", metadata["reason"])
+	assertNoWeComAuditSecretLeak(t, events)
+}
+
 type leakingDirectoryClient struct{}
 
 func (leakingDirectoryClient) ListDepartments(context.Context) ([]DepartmentInfo, error) {
@@ -162,4 +185,76 @@ func assertNoWeComAuditSecretLeak(t *testing.T, events []*audit_model.Event) {
 			require.NotContains(t, raw, forbidden, "sensitive value leaked in %s", event.Action)
 		}
 	}
+}
+
+func TestApplyAuthzMappingsAuditsSummaryWithoutSecrets(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:    true,
+		CorpID:     "corp-audit-map",
+		AgentID:    "1000002",
+		CorpSecret: "corp-secret-value",
+	})()
+	deleteWeComAuditEvents(t)
+
+	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-audit-map", WeComUserID: "audit-map-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusActive})
+	require.NoError(t, err)
+	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "audit-map-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	require.NoError(t, err)
+	_, err = ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "audit-manual"})
+	require.NoError(t, err)
+
+	events := weComAuditEvents(t)
+	applyEvent := findWeComAuditEvent(t, events, audit_model.EnterpriseWeComMappingApply)
+	metadata := audit_model.DecodeMetadata(applyEvent.Metadata)
+	require.Equal(t, "applied", metadata["outcome"])
+	require.EqualValues(t, 1, metadata["additions"])
+	require.EqualValues(t, 0, metadata["errors"])
+	assertNoWeComAuditSecretLeak(t, events)
+}
+
+func TestSyncDirectoryPostSyncApplyAuditsSummaryWithoutSecrets(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:                  true,
+		CorpID:                   "corp-audit-sync",
+		AgentID:                  "1000002",
+		CorpSecret:               "corp-secret-value",
+		SyncDepartments:          true,
+		ApplyAuthzMappingsOnSync: true,
+	})()
+	deleteWeComAuditEvents(t)
+
+	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
+	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-audit-sync", WeComUserID: "audit-sync-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusOutOfScope})
+	require.NoError(t, err)
+	require.NoError(t, wecom_model.UpsertDepartment(t.Context(), &wecom_model.Department{CorpID: "corp-audit-sync", DepartmentID: 2, Name: "研发"}))
+	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	require.NoError(t, err)
+
+	require.NoError(t, SyncDirectory(t.Context(), fakeDirectoryClient{
+		departments: []DepartmentInfo{{ID: 2, Name: "研发"}},
+		members:     map[int64][]MemberInfo{2: {{UserID: "audit-sync-user"}}},
+	}))
+
+	events := weComAuditEvents(t)
+	applyEvent := findWeComAuditEvent(t, events, audit_model.EnterpriseWeComMappingApply)
+	metadata := audit_model.DecodeMetadata(applyEvent.Metadata)
+	require.Equal(t, "applied", metadata["outcome"])
+	require.EqualValues(t, 1, metadata["additions"])
+	assertNoWeComAuditSecretLeak(t, events)
+}
+
+func findWeComAuditEvent(t *testing.T, events []*audit_model.Event, action audit_model.Action) *audit_model.Event {
+	t.Helper()
+	for _, event := range events {
+		if event.Action == action {
+			return event
+		}
+	}
+	require.Failf(t, "missing audit action", "missing audit action %s", action)
+	return nil
 }

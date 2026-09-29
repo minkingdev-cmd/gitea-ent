@@ -117,8 +117,46 @@ var (
 		"enterprise:wecom:identity:update",
 		"Updated Enterprise WeCom identity {external_id} for user {scope}.",
 	)
-	EnterpriseWeComSyncStart  = define("enterprise:wecom:sync:start", "Enterprise WeCom directory sync started for {corp_id}.")
-	EnterpriseWeComSyncFinish = define("enterprise:wecom:sync:finish", "Enterprise WeCom directory sync finished for {corp_id} with outcome {outcome}.")
+	EnterpriseWeComSyncStart           = define("enterprise:wecom:sync:start", "Enterprise WeCom directory sync started for {corp_id}.")
+	EnterpriseWeComSyncFinish          = define("enterprise:wecom:sync:finish", "Enterprise WeCom directory sync finished for {corp_id} with outcome {outcome}.")
+	EnterpriseWeComAutomationFinish    = define("enterprise:wecom:automation:finish", "Enterprise WeCom automation finished with outcome {outcome}.")
+	EnterpriseWeComAuthorityRefresh    = define("enterprise:wecom:authority:refresh", "Enterprise WeCom administrator authority refresh finished with outcome {outcome}.")
+	EnterpriseWeComGeneratedDerive     = define("enterprise:wecom:generated:derive", "Enterprise WeCom generated authorization state derivation finished with outcome {outcome}.")
+	EnterpriseWeComMappingUpdate       = define("enterprise:wecom:mapping:update", "Enterprise WeCom authorization mapping {mapping_id} changed with outcome {outcome}.")
+	EnterpriseWeComMappingApply        = define("enterprise:wecom:mapping:apply", "Enterprise WeCom authorization mappings were applied with outcome {outcome}.")
+	EnterpriseWeComTeamReconcile       = define("enterprise:wecom:team:reconcile", "Enterprise WeCom generated team reconciliation finished with outcome {outcome}.")
+	EnterpriseWeComTeamMaintenanceDeny = define(
+		"enterprise:wecom:team:maintenance:deny",
+		"Denied local Enterprise WeCom managed team maintenance operation {operation}: {reason}.",
+	)
+	EnterpriseWeComProtectedAdminDeny = define(
+		"enterprise:wecom:protected_admin:deny",
+		"Denied Enterprise WeCom protected administrator operation {operation} for user {scope}: {reason}.",
+	)
+	EnterpriseWeComProtectedAdminPromote = define(
+		"enterprise:wecom:protected_admin:promote",
+		"Promoted Enterprise WeCom protected administrator user {scope}.",
+	)
+	EnterpriseWeComOrganizationCreateDeny = define(
+		"enterprise:wecom:organization:create:deny",
+		"Denied Enterprise WeCom governed organization creation with outcome {outcome}.",
+	)
+	EnterpriseWeComOrgRepoRequest = define(
+		"enterprise:wecom:repository:request",
+		"Enterprise WeCom organization repository request {request_id} finished with outcome {outcome}.",
+	)
+	EnterpriseWeComPersonalRepoQuotaDeny = define(
+		"enterprise:wecom:repository:personal_quota:deny",
+		"Denied personal repository creation for user {actor}: quota exceeded.",
+	)
+	EnterpriseWeComRepoVisibilityEnforce = define(
+		"enterprise:wecom:repository:visibility:enforce",
+		"Enterprise WeCom repository visibility governance enforced Private visibility with outcome {outcome}.",
+	)
+	EnterpriseWeComRepoAuthorizationDeny = define(
+		"enterprise:wecom:repository:authorization:deny",
+		"Denied Enterprise WeCom governed repository authorization change for repository {scope}: {reason}.",
+	)
 
 	OrganizationCreate                  = define("organization:create", "Created organization {scope}.")
 	OrganizationDelete                  = define("organization:delete", "Deleted organization {scope}.")

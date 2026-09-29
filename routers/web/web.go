@@ -252,7 +252,13 @@ func verifyAuthWithOptions(options *common.VerifyOptions) func(ctx *context.Cont
 		}
 
 		if options.AdminRequired {
-			if !ctx.Doer.IsAdmin {
+			canAccessAdminPanel, err := ctx.CanAccessSiteAdminPanel()
+			if err != nil {
+				log.Error("Unable to resolve site admin panel access for user %d: %v", ctx.Doer.ID, err)
+				ctx.HTTPError(http.StatusForbidden)
+				return
+			}
+			if !canAccessAdminPanel {
 				ctx.HTTPError(http.StatusForbidden)
 				return
 			}
@@ -848,6 +854,17 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Get("", admin.Emails)
 			m.Post("/activate", admin.ActivateEmail)
 			m.Post("/delete", admin.DeleteEmail)
+		})
+
+		m.Group("/enterprise/wecom", func() {
+			m.Get("", admin.EnterpriseWeCom)
+			m.Get("/generated-mappings", admin.EnterpriseWeComGeneratedMappings)
+			m.Get("/generated-teams", admin.EnterpriseWeComGeneratedTeams)
+			m.Get("/reconciliation-runs", admin.EnterpriseWeComReconciliationRuns)
+			m.Get("/authority", admin.EnterpriseWeComAuthority)
+			m.Get("/org-repo-requests", admin.EnterpriseWeComOrgRepoRequests)
+			m.Post("/org-repo-requests/{id}/approve", admin.EnterpriseWeComApproveOrgRepoRequest)
+			m.Post("/org-repo-requests/{id}/reject", admin.EnterpriseWeComRejectOrgRepoRequest)
 		})
 
 		m.Group("/orgs", func() {

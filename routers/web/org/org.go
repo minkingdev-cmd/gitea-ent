@@ -29,8 +29,13 @@ const (
 // Create render the page for create organization
 func Create(ctx *context.Context) {
 	ctx.Data["Title"] = ctx.Tr("new_org")
-	if !ctx.Doer.CanCreateOrganization() {
-		ctx.ServerError("Not allowed", errors.New(ctx.Locale.TrString("org.form.create_org_not_allowed")))
+	if err := organization.CheckCreateOrganizationAllowed(ctx, ctx.Doer); err != nil {
+		if organization.IsErrUserNotAllowedCreateOrg(err) || organization.IsErrSingleOrganizationOnly(err) {
+			recordEnterpriseWeComOrganizationCreateDeny(ctx, err)
+			ctx.ServerError("Not allowed", errors.New(ctx.Locale.TrString("org.form.create_org_not_allowed")))
+			return
+		}
+		ctx.ServerError("CheckCreateOrganizationAllowed", err)
 		return
 	}
 
@@ -45,8 +50,13 @@ func CreatePost(ctx *context.Context) {
 	form := *web.GetForm[*forms.CreateOrgForm](ctx)
 	ctx.Data["Title"] = ctx.Tr("new_org")
 
-	if !ctx.Doer.CanCreateOrganization() {
-		ctx.ServerError("Not allowed", errors.New(ctx.Locale.TrString("org.form.create_org_not_allowed")))
+	if err := organization.CheckCreateOrganizationAllowed(ctx, ctx.Doer); err != nil {
+		if organization.IsErrUserNotAllowedCreateOrg(err) || organization.IsErrSingleOrganizationOnly(err) {
+			recordEnterpriseWeComOrganizationCreateDeny(ctx, err)
+			ctx.ServerError("Not allowed", errors.New(ctx.Locale.TrString("org.form.create_org_not_allowed")))
+			return
+		}
+		ctx.ServerError("CheckCreateOrganizationAllowed", err)
 		return
 	}
 
@@ -75,6 +85,10 @@ func CreatePost(ctx *context.Context) {
 		case errors.As(err, &errNamePatternNotAllowed):
 			ctx.RenderWithErrDeprecated(ctx.Tr("org.form.name_pattern_not_allowed", errNamePatternNotAllowed.Pattern), tplCreateOrg, &form)
 		case organization.IsErrUserNotAllowedCreateOrg(err):
+			recordEnterpriseWeComOrganizationCreateDeny(ctx, err)
+			ctx.RenderWithErrDeprecated(ctx.Tr("org.form.create_org_not_allowed"), tplCreateOrg, &form)
+		case organization.IsErrSingleOrganizationOnly(err):
+			recordEnterpriseWeComOrganizationCreateDeny(ctx, err)
 			ctx.RenderWithErrDeprecated(ctx.Tr("org.form.create_org_not_allowed"), tplCreateOrg, &form)
 		default:
 			ctx.ServerError("CreateOrganization", err)
@@ -86,4 +100,15 @@ func CreatePost(ctx *context.Context) {
 	log.Trace("Organization created: %s", org.Name)
 
 	ctx.Redirect(org.AsUser().DashboardLink())
+}
+
+func recordEnterpriseWeComOrganizationCreateDeny(ctx *context.Context, err error) {
+	reason := "organization_creation_not_allowed"
+	if organization.IsErrSingleOrganizationOnly(err) {
+		reason = "single_organization_policy"
+	}
+	audit.Record(ctx, audit_model.EnterpriseWeComOrganizationCreateDeny, nil,
+		"outcome", "denied",
+		"reason", reason,
+	)
 }

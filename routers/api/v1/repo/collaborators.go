@@ -184,6 +184,10 @@ func AddOrUpdateCollaborator(ctx *context.APIContext) {
 		p = perm.ParseAccessMode(string(*form.Permission), perm.AccessModeRead, perm.AccessModeWrite, perm.AccessModeAdmin)
 	}
 
+	if err := repo_service.CheckEnterpriseRepoAuthorizationChange(ctx, ctx.Doer, ctx.Repo.Repository); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return
+	}
 	if err := repo_service.AddOrUpdateCollaborator(ctx, ctx.Repo.Repository, collaborator, p); err != nil {
 		if errors.Is(err, user_model.ErrBlockedUser) {
 			ctx.APIError(http.StatusForbidden, err.Error())
@@ -237,6 +241,10 @@ func DeleteCollaborator(ctx *context.APIContext) {
 		return
 	}
 
+	if err := repo_service.CheckEnterpriseRepoAuthorizationChange(ctx, ctx.Doer, ctx.Repo.Repository); err != nil {
+		ctx.APIError(http.StatusForbidden, err.Error())
+		return
+	}
 	if err := repo_service.DeleteCollaboration(ctx, ctx.Repo.Repository, collaborator); err != nil {
 		ctx.APIErrorInternal(err)
 		return

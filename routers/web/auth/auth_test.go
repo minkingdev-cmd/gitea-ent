@@ -10,7 +10,10 @@ import (
 	"net/url"
 	"testing"
 
+	audit_model "gitea.dev/models/audit"
 	auth_model "gitea.dev/models/auth"
+	"gitea.dev/models/db"
+	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/session"
@@ -37,7 +40,174 @@ func addOAuth2Source(t *testing.T, authName string, cfg oauth2.Source) {
 	require.NoError(t, err)
 }
 
+func TestEnterpriseWeComLoginOnlyWebSurface(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:          true,
+		LoginOnly:        true,
+		LoginSourceName:  "wecom-login-only-source",
+		CorpID:           "corp-1",
+		AgentID:          "1000002",
+		CorpSecret:       "secret",
+		UsernameTemplate: "{userid}",
+		AutoCreateUser:   true,
+	})()
+	defer test.MockVariableValue(&setting.Service.EnablePasswordSignInForm, true)()
+	defer test.MockVariableValue(&setting.Service.EnableOpenIDSignIn, true)()
+	defer test.MockVariableValue(&setting.Service.EnableOpenIDSignUp, true)()
+	defer test.MockVariableValue(&setting.Service.EnablePasskeyAuth, true)()
+	defer test.MockVariableValue(&setting.Service.ShowRegistrationButton, true)()
+
+	addOAuth2Source(t, "wecom-login-only-source", oauth2.Source{Provider: oauth2.ProviderNameWeCom})
+	addOAuth2Source(t, "non-wecom-login-only-source", oauth2.Source{Provider: "gitea"})
+
+	ctx, resp := contexttest.MockContext(t, "/user/login")
+	SignIn(ctx)
+	require.Equal(t, http.StatusSeeOther, resp.Code)
+	require.Equal(t, "/user/oauth2/wecom-login-only-source", test.RedirectURL(resp))
+	require.Equal(t, false, ctx.Data["EnablePasswordSignInForm"])
+	require.Equal(t, false, ctx.Data["EnableOpenIDSignIn"])
+	require.Equal(t, false, ctx.Data["EnableOpenIDSignUp"])
+	require.Equal(t, false, ctx.Data["EnablePasskeyAuth"])
+	require.Len(t, ctx.Data["OAuth2Providers"], 1)
+
+	ctx, resp = contexttest.MockContext(t, "/user/login")
+	SignInPost(ctx)
+	require.Equal(t, http.StatusForbidden, resp.Code)
+
+	ctx, resp = contexttest.MockContext(t, "/user/sign_up")
+	SignUp(ctx)
+	require.Equal(t, http.StatusForbidden, resp.Code)
+
+	ctx, resp = contexttest.MockContext(t, "/user/login/openid")
+	SignInOpenID(ctx)
+	require.Equal(t, http.StatusForbidden, resp.Code)
+
+	ctx, resp = contexttest.MockContext(t, "/user/webauthn/passkey/assertion")
+	WebAuthnPasskeyAssertion(ctx)
+	require.Equal(t, http.StatusForbidden, resp.Code)
+
+	ctx, resp = contexttest.MockContext(t, "/user/oauth2/non-wecom-login-only-source")
+	ctx.SetPathParamRaw("provider", "non-wecom-login-only-source")
+	SignInOAuth(ctx)
+	require.Equal(t, http.StatusForbidden, resp.Code)
+}
+
+func TestEnterpriseWeComOAuthCallbackCreatesIdentity(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:          true,
+		LoginOnly:        true,
+		LoginSourceName:  "wecom-callback-source",
+		CorpID:           "corp-1",
+		AgentID:          "1000002",
+		CorpSecret:       "secret",
+		UsernameTemplate: "{userid}",
+		AutoCreateUser:   true,
+	})()
+	defer test.MockVariableValue(&setting.OAuth2Client.EnableAutoRegistration, false)()
+	defer test.MockVariableValue(&gothic.CompleteUserAuth, func(res http.ResponseWriter, req *http.Request) (goth.User, error) {
+		return goth.User{
+			Provider: "wecom-callback-source",
+			UserID:   "wangwu",
+			RawData: map[string]any{
+				"wecom_corp_id":  "corp-1",
+				"wecom_agent_id": "1000002",
+				"wecom_userid":   "wangwu",
+			},
+		}, nil
+	})()
+
+	addOAuth2Source(t, "wecom-callback-source", oauth2.Source{Provider: oauth2.ProviderNameWeCom})
+
+	mockOpt := contexttest.MockContextOption{SessionStore: session.NewMockMemStore("wecom-callback-sid")}
+	ctx, resp := contexttest.MockContext(t, "/user/oauth2/wecom-callback-source/callback?code=dummy-code", mockOpt)
+	ctx.SetPathParamRaw("provider", "wecom-callback-source")
+	SignInOAuthCallback(ctx)
+
+	require.Equal(t, http.StatusSeeOther, resp.Code)
+	require.Equal(t, "/", test.RedirectURL(resp))
+	identity, has, err := wecom_model.GetIdentityByCorpAndUserID(t.Context(), "corp-1", "wangwu")
+	require.NoError(t, err)
+	require.True(t, has)
+	require.NotZero(t, identity.UserID)
+}
+
+func TestEnterpriseWeComOAuthCallbackInvalidStateAuditsDeny(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:          true,
+		LoginOnly:        true,
+		LoginSourceName:  "wecom-invalid-state-source",
+		CorpID:           "corp-1",
+		AgentID:          "1000002",
+		CorpSecret:       "secret",
+		UsernameTemplate: "{userid}",
+		AutoCreateUser:   true,
+	})()
+	deleteWeComAuditEvents(t)
+
+	addOAuth2Source(t, "wecom-invalid-state-source", oauth2.Source{Provider: oauth2.ProviderNameWeCom})
+
+	mockOpt := contexttest.MockContextOption{SessionStore: session.NewMockMemStore("wecom-invalid-state-sid")}
+	ctx, resp := contexttest.MockContext(t, "/user/oauth2/wecom-invalid-state-source/callback?code=authorization-code", mockOpt)
+	ctx.SetPathParamRaw("provider", "wecom-invalid-state-source")
+	SignInOAuthCallback(ctx)
+
+	require.Equal(t, http.StatusSeeOther, resp.Code)
+	events := weComAuditEvents(t)
+	require.Contains(t, eventActions(events), audit_model.EnterpriseWeComLoginDeny)
+	for _, event := range events {
+		metadata := audit_model.DecodeMetadata(event.Metadata)
+		require.NotContains(t, metadata, "code")
+		require.NotContains(t, metadata, "token")
+		require.NotContains(t, metadata, "secret")
+	}
+}
+
+func TestEnterpriseWeComDisabledSourceIsRejected(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled: true, LoginOnly: false, LoginSourceName: "wecom-disabled-source",
+		CorpID: "corp-1", AgentID: "1000002", CorpSecret: "secret",
+	})()
+	addOAuth2Source(t, "wecom-disabled-source", oauth2.Source{Provider: oauth2.ProviderNameWeCom})
+	setting.EnterpriseWeCom.Enabled = false
+
+	ctx, resp := contexttest.MockContext(t, "/user/oauth2/wecom-disabled-source")
+	ctx.SetPathParamRaw("provider", "wecom-disabled-source")
+	SignInOAuth(ctx)
+	require.Equal(t, http.StatusNotFound, resp.Code)
+
+	ctx, resp = contexttest.MockContext(t, "/user/oauth2/wecom-disabled-source/callback")
+	ctx.SetPathParamRaw("provider", "wecom-disabled-source")
+	SignInOAuthCallback(ctx)
+	require.Equal(t, http.StatusNotFound, resp.Code)
+}
+
+func TestEnterpriseWeComCallbackErrorDoesNotExposeParameters(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled: true, LoginOnly: true, LoginSourceName: "wecom-error-source",
+		CorpID: "corp-1", AgentID: "1000002", CorpSecret: "secret",
+	})()
+	addOAuth2Source(t, "wecom-error-source", oauth2.Source{Provider: oauth2.ProviderNameWeCom})
+
+	mockOpt := contexttest.MockContextOption{SessionStore: session.NewMockMemStore("wecom-error-sid")}
+	ctx, resp := contexttest.MockContext(t, "/user/oauth2/wecom-error-source/callback?error=access_denied&error_description=secret-description&code=secret-code", mockOpt)
+	ctx.SetPathParamRaw("provider", "wecom-error-source")
+	SignInOAuthCallback(ctx)
+
+	require.Equal(t, http.StatusSeeOther, resp.Code)
+	require.Contains(t, ctx.Flash.ErrorMsg, "auth.oauth.signin.error.wecom")
+	require.NotContains(t, ctx.Flash.ErrorMsg, "secret-description")
+	require.NotContains(t, ctx.Flash.ErrorMsg, "secret-code")
+}
+
 func TestWebAuthUserLogin(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+
 	ctx, resp := contexttest.MockContext(t, "/user/login")
 	SignIn(ctx)
 	assert.Equal(t, http.StatusOK, resp.Code)
@@ -66,6 +236,7 @@ func TestWebAuthUserLogin(t *testing.T) {
 }
 
 func TestWebAuthOAuth2(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
 	defer test.MockVariableValue(&setting.OAuth2Client.EnableAutoRegistration, true)()
 
 	_ = oauth2.Init(t.Context())
@@ -182,6 +353,31 @@ func TestWebAuthOAuth2(t *testing.T) {
 			assert.Equal(t, "/", test.RedirectURL(resp))
 		})
 	})
+}
+
+func deleteWeComAuditEvents(t *testing.T) {
+	t.Helper()
+	_, err := db.GetEngine(t.Context()).Where("action LIKE ?", "enterprise:wecom:%").Delete(new(audit_model.Event))
+	require.NoError(t, err)
+}
+
+func weComAuditEvents(t *testing.T) []*audit_model.Event {
+	t.Helper()
+	events, _, err := audit_model.FindEvents(t.Context(), &audit_model.EventSearchOptions{
+		ActionPrefix: audit_model.Action("enterprise:wecom"),
+		Sort:         audit_model.SortTimestampAsc,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, events)
+	return events
+}
+
+func eventActions(events []*audit_model.Event) []audit_model.Action {
+	actions := make([]audit_model.Action, 0, len(events))
+	for _, event := range events {
+		actions = append(actions, event.Action)
+	}
+	return actions
 }
 
 func TestOpenIDRequireTwoFactor(t *testing.T) {

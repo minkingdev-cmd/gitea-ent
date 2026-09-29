@@ -33,13 +33,13 @@ func CommonTemplateContextData() reqctx.ContextData {
 
 		"IsLandingPageOrganizations": setting.LandingPageURL == setting.LandingPageOrganizations,
 
-		"ShowRegistrationButton":        setting.Service.ShowRegistrationButton,
+		"ShowRegistrationButton":        setting.Service.ShowRegistrationButton && !setting.EnterpriseWeComLoginOnly(),
 		"ShowMilestonesDashboardPage":   setting.Service.ShowMilestonesDashboardPage,
 		"ShowFooterVersion":             setting.Other.ShowFooterVersion,
 		"DisableDownloadSourceArchives": setting.Repository.DisableDownloadSourceArchives,
 
 		"EnableSwagger":      setting.API.EnableSwagger,
-		"EnableOpenIDSignIn": setting.Service.EnableOpenIDSignIn,
+		"EnableOpenIDSignIn": setting.Service.EnableOpenIDSignIn && !setting.EnterpriseWeComLoginOnly(),
 		"PageStartTime":      time.Now(),
 
 		"RunModeIsProd": setting.IsProd,

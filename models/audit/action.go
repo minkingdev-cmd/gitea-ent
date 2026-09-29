@@ -110,6 +110,16 @@ var (
 	UserWebhookUpdate               = define("user:webhook:update", "Updated webhook {webhook} of user {scope}.")
 	UserWebhookRemove               = define("user:webhook:remove", "Removed webhook {webhook} of user {scope}.")
 
+	EnterpriseWeComLoginSuccess   = define("enterprise:wecom:login:success", "Enterprise WeCom login succeeded for user {scope} with identity {external_id}.")
+	EnterpriseWeComLoginDeny      = define("enterprise:wecom:login:deny", "Enterprise WeCom login was denied for identity {external_id}: {reason}.")
+	EnterpriseWeComIdentityBind   = define("enterprise:wecom:identity:bind", "Bound Enterprise WeCom identity {external_id} to user {scope}.")
+	EnterpriseWeComIdentityUpdate = define(
+		"enterprise:wecom:identity:update",
+		"Updated Enterprise WeCom identity {external_id} for user {scope}.",
+	)
+	EnterpriseWeComSyncStart  = define("enterprise:wecom:sync:start", "Enterprise WeCom directory sync started for {corp_id}.")
+	EnterpriseWeComSyncFinish = define("enterprise:wecom:sync:finish", "Enterprise WeCom directory sync finished for {corp_id} with outcome {outcome}.")
+
 	OrganizationCreate                  = define("organization:create", "Created organization {scope}.")
 	OrganizationDelete                  = define("organization:delete", "Deleted organization {scope}.")
 	OrganizationName                    = define("organization:name:update", "Changed organization name from {previous_name} to {scope}.")

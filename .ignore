@@ -6,3 +6,4 @@
 /public/assets
 /vendor
 node_modules
+.secrets

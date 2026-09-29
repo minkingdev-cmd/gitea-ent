@@ -33,6 +33,10 @@ type Source struct {
 	ExternalIDClaim       string
 }
 
+func (source *Source) OAuth2ProviderName() string {
+	return source.Provider
+}
+
 // FromDB fills up an OAuth2Config from serialized format.
 func (source *Source) FromDB(bs []byte) error {
 	return json.UnmarshalHandleDoubleEncode(bs, &source)

@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-09-24
+goal: 仅 Web 登录和用户标识接入企业微信，SSH key、PAT、Git HTTP token 保持原逻辑

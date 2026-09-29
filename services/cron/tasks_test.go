@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"testing"
 
+	"gitea.dev/modules/setting"
+	"gitea.dev/modules/test"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,4 +71,18 @@ func TestScheduleHasSeconds(t *testing.T) {
 			assert.Equal(t, test.hasSecond, scheduleHasSeconds(test.schedule))
 		})
 	}
+}
+
+func TestEnterpriseWeComDirectorySyncConfig(t *testing.T) {
+	t.Cleanup(test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled: true, SyncDepartments: true,
+	}))
+	cfg := enterpriseWeComDirectorySyncConfig()
+	assert.True(t, cfg.Enabled)
+	assert.False(t, cfg.RunAtStart)
+	assert.Equal(t, "@every 10m", cfg.Schedule)
+
+	setting.EnterpriseWeCom.SyncDepartments = false
+	cfg = enterpriseWeComDirectorySyncConfig()
+	assert.False(t, cfg.Enabled)
 }

@@ -427,6 +427,8 @@ func prepareMigrationTasks() []*migration {
 		newMigration(351, "Track transfer recipient access grants", v28.AddRecipientAccessGrantedToRepoTransfer),
 		newMigration(352, "Add token columns to deploy_key", v28.AddTokenToDeployKey),
 		newMigration(353, "Add audit event table", v28.AddAuditEventTable),
+		newMigration(354, "Add Enterprise WeCom identity and directory tables", v28.AddWeComIdentityAndDirectoryTables),
+		newMigration(355, "Add Enterprise WeCom sync version columns", v28.AddEnterpriseWeComSyncVersionColumns),
 	}
 	return preparedMigrations
 }

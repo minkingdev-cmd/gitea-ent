@@ -2,6 +2,8 @@ DIST := dist
 DIST_DIRS := $(DIST)/binaries $(DIST)/release
 
 GO ?= go
+GOPROXY ?= http://mirror.f123.pub/repository/go/
+export GOPROXY
 SHASUM ?= shasum -a 256
 
 AIR_PACKAGE ?= github.com/air-verse/air@v1.67.4 # renovate: datasource=go

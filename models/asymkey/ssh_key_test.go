@@ -14,9 +14,11 @@ import (
 
 	"gitea.dev/models/unittest"
 	"gitea.dev/modules/setting"
+	"gitea.dev/modules/test"
 
 	"github.com/42wim/sshsig"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_SSHParsePublicKey(t *testing.T) {
@@ -45,6 +47,28 @@ func Test_SSHParsePublicKey(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestEnterpriseWeComLoginOnlyDoesNotAffectSSHKeyLookup(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
+		Enabled:          true,
+		LoginOnly:        true,
+		CorpID:           "corp-1",
+		AgentID:          "1000002",
+		CorpSecret:       "secret",
+		UsernameTemplate: "{userid}",
+		AutoCreateUser:   true,
+	})()
+
+	keyContent := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICV0MGX/W9IvLA4FXpIuUcdDcbj5KX4syHgsTy7soVgf wecom-compat"
+	key, err := AddPublicKey(t.Context(), 1, "wecom-compat-ssh", keyContent, 0, true)
+	require.NoError(t, err)
+
+	found, err := SearchPublicKeyByContentExact(t.Context(), keyContent)
+	require.NoError(t, err)
+	require.Equal(t, key.ID, found.ID)
+	require.Equal(t, int64(1), found.OwnerID)
 }
 
 func Test_CheckPublicKeyString(t *testing.T) {

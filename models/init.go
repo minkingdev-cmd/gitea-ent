@@ -7,6 +7,8 @@ import (
 	"context"
 
 	"gitea.dev/models/unit"
+
+	_ "gitea.dev/models/enterprisewecom" // register Enterprise WeCom models
 )
 
 // Init initialize model

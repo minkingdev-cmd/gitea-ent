@@ -186,7 +186,7 @@ func parseOAuth2Config(form forms.AuthenticationForm) *oauth2.Source {
 		}
 	}
 
-	return &oauth2.Source{
+	source := &oauth2.Source{
 		Provider:                      form.Oauth2Provider,
 		ClientID:                      form.Oauth2Key,
 		ClientSecret:                  form.Oauth2Secret,
@@ -206,6 +206,11 @@ func parseOAuth2Config(form forms.AuthenticationForm) *oauth2.Source {
 		FullNameClaimName:     form.Oauth2FullNameClaimName,
 		ExternalIDClaim:       form.OpenIDConnectExternalIDClaim,
 	}
+	if source.Provider == oauth2.ProviderNameWeCom {
+		source.ClientID = ""
+		source.ClientSecret = ""
+	}
+	return source
 }
 
 func parseSSPIConfig(ctx *context.Context, form forms.AuthenticationForm) (*sspi.Source, error) {

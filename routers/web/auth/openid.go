@@ -59,6 +59,10 @@ func openIDConnectFromContext(ctx *context.Context, u *user_model.User) error {
 
 // SignInOpenID render sign in page
 func SignInOpenID(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	ctx.Data["Title"] = ctx.Tr("sign_in")
 
 	if ctx.FormString("openid.return_to") != "" {
@@ -101,6 +105,10 @@ func allowedOpenIDURI(uri string) (err error) {
 
 // SignInOpenIDPost response for openid sign in request
 func SignInOpenIDPost(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	form := web.GetForm[*forms.SignInOpenIDForm](ctx)
 	ctx.Data["Title"] = ctx.Tr("sign_in")
 	ctx.Data["PageIsSignIn"] = true
@@ -280,6 +288,10 @@ func prepareConnectOpenIDPageData(ctx *context.Context) (oid string) {
 
 // ConnectOpenID shows a form to connect an OpenID URI to an existing account
 func ConnectOpenID(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	oid := prepareConnectOpenIDPageData(ctx)
 	if oid == "" {
 		return
@@ -293,6 +305,10 @@ func ConnectOpenID(ctx *context.Context) {
 
 // ConnectOpenIDPost handles submission of a form to connect an OpenID URI to an existing account
 func ConnectOpenIDPost(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	form := web.GetForm[*forms.ConnectOpenIDForm](ctx)
 	oid := prepareConnectOpenIDPageData(ctx)
 	if oid == "" {
@@ -343,6 +359,10 @@ func prepareRegisterOpenIDPageData(ctx *context.Context) (oid string) {
 
 // RegisterOpenID shows a form to create a new user authenticated via an OpenID URI
 func RegisterOpenID(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	oid := prepareRegisterOpenIDPageData(ctx)
 	if oid == "" {
 		return
@@ -361,6 +381,10 @@ func RegisterOpenID(ctx *context.Context) {
 
 // RegisterOpenIDPost handles submission of a form to create a new user authenticated via an OpenID URI
 func RegisterOpenIDPost(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	oid := prepareRegisterOpenIDPageData(ctx)
 	if oid == "" {
 		return

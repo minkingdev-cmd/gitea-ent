@@ -30,6 +30,7 @@ import (
 	source_service "gitea.dev/services/auth/source"
 	"gitea.dev/services/auth/source/oauth2"
 	"gitea.dev/services/context"
+	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/services/externalaccount"
 	user_service "gitea.dev/services/user"
 
@@ -37,6 +38,28 @@ import (
 	"github.com/markbates/goth/gothic"
 	go_oauth2 "golang.org/x/oauth2"
 )
+
+func rejectDisallowedOAuth2Source(ctx *context.Context, authSource *auth.Source) bool {
+	if oauth2.IsWeComSource(authSource) && (!setting.EnterpriseWeCom.Enabled || !oauth2.IsConfiguredWeComSource(authSource)) {
+		ctx.HTTPError(http.StatusNotFound)
+		return true
+	}
+	if setting.EnterpriseWeComLoginOnly() && !oauth2.IsConfiguredWeComSource(authSource) {
+		ctx.HTTPError(http.StatusForbidden)
+		return true
+	}
+	return false
+}
+
+func handleWeComOAuthLoginError(ctx *context.Context, err error) {
+	if errors.Is(err, wecom_service.ErrWeComDenied) {
+		log.Info("Denied Enterprise WeCom login from %s [reason=login_denied]", ctx.RemoteAddr())
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
+	log.Error("Enterprise WeCom login failed from %s [reason=internal_error]", ctx.RemoteAddr())
+	ctx.HTTPError(http.StatusInternalServerError)
+}
 
 // SignInOAuth handles the OAuth2 login buttons
 func SignInOAuth(ctx *context.Context) {
@@ -46,12 +69,22 @@ func SignInOAuth(ctx *context.Context) {
 		ctx.ServerError("SignIn", err)
 		return
 	}
+	if rejectDisallowedOAuth2Source(ctx, authSource) {
+		return
+	}
 
 	rememberAuthRedirectLink(ctx)
 
 	// try to do a direct callback flow, so we don't authenticate the user again but use the valid accesstoken to get the user
 	user, gothUser, err := oAuth2UserLoginCallback(ctx, authSource, ctx.Req, ctx.Resp)
 	if err == nil && user != nil {
+		if oauth2.IsConfiguredWeComSource(authSource) {
+			user, err = wecom_service.AuthenticateOAuthLogin(ctx, authSource, user, ctx.Doer, gothUser)
+			if err != nil {
+				handleWeComOAuthLoginError(ctx, err)
+				return
+			}
+		}
 		// we got the user without going through the whole OAuth2 authentication flow again
 		handleOAuth2SignIn(ctx, authSource, user, gothUser)
 		return
@@ -77,17 +110,6 @@ func SignInOAuth(ctx *context.Context) {
 
 // SignInOAuthCallback handles the callback from the given provider
 func SignInOAuthCallback(ctx *context.Context) {
-	if ctx.Req.FormValue("error") != "" {
-		var errorKeyValues []string
-		for k, vv := range ctx.Req.Form {
-			for _, v := range vv {
-				errorKeyValues = append(errorKeyValues, fmt.Sprintf("%s = %s", html.EscapeString(k), html.EscapeString(v)))
-			}
-		}
-		sort.Strings(errorKeyValues)
-		ctx.Flash.Error(strings.Join(errorKeyValues, "\n"), true)
-	}
-
 	// first look if the provider is still active
 	authName := ctx.PathParam("provider")
 	authSource, err := auth.GetActiveOAuth2SourceByAuthName(ctx, authName)
@@ -100,16 +122,45 @@ func SignInOAuthCallback(ctx *context.Context) {
 		ctx.ServerError("SignIn", errors.New("no valid provider found, check configured callback url in provider"))
 		return
 	}
+	if rejectDisallowedOAuth2Source(ctx, authSource) {
+		return
+	}
+	if ctx.Req.FormValue("error") != "" {
+		if oauth2.IsConfiguredWeComSource(authSource) {
+			wecom_service.RecordCallbackLoginDeny(ctx, authSource, "provider_error")
+			ctx.Flash.Error(ctx.Tr("auth.oauth.signin.error.wecom"))
+		} else {
+			var errorKeyValues []string
+			for k, vv := range ctx.Req.Form {
+				for _, v := range vv {
+					errorKeyValues = append(errorKeyValues, fmt.Sprintf("%s = %s", html.EscapeString(k), html.EscapeString(v)))
+				}
+			}
+			sort.Strings(errorKeyValues)
+			ctx.Flash.Error(strings.Join(errorKeyValues, "\n"), true)
+		}
+	}
 
 	u, gothUser, err := oAuth2UserLoginCallback(ctx, authSource, ctx.Req, ctx.Resp)
 	if err != nil {
 		if uplerr, ok := err.(user_model.ErrUserProhibitLogin); ok {
+			if oauth2.IsConfiguredWeComSource(authSource) {
+				wecom_service.RecordCallbackLoginDeny(ctx, authSource, "prohibit_login")
+			}
 			log.Info("Failed authentication attempt for %s from %s: %v", uplerr.Name, ctx.RemoteAddr(), err)
 			ctx.Data["Title"] = ctx.Tr("auth.prohibit_login")
 			ctx.HTML(http.StatusOK, "user/auth/prohibit_login")
 			return
 		}
 		if callbackErr, ok := err.(errCallback); ok {
+			if oauth2.IsConfiguredWeComSource(authSource) {
+				reason := weComCallbackDenyReason(callbackErr.Code)
+				wecom_service.RecordCallbackLoginDeny(ctx, authSource, reason)
+				log.Info("Denied Enterprise WeCom callback [source_id=%d, reason=%s]", authSource.ID, reason)
+				ctx.Flash.Error(ctx.Tr("auth.oauth.signin.error.wecom"))
+				ctx.Redirect(setting.AppSubURL + "/user/login")
+				return
+			}
 			log.Info("Failed OAuth callback: (%v) %v", callbackErr.Code, callbackErr.Description)
 			switch callbackErr.Code {
 			case "access_denied":
@@ -123,11 +174,33 @@ func SignInOAuthCallback(ctx *context.Context) {
 			return
 		}
 		if err, ok := err.(*go_oauth2.RetrieveError); ok {
+			if oauth2.IsConfiguredWeComSource(authSource) {
+				wecom_service.RecordCallbackLoginDeny(ctx, authSource, "token_retrieve_error")
+				ctx.Flash.Error(ctx.Tr("auth.oauth.signin.error.wecom"))
+				ctx.Redirect(setting.AppSubURL + "/user/login")
+				return
+			}
 			ctx.Flash.Error("OAuth2 RetrieveError: " + err.Error())
 			ctx.Redirect(setting.AppSubURL + "/user/login")
 			return
 		}
+		if oauth2.IsConfiguredWeComSource(authSource) {
+			wecom_service.RecordCallbackLoginDeny(ctx, authSource, "callback_error")
+			ctx.Flash.Error(ctx.Tr("auth.oauth.signin.error.wecom"))
+			ctx.Redirect(setting.AppSubURL + "/user/login")
+			return
+		}
 		ctx.ServerError("UserSignIn", err)
+		return
+	}
+
+	if oauth2.IsConfiguredWeComSource(authSource) {
+		u, err = wecom_service.AuthenticateOAuthLogin(ctx, authSource, u, ctx.Doer, gothUser)
+		if err != nil {
+			handleWeComOAuthLoginError(ctx, err)
+			return
+		}
+		handleOAuth2SignIn(ctx, authSource, u, gothUser)
 		return
 	}
 
@@ -213,6 +286,17 @@ func SignInOAuthCallback(ctx *context.Context) {
 	}
 
 	handleOAuth2SignIn(ctx, authSource, u, gothUser)
+}
+
+func weComCallbackDenyReason(code string) string {
+	switch code {
+	case "access_denied":
+		return "callback_access_denied"
+	case "temporarily_unavailable":
+		return "callback_temporarily_unavailable"
+	default:
+		return "callback_error"
+	}
 }
 
 func claimValueToStringSet(claimValue any) container.Set[string] {

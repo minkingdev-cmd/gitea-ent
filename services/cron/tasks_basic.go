@@ -14,6 +14,7 @@ import (
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/setting"
 	"gitea.dev/services/auth"
+	enterprisewecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/services/migrations"
 	mirror_service "gitea.dev/services/mirror"
 	packages_cleanup_service "gitea.dev/services/packages/cleanup"
@@ -159,6 +160,20 @@ func registerSyncRepoLicenses() {
 	})
 }
 
+func registerEnterpriseWeComDirectorySync() {
+	RegisterTaskFatal("sync_enterprise_wecom_directory", enterpriseWeComDirectorySyncConfig(), func(ctx context.Context, _ *user_model.User, _ *BaseConfig) error {
+		return enterprisewecom_service.SyncDirectory(ctx, enterprisewecom_service.NewClientFromSettings())
+	})
+}
+
+func enterpriseWeComDirectorySyncConfig() *BaseConfig {
+	return &BaseConfig{
+		Enabled:    setting.EnterpriseWeCom.Enabled && (setting.EnterpriseWeCom.SyncDepartments || setting.EnterpriseWeCom.SyncTags),
+		RunAtStart: false,
+		Schedule:   "@every 10m",
+	}
+}
+
 func initBasicTasks() {
 	if setting.Mirror.Enabled {
 		registerUpdateMirrorTask()
@@ -176,4 +191,5 @@ func initBasicTasks() {
 		registerCleanupPackages()
 	}
 	registerSyncRepoLicenses()
+	registerEnterpriseWeComDirectorySync()
 }

@@ -53,12 +53,15 @@ type CommonAuthOptions struct {
 }
 
 func prepareCommonAuthPageData(ctx *context.Context, opt CommonAuthOptions) {
-	ctx.Data["EnablePasswordSignInForm"] = setting.Service.EnablePasswordSignInForm
-	ctx.Data["EnablePasskeyAuth"] = setting.Service.EnablePasskeyAuth
+	loginOnly := setting.EnterpriseWeComLoginOnly()
+	ctx.Data["EnablePasswordSignInForm"] = setting.Service.EnablePasswordSignInForm && !loginOnly
+	ctx.Data["EnablePasskeyAuth"] = setting.Service.EnablePasskeyAuth && !loginOnly
 
 	// for OpenID Connect
-	ctx.Data["EnableOpenIDSignUp"] = setting.Service.EnableOpenIDSignUp
+	ctx.Data["EnableOpenIDSignIn"] = setting.Service.EnableOpenIDSignIn && !loginOnly
+	ctx.Data["EnableOpenIDSignUp"] = setting.Service.EnableOpenIDSignUp && !loginOnly
 	ctx.Data["AllowOnlyInternalRegistration"] = setting.Service.AllowOnlyInternalRegistration
+	ctx.Data["ShowRegistrationButton"] = setting.Service.ShowRegistrationButton && !loginOnly
 
 	if opt.EnableCaptcha {
 		ctx.Data["EnableCaptcha"] = true
@@ -223,10 +226,11 @@ func performAutoLogin(ctx *context.Context) bool {
 func performAutoLoginOAuth2(ctx *context.Context, data *preparedSignInData) bool {
 	// If only 1 OAuth provider is present and other login methods are disabled, redirect to the OAuth provider.
 	onlySingleOAuth2 := len(data.oauth2Providers) == 1 &&
-		!setting.Service.EnablePasswordSignInForm &&
-		!setting.Service.EnableOpenIDSignIn &&
-		!setting.Service.EnablePasskeyAuth &&
-		!data.enableSSPI
+		(setting.EnterpriseWeComLoginOnly() ||
+			(!setting.Service.EnablePasswordSignInForm &&
+				!setting.Service.EnableOpenIDSignIn &&
+				!setting.Service.EnablePasskeyAuth &&
+				!data.enableSSPI))
 
 	if !onlySingleOAuth2 {
 		return false
@@ -245,12 +249,26 @@ type preparedSignInData struct {
 	enableSSPI      bool
 }
 
+func filterWeComOAuth2Providers(providers []oauth2.Provider) []oauth2.Provider {
+	filtered := make([]oauth2.Provider, 0, len(providers))
+	for _, provider := range providers {
+		if provider.Name() == oauth2.ProviderNameWeCom && provider.DisplayName() == setting.EnterpriseWeCom.LoginSourceName {
+			filtered = append(filtered, provider)
+		}
+	}
+	return filtered
+}
+
 func prepareSignInPageData(ctx *context.Context) (ret preparedSignInData) {
 	var err error
 	ret.enableSSPI = auth.IsSSPIEnabled(ctx)
 	ret.oauth2Providers, err = oauth2.GetOAuth2Providers(ctx, optional.Some(true))
 	if err != nil {
 		log.Error("Failed to get OAuth2 providers: %v", err)
+	}
+	if setting.EnterpriseWeComLoginOnly() {
+		ret.enableSSPI = false
+		ret.oauth2Providers = filterWeComOAuth2Providers(ret.oauth2Providers)
 	}
 	ctx.Data["Title"] = ctx.Tr("sign_in")
 	ctx.Data["OAuth2Providers"] = ret.oauth2Providers
@@ -284,7 +302,7 @@ func SignIn(ctx *context.Context) {
 
 // SignInPost response for sign in request
 func SignInPost(ctx *context.Context) {
-	if !setting.Service.EnablePasswordSignInForm {
+	if setting.EnterpriseWeComLoginOnly() || !setting.Service.EnablePasswordSignInForm {
 		ctx.HTTPError(http.StatusForbidden)
 		return
 	}
@@ -496,6 +514,11 @@ func shouldRedirectToOIDCEndSession(ctx *context.Context) bool {
 }
 
 func prepareSignUpPageData(ctx *context.Context) bool {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return false
+	}
+
 	ctx.Data["Title"] = ctx.Tr("sign_up")
 	ctx.Data["SignUpLink"] = setting.AppSubURL + "/user/sign_up"
 	ctx.Data["PageIsSignUp"] = true
@@ -513,6 +536,9 @@ func prepareSignUpPageData(ctx *context.Context) bool {
 		ctx.ServerError("GetOAuth2Providers", err)
 		return false
 	}
+	if setting.EnterpriseWeComLoginOnly() {
+		oauth2Providers = filterWeComOAuth2Providers(oauth2Providers)
+	}
 	ctx.Data["OAuth2Providers"] = oauth2Providers
 
 	prepareCommonAuthPageData(ctx, CommonAuthOptions{
@@ -527,6 +553,10 @@ func prepareSignUpPageData(ctx *context.Context) bool {
 
 // SignUp render the register page
 func SignUp(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	if !prepareSignUpPageData(ctx) {
 		return
 	}
@@ -536,6 +566,10 @@ func SignUp(ctx *context.Context) {
 
 // SignUpPost response for sign up information submission
 func SignUpPost(ctx *context.Context) {
+	if setting.EnterpriseWeComLoginOnly() {
+		ctx.HTTPError(http.StatusForbidden)
+		return
+	}
 	if !prepareSignUpPageData(ctx) {
 		return
 	}

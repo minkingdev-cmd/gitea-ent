@@ -154,6 +154,9 @@ func GetOAuth2Providers(ctx context.Context, isActive optional.Option[bool]) ([]
 
 	providers := make([]Provider, 0, len(authSources))
 	for _, source := range authSources {
+		if IsWeComSource(source) && (!setting.EnterpriseWeCom.Enabled || !IsConfiguredWeComSource(source)) {
+			continue
+		}
 		provider, err := CreateProviderFromSource(source)
 		if err != nil {
 			return nil, err

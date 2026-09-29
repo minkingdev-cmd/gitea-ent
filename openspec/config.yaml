@@ -1,0 +1,22 @@
+schema: spec-driven
+
+context: |
+  This repository is an internal fork of go-gitea/gitea for enterprise Git hosting.
+  Enterprise authorization work is documented under docs/enterprise-authz/.
+  Keep the fork shallow and prefer additive services/models over deep changes to Git storage, pull request core models, or issue core models.
+  For this change, Enterprise WeCom only owns Web sign-in and external user identity. SSH keys, PATs, and Git HTTP token authentication must keep Gitea's existing behavior.
+  Gitea internal users remain the local subject for repository permissions, teams, audit events, SSH keys, PATs, and Git HTTP tokens.
+  Run make help for development targets. Run make fmt after Go edits, make tidy after go.mod edits, and make generate-swagger after API changes.
+  For locale changes, edit only options/locale/locale_en-US.json.
+  Do not commit, push, rewrite history, or create PRs unless explicitly requested.
+
+rules:
+  proposal:
+    - Keep scope focused on behavior and compatibility boundaries; implementation details belong in design.md.
+    - Explicitly state whether SSH key, PAT, and Git HTTP token behavior changes.
+  specs:
+    - Use RFC 2119 style MUST/SHOULD/MAY requirements.
+    - Include negative requirements for authentication paths that must remain unchanged.
+  tasks:
+    - Include tests for forbidden Web login paths and for unchanged SSH/PAT/Git HTTP token behavior.
+    - Include DB migration, configuration, audit, and documentation tasks when applicable.

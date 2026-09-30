@@ -72,10 +72,28 @@ type GeneratedTeamReconcileResult struct {
 }
 
 func ReconcileGeneratedTeams(ctx context.Context, opts GeneratedTeamReconcileOptions) (*GeneratedTeamReconcileResult, error) {
+	var result *GeneratedTeamReconcileResult
+	err := withGeneratedMutation(ctx, func(ctx context.Context) error {
+		var err error
+		result, err = reconcileGeneratedTeams(ctx, opts)
+		return err
+	})
+	return result, safeGovernanceError("teams", err)
+}
+
+func reconcileGeneratedTeams(ctx context.Context, opts GeneratedTeamReconcileOptions) (*GeneratedTeamReconcileResult, error) {
 	if !setting.EnterpriseWeCom.Enabled {
 		return nil, ErrWeComDisabled
 	}
 	opts = normalizeGeneratedTeamReconcileOptions(opts)
+	if err := configuredGovernanceScope(opts.CorpID, opts.AgentID); err != nil {
+		return nil, err
+	}
+	orgID, err := resolveGeneratedTargetOrg(ctx, opts.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	opts.OrgID = orgID
 	result := &GeneratedTeamReconcileResult{}
 
 	var generatedTeams []wecom_model.GeneratedTeam
@@ -90,8 +108,7 @@ func ReconcileGeneratedTeams(ctx context.Context, opts GeneratedTeamReconcileOpt
 	for _, generatedTeam := range generatedTeams {
 		team, created, skipped, err := ensureGeneratedGiteaTeam(ctx, opts, &generatedTeam)
 		if err != nil {
-			result.Errors = append(result.Errors, err.Error())
-			continue
+			return result, safeGovernanceError("teams", err)
 		}
 		if skipped {
 			result.Skipped++
@@ -122,9 +139,9 @@ func ReconcileGeneratedTeams(ctx context.Context, opts GeneratedTeamReconcileOpt
 
 	applyID := strings.TrimSpace(opts.ApplyID)
 	if applyID == "" {
-		applyID = firstNonEmpty(opts.RunID, fmt.Sprintf("generated-team-%d", timeutil.TimeStampNow()))
+		applyID = firstNonEmpty(opts.RunID, newGovernanceID("generated-team"))
 	}
-	applyResult, err := ApplyAuthzMappings(ctx, AuthzReconcileOptions{CorpID: opts.CorpID, ActorID: opts.ActorID, ApplyID: applyID})
+	applyResult, err := ApplyAuthzMappings(ctx, AuthzReconcileOptions{CorpID: opts.CorpID, AgentID: opts.AgentID, OrgID: opts.OrgID, ActorID: opts.ActorID, ApplyID: applyID})
 	if err != nil {
 		recordGeneratedTeamReconcileAudit(ctx, opts, result, "error", "membership_apply_failed")
 		return result, err
@@ -148,14 +165,23 @@ func ensureGeneratedGiteaTeam(ctx context.Context, opts GeneratedTeamReconcileOp
 		if err != nil {
 			return nil, false, false, err
 		}
-		if skipReason == "source_missing" || skipReason == "ambiguous_team" {
+		if skipReason == "ambiguous_team" {
+			return nil, false, false, governanceError("teams", "ambiguous_team")
+		}
+		if skipReason == "source_missing" {
 			return nil, false, true, nil
 		}
+	}
+	if generatedTeam.OrgID != opts.OrgID {
+		return nil, false, false, governanceError("teams", "managed_org_conflict")
 	}
 	if generatedTeam.TeamID > 0 {
 		team, err := organization.GetTeamByID(ctx, generatedTeam.TeamID)
 		if err != nil {
 			return nil, false, false, err
+		}
+		if team.OrgID != opts.OrgID {
+			return nil, false, false, governanceError("teams", "managed_org_conflict")
 		}
 		if generatedTeam.TeamName != "" && team.Name != generatedTeam.TeamName {
 			team.Name = generatedTeam.TeamName
@@ -171,7 +197,7 @@ func ensureGeneratedGiteaTeam(ctx context.Context, opts GeneratedTeamReconcileOp
 		return nil, false, false, err
 	}
 	if skipReason == "ambiguous_team" {
-		return nil, false, true, nil
+		return nil, false, false, governanceError("teams", "ambiguous_team")
 	}
 	orgID := generatedTeam.OrgID
 	if opts.OrgID > 0 {
@@ -237,7 +263,7 @@ func markGeneratedTeamApplied(ctx context.Context, opts GeneratedTeamReconcileOp
 func upsertGeneratedTeamAuthzMapping(ctx context.Context, opts GeneratedTeamReconcileOptions, generatedTeam *wecom_model.GeneratedTeam, teamID int64) error {
 	mapping := &wecom_model.AuthzMapping{}
 	has, err := db.GetEngine(ctx).
-		Where("corp_id = ? AND source_type = ? AND source_id = ? AND target_type = ?", opts.CorpID, generatedTeam.SourceType, generatedTeam.SourceID, wecom_model.AuthzTargetTeam).
+		Where("corp_id = ? AND agent_id = ? AND origin = ? AND org_id = ? AND source_type = ? AND source_id = ? AND target_type = ?", opts.CorpID, opts.AgentID, wecom_model.AuthzMappingOriginGenerated, opts.OrgID, generatedTeam.SourceType, generatedTeam.SourceID, wecom_model.AuthzTargetTeam).
 		Get(mapping)
 	if err != nil {
 		return err
@@ -251,6 +277,8 @@ func upsertGeneratedTeamAuthzMapping(ctx context.Context, opts GeneratedTeamReco
 	}
 	return db.Insert(ctx, &wecom_model.AuthzMapping{
 		CorpID:     opts.CorpID,
+		AgentID:    opts.AgentID,
+		Origin:     wecom_model.AuthzMappingOriginGenerated,
 		SourceType: generatedTeam.SourceType,
 		SourceID:   generatedTeam.SourceID,
 		TargetType: wecom_model.AuthzTargetTeam,

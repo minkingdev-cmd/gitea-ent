@@ -72,6 +72,15 @@ type accessLogRecorder struct {
 }
 
 func (lr *accessLogRecorder) record(start time.Time, respWriter ResponseWriter, req *http.Request) {
+	if req.URL != nil && strings.HasSuffix(req.URL.Path, "/enterprise/wecom/callback/admin-authority") {
+		req = req.Clone(req.Context())
+		req.URL.RawQuery, req.URL.Fragment, req.URL.RawFragment = "", "", ""
+		req.URL.User = nil
+		req.RequestURI = req.URL.EscapedPath()
+		req.Header, req.Trailer = http.Header{}, nil
+		req.Body, req.GetBody = http.NoBody, nil
+		req.Form, req.PostForm, req.MultipartForm = nil, nil, nil
+	}
 	var requestID string
 	if lr.needRequestID {
 		requestID = parseRequestIDFromRequestHeader(req)

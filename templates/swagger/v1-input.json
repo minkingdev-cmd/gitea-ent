@@ -5,6 +5,7 @@
   "basePath": "/GITEA-API-APP-SUBURL/api/v1",
   "tags": [
     {"name": "admin", "description": "Site administration"},
+    {"name": "enterprise", "description": "Enterprise WeCom generated governance state"},
     {"name": "issue", "description": "Issues, pull requests, comments, labels and milestones"},
     {"name": "miscellaneous", "description": "Miscellaneous endpoints"},
     {"name": "notification", "description": "User notifications"},

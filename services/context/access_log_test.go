@@ -6,14 +6,18 @@ package context
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
+	"gitea.dev/modules/test"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testAccessLoggerMock struct {
@@ -73,4 +77,26 @@ func TestAccessLogger(t *testing.T) {
 func TestAccessLoggerRequestID(t *testing.T) {
 	assert.False(t, isSafeRequestID("\x00"))
 	assert.True(t, isSafeRequestID("a b-c"))
+}
+
+func TestAccessLoggerRedactsAdministratorCallbackRequest(t *testing.T) {
+	for _, path := range []string{"/enterprise/wecom/callback/admin-authority", "/gitea/enterprise/wecom/callback/admin-authority"} {
+		t.Run(path, func(t *testing.T) {
+			defer test.MockVariableValue(&setting.Log.AccessLogTemplate, `{{.Ctx.Req.RequestURI}} {{.Ctx.Req.URL.String}} {{.Ctx.Req.Header}} {{.Ctx.Req.Form}} {{.Ctx.Req.Body}} {{.RequestID}}`)()
+			defer test.MockVariableValue(&setting.Log.RequestIDHeaders, []string{"X-Request-ID"})()
+			recorder := newAccessLogRecorder()
+			logger := new(testAccessLoggerMock)
+			recorder.logger = logger
+			req := httptest.NewRequest(http.MethodPost, path+"?echostr=private-ciphertext&msg_signature=private-signature", strings.NewReader("private-body"))
+			req.Header.Set("Referer", "https://example.invalid/?private-ciphertext")
+			req.Header.Set("X-Request-ID", "private-request-id")
+			req.Form = url.Values{"private-form": {"private-content"}}
+			recorder.record(time.Now(), &testAccessLoggerResponseWriterMock{}, req)
+			require.Len(t, logger.logs, 1)
+			require.Contains(t, logger.logs[0], path)
+			require.NotContains(t, logger.logs[0], "private-")
+			require.Contains(t, req.URL.RawQuery, "private-ciphertext")
+			require.Equal(t, "private-request-id", req.Header.Get("X-Request-ID"))
+		})
+	}
 }

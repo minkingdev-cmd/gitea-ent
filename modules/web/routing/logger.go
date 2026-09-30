@@ -122,6 +122,9 @@ var sensitiveRequestQueryKeys = []string{
 }
 
 func sanitizedRequestURI(req *http.Request) string {
+	if req != nil && req.URL != nil && strings.HasSuffix(req.URL.Path, "/enterprise/wecom/callback/admin-authority") {
+		return req.URL.EscapedPath()
+	}
 	if req == nil || req.URL == nil || req.URL.RawQuery == "" {
 		if req == nil {
 			return ""

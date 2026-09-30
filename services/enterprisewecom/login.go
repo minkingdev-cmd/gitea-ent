@@ -38,7 +38,6 @@ var refreshAdminAuthorityForLogin = func(ctx context.Context, identity *OAuthIde
 		CorpID:  identity.CorpID,
 		AgentID: identity.AgentID,
 		Trigger: "login",
-		RunID:   fmt.Sprintf("login-%d", timeutil.TimeStampNow()),
 	})
 	return err
 }
@@ -77,9 +76,7 @@ func AuthenticateOAuthLogin(ctx context.Context, authSource *auth_model.Source, 
 		if err := upsertIdentity(ctx, authSource, u, identity); err != nil {
 			return nil, err
 		}
-		if err := refreshAndPromoteProtectedAdminsAfterLogin(ctx, identity); err != nil {
-			return nil, err
-		}
+		refreshAndPromoteProtectedAdminsAfterLogin(ctx, identity)
 		recordLoginSuccess(ctx, u, identity, authSource)
 		return u, nil
 	}
@@ -107,9 +104,7 @@ func AuthenticateOAuthLogin(ctx context.Context, authSource *auth_model.Source, 
 		recordLoginDeny(ctx, u, identity, authSource, "identity_already_bound")
 		return nil, err
 	}
-	if err := refreshAndPromoteProtectedAdminsAfterLogin(ctx, identity); err != nil {
-		return nil, err
-	}
+	refreshAndPromoteProtectedAdminsAfterLogin(ctx, identity)
 	audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComIdentityBind, u,
 		"external_id", wecom_model.MakeExternalID(identity.CorpID, identity.UserID),
 		"login_source_id", authSource.ID,
@@ -118,12 +113,12 @@ func AuthenticateOAuthLogin(ctx context.Context, authSource *auth_model.Source, 
 	return u, nil
 }
 
-func refreshAndPromoteProtectedAdminsAfterLogin(ctx context.Context, identity *OAuthIdentity) error {
-	if err := refreshAdminAuthorityForLogin(ctx, identity); err != nil && !errors.Is(err, ErrWeComAuthorityUnsupported) {
-		log.Warn("Unable to refresh Enterprise WeCom administrator authority during login: %v", err)
+func refreshAndPromoteProtectedAdminsAfterLogin(ctx context.Context, identity *OAuthIdentity) {
+	if err := refreshAdminAuthorityForLogin(ctx, identity); err != nil {
+		if safe, ok := errors.AsType[*GovernanceError](safeProviderError("authority", err)); ok {
+			log.Warn("Unable to refresh Enterprise WeCom administrator authority during login: %s", safe.Reason)
+		}
 	}
-	_, err := PromoteProtectedAdmins(ctx, ProtectedAdminResolveOptions{CorpID: identity.CorpID, AgentID: identity.AgentID})
-	return err
 }
 
 func OAuthIdentityFromGoth(gothUser goth.User) (*OAuthIdentity, error) {

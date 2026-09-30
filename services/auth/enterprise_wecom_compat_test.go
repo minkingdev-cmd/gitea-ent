@@ -5,8 +5,11 @@ package auth
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	auth_model "gitea.dev/models/auth"
@@ -47,6 +50,27 @@ func TestEnterpriseWeComLoginOnlyDoesNotBlockGitHTTPBasicTokenVerification(t *te
 	require.NoError(t, err)
 	require.NotNil(t, u)
 	require.Equal(t, int64(1), u.ID)
+}
+
+func TestEnterpriseWeComLoginOnlyRejectsSSPIBeforeNegotiation(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer mockEnterpriseWeComLoginOnly()()
+	defer test.MockVariableValue(&sspiAuth, nil)()
+	defer test.MockVariableValue(&sspiAuthErrInit, errors.New("SSPI initialization must not be consulted"))()
+
+	req := httptest.NewRequest(http.MethodPost, "/user/login", strings.NewReader(url.Values{"auth_with_sspi": {"1"}}.Encode()))
+	req = req.WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Negotiate dGVzdA==")
+	response := httptest.NewRecorder()
+	store := reqctx.ContextData{}
+	u, err := (&SSPI{CreateSession: true}).Verify(req, response, store, nil)
+	require.NoError(t, err)
+	require.Nil(t, sspiAuth)
+	require.Nil(t, u)
+	require.Empty(t, response.Header().Get("WWW-Authenticate"))
+	require.Empty(t, response.Header().Get("Set-Cookie"))
+	require.Empty(t, store)
 }
 
 func mockEnterpriseWeComLoginOnly() func() {

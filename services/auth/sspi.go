@@ -61,6 +61,9 @@ func (s *SSPI) Name() string {
 // If negotiation should continue or authentication fails, immediately returns a 401 HTTP
 // response code, as required by the SPNEGO protocol.
 func (s *SSPI) Verify(req *http.Request, w http.ResponseWriter, store DataStore, sess SessionStore) (*user_model.User, error) {
+	if setting.EnterpriseWeComLoginOnly() {
+		return nil, nil //nolint:nilnil // the auth method is not applicable
+	}
 	sspiAuthOnce.Do(func() { sspiAuthErrInit = sspiAuthInit() })
 	if sspiAuthErrInit != nil {
 		return nil, sspiAuthErrInit

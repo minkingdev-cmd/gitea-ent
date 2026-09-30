@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
@@ -137,17 +138,15 @@ func TestRefreshAdminAuthoritySnapshotReportsUnsupportedAuthoritySource(t *testi
 
 func TestHandleAdminAuthorityCallbackValidatesBoundaryAndRefreshesFromAPI(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
-	mockAuthoritySettings(t)
+	mockCallbackSettings(t)
 
+	encrypted := callbackTestEncrypted(t, callbackTestEvent, callbackTestConfig().ReceiverID, "1234567890123456")
+	callback, err := VerifyAdminCallbackEvent(callbackTestConfig(), callbackTestQuery(encrypted), []byte(`<xml><Encrypt>`+encrypted+`</Encrypt></xml>`), time.Unix(1780000000, 0))
+	require.NoError(t, err)
+	callback.TriggerID = "callback-run"
 	result, err := HandleAdminAuthorityCallback(t.Context(), fakeAdminAuthorityClient{admins: []AppAdminInfo{
 		{UserID: "callback.admin", AuthType: 1},
-	}}, AdminAuthorityCallback{
-		Validated: true,
-		CorpID:    "corp-auth",
-		AgentID:   "1000002",
-		Event:     WeComChangeAppAdminEvent,
-		TriggerID: "callback-run",
-	})
+	}}, callback)
 	require.NoError(t, err)
 	require.Equal(t, 1, result.ManagementCount)
 
@@ -162,7 +161,7 @@ func TestHandleAdminAuthorityCallbackValidatesBoundaryAndRefreshesFromAPI(t *tes
 
 func TestHandleAdminAuthorityCallbackRejectsUnvalidatedOrMismatchedCallback(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
-	mockAuthoritySettings(t)
+	mockCallbackSettings(t)
 
 	_, err := HandleAdminAuthorityCallback(t.Context(), fakeAdminAuthorityClient{}, AdminAuthorityCallback{Event: WeComChangeAppAdminEvent})
 	require.ErrorIs(t, err, ErrWeComDenied)

@@ -13,6 +13,7 @@ import (
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/process"
 	"gitea.dev/modules/translation"
+	enterprisewecom_service "gitea.dev/services/enterprisewecom"
 
 	"github.com/go-co-op/gocron/v2"
 )
@@ -33,6 +34,9 @@ func init() {
 func Init(original context.Context) {
 	defer pprof.SetGoroutineLabels(original)
 	_, _, finished := process.GetManager().AddTypedContext(graceful.GetManager().ShutdownContext(), "Service: Cron", process.SystemProcessType, true)
+	if err := enterprisewecom_service.InitAdminCallbackQueue(graceful.GetManager().ShutdownContext()); err != nil {
+		log.Error("WeCom callback queue initialization failed: callback_queue_unavailable")
+	}
 	initBasicTasks()
 	initExtendedTasks()
 	initActionsTasks()

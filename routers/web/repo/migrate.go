@@ -81,6 +81,9 @@ func handleMigrateError(ctx *context.Context, owner *user_model.User, err error,
 	var errNameReserved db.ErrNameReserved
 	var errNamePatternNotAllowed db.ErrNamePatternNotAllowed
 	switch {
+	case errors.Is(err, util.ErrPermissionDenied):
+		ctx.HTTPError(http.StatusForbidden)
+		return
 	case repo_model.IsErrReachLimitOfRepo(err):
 		maxCreationLimit := owner.MaxCreationLimit()
 		msg := ctx.TrN(maxCreationLimit, "repo.form.reach_limit_of_creation_1", "repo.form.reach_limit_of_creation_n", maxCreationLimit)

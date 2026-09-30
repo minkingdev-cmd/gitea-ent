@@ -97,7 +97,7 @@ func GenerateRepository(ctx context.Context, doer, owner *user_model.User, templ
 	}
 
 	// 1 - Create the repository in the database
-	if err := db.WithTx(ctx, func(ctx context.Context) error {
+	if err := withRepositoryCreationTx(ctx, doer, owner, func(ctx context.Context) error {
 		return createRepositoryInDB(ctx, doer, owner, generateRepo, false)
 	}); err != nil {
 		return nil, err

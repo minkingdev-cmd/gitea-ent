@@ -4,9 +4,10 @@
 package enterprisewecom
 
 import (
+	"cmp"
 	"context"
 	"errors"
-	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,11 +27,12 @@ type AdminAuthorityClient interface {
 }
 
 type AdminAuthorityRefreshOptions struct {
-	CorpID  string
-	AgentID string
-	Trigger string
-	RunID   string
-	Now     timeutil.TimeStamp
+	OnPublished func(context.Context) error
+	CorpID      string
+	AgentID     string
+	Trigger     string
+	RunID       string
+	Now         timeutil.TimeStamp
 }
 
 type AdminAuthorityRefreshResult struct {
@@ -45,62 +47,94 @@ func RefreshAdminAuthoritySnapshot(ctx context.Context, client AdminAuthorityCli
 	if !setting.EnterpriseWeCom.Enabled {
 		return nil, ErrWeComDisabled
 	}
+	if db.InTransaction(ctx) {
+		return nil, governanceError("preflight", "invalid_publish_context")
+	}
 	opts = normalizeAdminAuthorityRefreshOptions(opts)
-	if opts.CorpID == "" || opts.AgentID == "" {
-		recordAuthorityRefreshAudit(ctx, opts, nil, "error", "missing_configuration")
-		return nil, fmt.Errorf("%w: missing corp or agent id", ErrWeComDenied)
+	run := &wecom_model.ReconcileRun{RunID: opts.RunID, CorpID: opts.CorpID, AgentID: opts.AgentID, Trigger: opts.Trigger, Stage: "authority", Status: wecom_model.ReconcileRunStatusRunning, StartedUnix: timeutil.TimeStampNow()}
+	if err := db.Insert(ctx, run); err != nil {
+		return nil, safeGovernanceError("evidence", err)
 	}
-	if client == nil {
-		recordAuthorityRefreshAudit(ctx, opts, nil, "unsupported", "unsupported_authority_source")
-		return nil, ErrWeComAuthorityUnsupported
-	}
-
-	admins, err := client.ListAppAdmins(ctx)
-	if err != nil {
-		recordAuthorityRefreshAudit(ctx, opts, nil, "error", "provider_error")
-		return nil, err
-	}
-
-	result := &AdminAuthorityRefreshResult{RefreshID: opts.RunID, Total: len(admins)}
-	activeUsers := make([]string, 0, len(admins))
-	seen := map[string]struct{}{}
-
-	err = db.WithTx(ctx, func(ctx context.Context) error {
-		for _, admin := range admins {
-			userID := strings.TrimSpace(admin.UserID)
-			if userID == "" {
-				continue
-			}
-			if _, ok := seen[userID]; ok {
-				continue
-			}
-			seen[userID] = struct{}{}
-			activeUsers = append(activeUsers, userID)
-
-			authType := wecom_model.AdminAuthorityAuthType(admin.AuthType)
-			isManagement := authType == wecom_model.AdminAuthorityAuthTypeManagement
-			if isManagement {
-				result.ManagementCount++
-			} else {
-				result.MessageOnlyCount++
-			}
-			if err := upsertAdminAuthority(ctx, opts, userID, admin.OpenUserID, authType, isManagement); err != nil {
-				return err
-			}
-		}
-		affected, err := deactivateMissingAdminAuthorities(ctx, opts, activeUsers)
+	var result *AdminAuthorityRefreshResult
+	err := withGovernanceLease(ctx, opts.CorpID, opts.AgentID, opts.RunID, func(ctx context.Context) error {
+		admins, err := fetchAdminAuthority(ctx, client)
 		if err != nil {
 			return err
 		}
-		result.DeactivatedMissing = affected
-		return nil
+		return publishGovernance(ctx, 0, func(ctx context.Context, revision int64) error {
+			result, err = persistAdminAuthority(ctx, admins, opts)
+			if err != nil {
+				return err
+			}
+			run.ProtectedCount = result.ManagementCount
+			run.PublishedRevision = revision
+			run.Stage = "published"
+			if _, err := finishAutomationRun(ctx, run, wecom_model.ReconcileRunStatusSuccess, "not_requested", "success", nil); err != nil {
+				return err
+			}
+			if opts.OnPublished != nil {
+				return opts.OnPublished(ctx)
+			}
+			return nil
+		})
 	})
 	if err != nil {
-		recordAuthorityRefreshAudit(ctx, opts, result, "error", "snapshot_persist_failed")
+		err = safeGovernanceError("authority", err)
+		var safe *GovernanceError
+		errors.As(err, &safe)
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		run.ProtectedCount, run.PublishedRevision = 0, 0
+		_, persistErr := finishAutomationRun(cleanup, run, wecom_model.ReconcileRunStatusFailed, "not_requested", "failed", err)
+		recordAuthorityRefreshAudit(cleanup, opts, nil, "error", safe.Reason)
+		return nil, persistErr
+	}
+	return result, nil
+}
+
+func fetchAdminAuthority(ctx context.Context, client AdminAuthorityClient) ([]AppAdminInfo, error) {
+	if client == nil {
+		return nil, ErrWeComAuthorityUnsupported
+	}
+	admins, err := client.ListAppAdmins(ctx)
+	if err != nil {
+		return nil, safeProviderError("authority", err)
+	}
+	seen := map[string]bool{}
+	for _, admin := range admins {
+		if strings.TrimSpace(admin.UserID) == "" || (admin.AuthType != 0 && admin.AuthType != 1) || seen[admin.UserID] {
+			return nil, governanceError("authority", "incomplete_authority_source")
+		}
+		seen[admin.UserID] = true
+	}
+	admins = slices.Clone(admins)
+	slices.SortFunc(admins, func(a, b AppAdminInfo) int { return cmp.Compare(a.UserID, b.UserID) })
+	return admins, nil
+}
+
+func persistAdminAuthority(ctx context.Context, admins []AppAdminInfo, opts AdminAuthorityRefreshOptions) (*AdminAuthorityRefreshResult, error) {
+	result := &AdminAuthorityRefreshResult{RefreshID: opts.RunID, Total: len(admins)}
+	activeUsers := make([]string, 0, len(admins))
+	for _, admin := range admins {
+		userID := strings.TrimSpace(admin.UserID)
+		activeUsers = append(activeUsers, userID)
+		authType := wecom_model.AdminAuthorityAuthType(admin.AuthType)
+		isManagement := authType == wecom_model.AdminAuthorityAuthTypeManagement
+		if isManagement {
+			result.ManagementCount++
+		} else {
+			result.MessageOnlyCount++
+		}
+		if err := upsertAdminAuthority(ctx, opts, userID, admin.OpenUserID, authType, isManagement); err != nil {
+			return nil, err
+		}
+	}
+	affected, err := deactivateMissingAdminAuthorities(ctx, opts, activeUsers)
+	if err != nil {
 		return nil, err
 	}
+	result.DeactivatedMissing = affected
 	if _, err := PromoteProtectedAdmins(ctx, ProtectedAdminResolveOptions{CorpID: opts.CorpID, AgentID: opts.AgentID}); err != nil {
-		recordAuthorityRefreshAudit(ctx, opts, result, "error", "promotion_failed")
 		return nil, err
 	}
 	recordAuthorityRefreshAudit(ctx, opts, result, "success", "")
@@ -116,7 +150,7 @@ func normalizeAdminAuthorityRefreshOptions(opts AdminAuthorityRefreshOptions) Ad
 	}
 	opts.RunID = strings.TrimSpace(opts.RunID)
 	if opts.RunID == "" {
-		opts.RunID = fmt.Sprintf("authority-%d", timeutil.TimeStampNow())
+		opts.RunID = newGovernanceID("authority")
 	}
 	if opts.Now == 0 {
 		opts.Now = timeutil.TimeStamp(time.Now().Unix())

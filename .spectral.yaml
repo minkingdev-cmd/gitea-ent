@@ -5,3 +5,13 @@ rules:
   oas2-api-host: off
   oas2-parameter-description: off
   operation-description: off
+
+overrides:
+  - files:
+      - "templates/swagger/v1-*.generated.json#/paths/~1enterprise~1wecom~1mappings/post"
+      - "templates/swagger/v1-*.generated.json#/paths/~1enterprise~1wecom~1mappings~1dry-run/post"
+      - "templates/swagger/v1-*.generated.json#/paths/~1enterprise~1wecom~1mappings~1apply/post"
+      - "templates/swagger/v1-*.generated.json#/paths/~1enterprise~1wecom~1mappings~1%7Bid%7D/patch"
+      - "templates/swagger/v1-*.generated.json#/paths/~1enterprise~1wecom~1mappings~1%7Bid%7D/delete"
+    rules:
+      operation-success-response: off # 这些弃用端点只拒绝维护；不能伪造成功响应。

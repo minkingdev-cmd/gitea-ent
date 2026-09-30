@@ -17,7 +17,6 @@ import (
 	"gitea.dev/models/organization"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/setting"
-	"gitea.dev/modules/structs"
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/services/audit"
 )
@@ -61,10 +60,23 @@ type generatedSourceKey struct {
 }
 
 func DeriveGeneratedAuthorizationState(ctx context.Context, opts GeneratedDerivationOptions) (*GeneratedDerivationResult, error) {
+	var result *GeneratedDerivationResult
+	err := withGeneratedMutation(ctx, func(ctx context.Context) error {
+		var err error
+		result, err = deriveGeneratedAuthorizationState(ctx, opts)
+		return err
+	})
+	return result, safeGovernanceError("derive", err)
+}
+
+func deriveGeneratedAuthorizationState(ctx context.Context, opts GeneratedDerivationOptions) (*GeneratedDerivationResult, error) {
 	if !setting.EnterpriseWeCom.Enabled {
 		return nil, ErrWeComDisabled
 	}
 	opts = normalizeGeneratedDerivationOptions(opts)
+	if err := configuredGovernanceScope(opts.CorpID, opts.AgentID); err != nil {
+		return nil, err
+	}
 	if opts.CorpID == "" || opts.AgentID == "" {
 		return nil, fmt.Errorf("%w: missing corp or agent id", ErrWeComDenied)
 	}
@@ -107,7 +119,7 @@ func normalizeGeneratedDerivationOptions(opts GeneratedDerivationOptions) Genera
 	opts.AgentID = strings.TrimSpace(firstNonEmpty(opts.AgentID, setting.EnterpriseWeCom.AgentID))
 	opts.RunID = strings.TrimSpace(opts.RunID)
 	if opts.RunID == "" {
-		opts.RunID = fmt.Sprintf("generated-%d", timeutil.TimeStampNow())
+		opts.RunID = newGovernanceID("generated")
 	}
 	if opts.Now == 0 {
 		opts.Now = timeutil.TimeStamp(time.Now().Unix())
@@ -116,29 +128,56 @@ func normalizeGeneratedDerivationOptions(opts GeneratedDerivationOptions) Genera
 }
 
 func resolveGeneratedTargetOrg(ctx context.Context, orgID int64) (int64, error) {
-	if orgID > 0 {
-		if _, err := organization.GetOrgByID(ctx, orgID); err != nil {
-			return 0, err
-		}
-		return orgID, nil
+	configured := setting.EnterpriseWeCom.ManagedOrgID
+	if configured <= 0 {
+		return 0, governanceError("preflight", "managed_org_unconfigured")
 	}
-	orgs, err := db.Find[organization.Organization](ctx, organization.FindOrgOptions{IncludeVisibility: structs.VisibleTypePrivate})
+	if orgID != 0 && orgID != configured {
+		return 0, governanceError("preflight", "managed_org_override")
+	}
+	if org, err := organization.GetOrgByID(ctx, configured); err != nil || org.Type != user_model.UserTypeOrganization {
+		return 0, governanceError("preflight", "managed_org_invalid")
+	}
+	conflicting, err := db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ? AND org_id <> ?", setting.EnterpriseWeCom.CorpID, setting.EnterpriseWeCom.AgentID, configured).Exist(new(wecom_model.GeneratedTeam))
 	if err != nil {
-		return 0, err
+		return 0, safeGovernanceError("preflight", err)
 	}
-	if len(orgs) != 1 {
-		return 0, fmt.Errorf("%w: expected exactly one organization, got %d", ErrInvalidAuthzMapping, len(orgs))
+	if conflicting {
+		return 0, governanceError("preflight", "managed_org_conflict")
 	}
-	return orgs[0].ID, nil
+	conflicting, err = db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ? AND origin = ? AND org_id <> ?", setting.EnterpriseWeCom.CorpID, setting.EnterpriseWeCom.AgentID, wecom_model.AuthzMappingOriginGenerated, configured).Exist(new(wecom_model.AuthzMapping))
+	if err != nil {
+		return 0, safeGovernanceError("preflight", err)
+	}
+	if conflicting {
+		return 0, governanceError("preflight", "managed_org_conflict")
+	}
+	var legacy []wecom_model.AuthzMapping
+	if err := db.GetEngine(ctx).Where("corp_id = ? AND origin = ?", setting.EnterpriseWeCom.CorpID, wecom_model.AuthzMappingOriginLegacy).Find(&legacy); err != nil {
+		return 0, safeGovernanceError("preflight", err)
+	}
+	for _, mapping := range legacy {
+		if mapping.TargetType != wecom_model.AuthzTargetTeam {
+			continue
+		}
+		count, err := db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ? AND source_type = ? AND source_id = ? AND org_id = ? AND team_id = ?", mapping.CorpID, setting.EnterpriseWeCom.AgentID, mapping.SourceType, mapping.SourceID, mapping.OrgID, mapping.TeamID).Count(new(wecom_model.GeneratedTeam))
+		if err != nil {
+			return 0, safeGovernanceError("preflight", err)
+		}
+		if count > 0 {
+			return 0, governanceError("preflight", "mapping_origin_conflict")
+		}
+	}
+	return configured, nil
 }
 
 func loadGeneratedTeamCandidates(ctx context.Context, opts GeneratedDerivationOptions, teamsByName map[string][]*organization.Team) ([]generatedTeamCandidate, error) {
 	var departments []wecom_model.Department
-	if err := db.GetEngine(ctx).Where("corp_id = ?", opts.CorpID).Find(&departments); err != nil {
+	if err := db.GetEngine(ctx).Where("corp_id = ?", opts.CorpID).OrderBy("department_id").Find(&departments); err != nil {
 		return nil, err
 	}
 	var tags []wecom_model.Tag
-	if err := db.GetEngine(ctx).Where("corp_id = ?", opts.CorpID).Find(&tags); err != nil {
+	if err := db.GetEngine(ctx).Where("corp_id = ?", opts.CorpID).OrderBy("tag_id").Find(&tags); err != nil {
 		return nil, err
 	}
 
@@ -391,7 +430,7 @@ func markStaleGeneratedTeamAdmins(ctx context.Context, opts GeneratedDerivationO
 
 func deactivateStaleGeneratedSources(ctx context.Context, opts GeneratedDerivationOptions, currentSources map[generatedSourceKey]struct{}, result *GeneratedDerivationResult) error {
 	var staleTeams []wecom_model.GeneratedTeam
-	if err := db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ?", opts.CorpID, opts.AgentID).Find(&staleTeams); err != nil {
+	if err := db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ?", opts.CorpID, opts.AgentID).OrderBy("team_id, id").Find(&staleTeams); err != nil {
 		return err
 	}
 	for _, generatedTeam := range staleTeams {
@@ -430,7 +469,7 @@ func markGeneratedSourceMissing(ctx context.Context, opts GeneratedDerivationOpt
 		return err
 	}
 	if _, err := db.GetEngine(ctx).
-		Where("corp_id = ? AND source_type = ? AND source_id = ? AND target_type = ?", opts.CorpID, generatedTeam.SourceType, generatedTeam.SourceID, wecom_model.AuthzTargetTeam).
+		Where("corp_id = ? AND agent_id = ? AND origin = ? AND org_id = ? AND source_type = ? AND source_id = ? AND target_type = ?", opts.CorpID, opts.AgentID, wecom_model.AuthzMappingOriginGenerated, opts.OrgID, generatedTeam.SourceType, generatedTeam.SourceID, wecom_model.AuthzTargetTeam).
 		Cols("is_active").
 		Update(&wecom_model.AuthzMapping{IsActive: false}); err != nil {
 		return err

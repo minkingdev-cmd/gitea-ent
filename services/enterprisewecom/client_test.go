@@ -170,7 +170,7 @@ func TestClientListAppAdminsUsesSuperAdminTagWhenSuiteAccessTokenIsUnavailable(t
 	}, admins)
 }
 
-func TestClientListAppAdminsReturnsEmptyWhenSuperAdminTagIsMissing(t *testing.T) {
+func TestClientListAppAdminsRejectsMissingSuperAdminTag(t *testing.T) {
 	client := NewClient(Config{
 		CorpID:            "corp-1",
 		CorpSecret:        "secret-1",
@@ -190,7 +190,7 @@ func TestClientListAppAdminsReturnsEmptyWhenSuperAdminTagIsMissing(t *testing.T)
 	})
 
 	admins, err := client.ListAppAdmins(t.Context())
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.Empty(t, admins)
 }
 
@@ -213,4 +213,50 @@ func TestClientPropagatesCancellation(t *testing.T) {
 
 	_, err := client.GetAccessToken(ctx)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestClientRequiresExplicitProviderSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		path    string
+		payload string
+		call    func(*Client) error
+	}{
+		{"token", "/cgi-bin/gettoken", `"access_token":"token-1","expires_in":7200`, func(c *Client) error { _, err := c.GetAccessToken(t.Context()); return err }},
+		{"identity", "/cgi-bin/auth/getuserinfo", `"userid":"user-1"`, func(c *Client) error { _, err := c.GetUserInfo(t.Context(), "token-1", "code-1"); return err }},
+		{"authority", "/cgi-bin/service/get_admin_list", `"admin":[]`, func(c *Client) error { _, err := c.ListAppAdmins(t.Context()); return err }},
+		{"departments", "/cgi-bin/department/list", `"department":[]`, func(c *Client) error { _, err := c.ListDepartments(t.Context()); return err }},
+		{"department_detail", "/cgi-bin/department/get", `"department":{"id":1}`, func(c *Client) error { _, err := c.GetDepartment(t.Context(), 1); return err }},
+		{"members", "/cgi-bin/user/list", `"userlist":[]`, func(c *Client) error { _, err := c.ListMembers(t.Context(), 1); return err }},
+		{"tags", "/cgi-bin/tag/list", `"taglist":[]`, func(c *Client) error { _, err := c.ListTags(t.Context()); return err }},
+		{"tag_members", "/cgi-bin/tag/get", `"userlist":[]`, func(c *Client) error { _, err := c.ListTagMembers(t.Context(), 1); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, code := range []struct {
+				name, field string
+				success     bool
+			}{
+				{"missing", "", false},
+				{"null", `"errcode":null,`, false},
+				{"zero", `"errcode":0,`, true},
+			} {
+				t.Run(code.name, func(t *testing.T) {
+					client := NewClient(Config{CorpID: "corp-1", AgentID: "1", SuiteAccessToken: "suite-token", HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						if req.URL.Path == tc.path {
+							return jsonResponse("{" + code.field + tc.payload + `,"errmsg":"provider-sensitive"}`), nil
+						}
+						require.Equal(t, "/cgi-bin/gettoken", req.URL.Path)
+						return jsonResponse(`{"errcode":0,"access_token":"token-1","expires_in":7200}`), nil
+					})}})
+					err := tc.call(client)
+					if code.success {
+						require.NoError(t, err)
+						return
+					}
+					require.ErrorIs(t, err, ErrWeComUnavailable)
+					require.NotContains(t, err.Error(), "provider-sensitive")
+				})
+			}
+		})
+	}
 }

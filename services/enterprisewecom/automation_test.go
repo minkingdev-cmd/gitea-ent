@@ -32,6 +32,7 @@ func mockAutomationSettings(t *testing.T) {
 	t.Helper()
 	t.Cleanup(test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
 		Enabled:         true,
+		ManagedOrgID:    unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2}).OrgID,
 		CorpID:          "corp-auto",
 		AgentID:         "1000002",
 		CorpSecret:      "secret",

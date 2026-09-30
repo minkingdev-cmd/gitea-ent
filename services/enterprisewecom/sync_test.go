@@ -23,6 +23,7 @@ func mockSyncSettings(t *testing.T, departments, tags bool) {
 	t.Helper()
 	t.Cleanup(test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
 		Enabled:         true,
+		ManagedOrgID:    unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2}).OrgID,
 		LoginSourceName: "enterprise-wecom",
 		CorpID:          "corp-1",
 		AgentID:         "1000002",
@@ -164,7 +165,7 @@ func TestSyncDirectoryAppliesAuthzMappingsAfterSuccessfulSyncWhenEnabled(t *test
 	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-1", WeComUserID: "sync-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusOutOfScope})
 	require.NoError(t, err)
 	require.NoError(t, wecom_model.UpsertDepartment(t.Context(), &wecom_model.Department{CorpID: "corp-1", DepartmentID: 2, Name: "研发"}))
-	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err = createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 
 	client := fakeDirectoryClient{
@@ -173,7 +174,8 @@ func TestSyncDirectoryAppliesAuthzMappingsAfterSuccessfulSyncWhenEnabled(t *test
 	}
 	require.NoError(t, SyncDirectory(t.Context(), client))
 
-	isMember, err := organization.IsTeamMember(t.Context(), team.OrgID, team.ID, 1)
+	generatedTeam := unittest.AssertExistsAndLoadBean(t, &organization.Team{OrgID: team.OrgID, LowerName: generatedTeamName("dept", "研发", 2)})
+	isMember, err := organization.IsTeamMember(t.Context(), team.OrgID, generatedTeam.ID, 1)
 	require.NoError(t, err)
 	require.True(t, isMember)
 }
@@ -186,7 +188,7 @@ func TestSyncDirectoryDoesNotApplyAuthzMappingsAfterFailedSync(t *testing.T) {
 	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-1", WeComUserID: "failed-sync-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusOutOfScope})
 	require.NoError(t, err)
 	require.NoError(t, wecom_model.UpsertDepartment(t.Context(), &wecom_model.Department{CorpID: "corp-1", DepartmentID: 2, Name: "研发"}))
-	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err = createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 
 	client := fakeDirectoryClient{
@@ -199,4 +201,8 @@ func TestSyncDirectoryDoesNotApplyAuthzMappingsAfterFailedSync(t *testing.T) {
 	isMember, err := organization.IsTeamMember(t.Context(), team.OrgID, team.ID, 1)
 	require.NoError(t, err)
 	require.False(t, isMember)
+}
+
+func (f fakeDirectoryClient) ListAppAdmins(context.Context) ([]AppAdminInfo, error) {
+	return []AppAdminInfo{}, nil
 }

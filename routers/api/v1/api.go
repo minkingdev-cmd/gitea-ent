@@ -1892,11 +1892,11 @@ func Routes() *web.Router {
 
 		m.Group("/enterprise/wecom/mappings", func() {
 			m.Get("", enterprisewecom_router.ListAuthzMappings)
-			m.Post("", bind(api.EnterpriseWeComAuthzMappingOption{}), enterprisewecom_router.CreateAuthzMapping)
-			m.Post("/dry-run", bind(api.EnterpriseWeComAuthzReconcileOption{}), enterprisewecom_router.DryRunAuthzMappings)
-			m.Post("/apply", bind(api.EnterpriseWeComAuthzReconcileOption{}), enterprisewecom_router.ApplyAuthzMappings)
+			m.Post("", enterprisewecom_router.CreateAuthzMapping)
+			m.Post("/dry-run", enterprisewecom_router.DryRunAuthzMappings)
+			m.Post("/apply", enterprisewecom_router.ApplyAuthzMappings)
 			m.Combo("/{id}").Get(enterprisewecom_router.GetAuthzMapping).
-				Patch(bind(api.EnterpriseWeComAuthzMappingOption{}), enterprisewecom_router.UpdateAuthzMapping).
+				Patch(enterprisewecom_router.UpdateAuthzMapping).
 				Delete(enterprisewecom_router.DisableAuthzMapping)
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryAdmin), reqToken(), reqSiteAdmin())
 

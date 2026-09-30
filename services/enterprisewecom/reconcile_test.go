@@ -10,6 +10,7 @@ import (
 	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/unittest"
+	"gitea.dev/modules/setting"
 
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +21,7 @@ func TestPlanAuthzMappingsDryRunDoesNotMutateMembership(t *testing.T) {
 	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
 	seedReconcileUser(t, "dept-user", 1, wecom_model.IdentityStatusActive)
 	seedDepartmentMembership(t, "dept-user", 100)
-	_, err := CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "100", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err := createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "100", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 
 	result, err := PlanAuthzMappings(t.Context(), AuthzReconcileOptions{})
@@ -39,7 +40,7 @@ func TestApplyAuthzMappingsAddsTeamMembershipAndIsIdempotent(t *testing.T) {
 	mockMappingSettings(t)
 	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
 	seedReconcileUser(t, "team-user", 1, wecom_model.IdentityStatusActive)
-	_, err := CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "team-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err := createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "team-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 
 	result, err := ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "apply-1"})
@@ -66,7 +67,7 @@ func TestApplyAuthzMappingsAddsOrgMembershipConservatively(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	mockMappingSettings(t)
 	seedReconcileUser(t, "org-user", 1, wecom_model.IdentityStatusActive)
-	_, err := CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "org-user", TargetType: wecom_model.AuthzTargetOrg, OrgID: 7, ActorID: 1})
+	_, err := createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "org-user", TargetType: wecom_model.AuthzTargetOrg, OrgID: 7, ActorID: 1})
 	require.NoError(t, err)
 
 	result, err := ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "apply-org"})
@@ -86,7 +87,7 @@ func TestApplyAuthzMappingsSkipsInactiveOutOfScopeAndUnboundIdentities(t *testin
 	_, _, err := wecom_model.UpsertIdentitySnapshot(t.Context(), wecom_model.BindIdentityOptions{CorpID: "corp-map", WeComUserID: "unbound-user", Status: wecom_model.IdentityStatusActive})
 	require.NoError(t, err)
 	for _, userID := range []string{"inactive-user", "out-user", "unbound-user"} {
-		_, err := CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: userID, TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+		_, err := createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: userID, TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 		require.NoError(t, err)
 	}
 
@@ -101,7 +102,7 @@ func TestApplyAuthzMappingsRemovesStaleManagedMembershipAndPreservesManualMember
 	mockMappingSettings(t)
 	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
 	seedReconcileUser(t, "mapped-user", 1, wecom_model.IdentityStatusActive)
-	mapping, err := CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "mapped-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	mapping, err := createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "mapped-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 	_, err = ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "initial"})
 	require.NoError(t, err)
@@ -120,7 +121,7 @@ func TestApplyAuthzMappingsRemovesStaleManagedMembershipAndPreservesManualMember
 	require.False(t, has)
 
 	seedReconcileUser(t, "manual-user", 4, wecom_model.IdentityStatusActive)
-	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "manual-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err = createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "manual-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 	_, err = ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "manual"})
 	require.NoError(t, err)
@@ -139,9 +140,9 @@ func TestApplyAuthzMappingsPreservesSharedManagedMembership(t *testing.T) {
 	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
 	seedReconcileUser(t, "shared-user", 1, wecom_model.IdentityStatusActive)
 	seedTagMembership(t, "shared-user", 8)
-	first, err := CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "shared-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	first, err := createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "shared-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
-	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceTag, SourceID: "8", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err = createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceTag, SourceID: "8", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 	_, err = ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "shared-initial"})
 	require.NoError(t, err)
@@ -160,12 +161,12 @@ func TestApplyAuthzMappingsDoesNotCommitPartialResultsWhenPlanHasErrors(t *testi
 	mockMappingSettings(t)
 	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
 	seedReconcileUser(t, "valid-user", 1, wecom_model.IdentityStatusActive)
-	_, err := CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "valid-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err := createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "valid-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
-	require.NoError(t, db.Insert(t.Context(), &wecom_model.AuthzMapping{CorpID: "corp-map", SourceType: wecom_model.AuthzSourceUser, SourceID: "valid-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: 999999, IsActive: true}))
+	require.NoError(t, db.Insert(t.Context(), &wecom_model.AuthzMapping{CorpID: "corp-map", AgentID: setting.EnterpriseWeCom.AgentID, Origin: wecom_model.AuthzMappingOriginGenerated, SourceType: wecom_model.AuthzSourceUser, SourceID: "valid-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: 999999, IsActive: true}))
 
 	_, err = ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "broken"})
-	require.ErrorIs(t, err, ErrInvalidAuthzMapping)
+	require.Error(t, err)
 	isMember, err := organization.IsTeamMember(t.Context(), team.OrgID, team.ID, 1)
 	require.NoError(t, err)
 	require.False(t, isMember)
@@ -187,4 +188,17 @@ func seedTagMembership(t *testing.T, wecomUserID string, tagID int64) {
 	t.Helper()
 	require.NoError(t, wecom_model.UpsertTag(t.Context(), &wecom_model.Tag{CorpID: "corp-map", TagID: tagID, Name: "Tag"}))
 	require.NoError(t, wecom_model.UpsertMembership(t.Context(), &wecom_model.Membership{CorpID: "corp-map", WeComUserID: wecomUserID, Kind: wecom_model.MembershipTag, TargetID: tagID}))
+}
+
+func createGeneratedMappingForTest(t *testing.T, opts AuthzMappingOptions) (*wecom_model.AuthzMapping, error) {
+	t.Helper()
+	setting.EnterpriseWeCom.ManagedOrgID = opts.OrgID
+	mapping, err := CreateAuthzMapping(t.Context(), opts)
+	if err != nil {
+		return nil, err
+	}
+	mapping.AgentID = setting.EnterpriseWeCom.AgentID
+	mapping.Origin = wecom_model.AuthzMappingOriginGenerated
+	_, err = db.GetEngine(t.Context()).ID(mapping.ID).Cols("agent_id", "origin").Update(mapping)
+	return mapping, err
 }

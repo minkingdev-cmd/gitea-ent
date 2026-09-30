@@ -137,6 +137,9 @@ type ReconcileRun struct {
 	AgentID                string             `xorm:"VARCHAR(64) NOT NULL INDEX"`
 	Trigger                string             `xorm:"VARCHAR(32) NOT NULL INDEX"`
 	Status                 ReconcileRunStatus `xorm:"VARCHAR(32) NOT NULL INDEX DEFAULT 'running'"`
+	Stage                  string             `xorm:"VARCHAR(32)"`
+	Reason                 string             `xorm:"VARCHAR(64)"`
+	PublishedRevision      int64              `xorm:"NOT NULL DEFAULT 0"`
 	DirectorySyncStatus    string             `xorm:"VARCHAR(32)"`
 	AuthorityRefreshStatus string             `xorm:"VARCHAR(32)"`
 	GeneratedMappings      int

@@ -127,6 +127,20 @@ func RecordAs(ctx context.Context, doer *user_model.User, action audit_model.Act
 	})
 }
 
+type (
+	requiredPersistenceKey   struct{}
+	requiredPersistenceState struct{ err error }
+)
+
+// WithRequiredPersistence lets a transaction reject a failed governance audit insert.
+func WithRequiredPersistence(ctx context.Context) (context.Context, func() error) {
+	if state, ok := ctx.Value(requiredPersistenceKey{}).(*requiredPersistenceState); ok {
+		return ctx, func() error { return state.err }
+	}
+	state := new(requiredPersistenceState)
+	return context.WithValue(ctx, requiredPersistenceKey{}, state), func() error { return state.err }
+}
+
 // writeEvent persists an audit event when audit logging is enabled.
 func writeEvent(ctx context.Context, params RecordParams) {
 	if !setting.AuditRecordEnabled() {
@@ -136,6 +150,13 @@ func writeEvent(ctx context.Context, params RecordParams) {
 	e := buildEvent(ctx, params)
 
 	if err := audit_model.InsertEvent(ctx, e); err != nil {
+		if state, ok := ctx.Value(requiredPersistenceKey{}).(*requiredPersistenceState); ok {
+			if state.err == nil {
+				state.err = err
+			}
+			log.Error("WeCom governance audit persistence failed: evidence_persist_failed")
+			return
+		}
 		log.Error("Error writing audit event action=%s actor=%s scope=%s/%d to database: %v", e.Action, e.ActorName, e.ScopeType, e.ScopeID, err)
 	}
 }

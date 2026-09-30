@@ -297,13 +297,15 @@ func AddTeamMember(ctx context.Context, team *organization.Team, user *user_mode
 			log.Error("GetTeamRepositories failed: %v", err)
 		}
 
-		go func(repos []*repo_model.Repository) {
-			for _, repo := range repos {
-				if err = repo_model.WatchRepoAuto(graceful.GetManager().ShutdownContext(), user, repo, true); err != nil {
-					log.Error("watch repo failed: %v", err)
+		db.AfterCommit(ctx, func() {
+			go func() {
+				for _, repo := range repos {
+					if err := repo_model.WatchRepoAuto(graceful.GetManager().ShutdownContext(), user, repo, true); err != nil {
+						log.Error("watch repo failed: %v", err)
+					}
 				}
-			}
-		}(repos)
+			}()
+		})
 	}
 
 	return nil

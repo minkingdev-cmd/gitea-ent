@@ -16,7 +16,6 @@ import (
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/test"
-	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/tests"
 
 	"github.com/stretchr/testify/require"
@@ -31,6 +30,7 @@ func TestAPIEnterpriseWeComMappings(t *testing.T) {
 		CorpSecret:      "corp-secret-value",
 		SyncDepartments: true,
 		SyncTags:        true,
+		ManagedOrgID:    3,
 	})()
 
 	adminToken := getUserToken(t, "user1", auth_model.AccessTokenScopeWriteAdmin)
@@ -46,24 +46,24 @@ func TestAPIEnterpriseWeComMappings(t *testing.T) {
 		IsActive:     true,
 	}))
 
-	option := api.EnterpriseWeComAuthzMappingOption{
-		SourceType: "user",
-		SourceID:   "api-user",
-		TargetType: "team",
-		OrgID:      team.OrgID,
-		TeamID:     team.ID,
+	option := map[string]any{
+		"source_type": "user",
+		"source_id":   "api-user",
+		"target_type": "team",
+		"org_id":      team.OrgID,
+		"team_id":     team.ID,
 	}
 
 	req := NewRequestWithJSON(t, "POST", "/api/v1/enterprise/wecom/mappings", &option).
 		AddTokenAuth(nonAdminToken)
 	MakeRequest(t, req, http.StatusForbidden)
 
-	req = NewRequestWithJSON(t, "POST", "/api/v1/enterprise/wecom/mappings", &api.EnterpriseWeComAuthzMappingOption{
-		SourceType: "user",
-		SourceID:   "missing-user",
-		TargetType: "team",
-		OrgID:      team.OrgID,
-		TeamID:     team.ID,
+	req = NewRequestWithJSON(t, "POST", "/api/v1/enterprise/wecom/mappings", &map[string]any{
+		"source_type": "user",
+		"source_id":   "missing-user",
+		"target_type": "team",
+		"org_id":      team.OrgID,
+		"team_id":     team.ID,
 	}).AddTokenAuth(adminToken)
 	MakeRequest(t, req, http.StatusGone)
 
@@ -71,35 +71,50 @@ func TestAPIEnterpriseWeComMappings(t *testing.T) {
 		AddTokenAuth(adminToken)
 	MakeRequest(t, req, http.StatusGone)
 
-	mapping, err := wecom_service.CreateAuthzMapping(t.Context(), wecom_service.AuthzMappingOptions{
-		CorpID:     "corp-api-map",
-		SourceType: wecom_model.AuthzSourceUser,
-		SourceID:   "api-user",
-		TargetType: wecom_model.AuthzTargetTeam,
-		OrgID:      team.OrgID,
-		TeamID:     team.ID,
-		ActorID:    1,
-	})
-	require.NoError(t, err)
+	mapping := &wecom_model.AuthzMapping{
+		CorpID: "corp-api-map", AgentID: "1000002", Origin: wecom_model.AuthzMappingOriginGenerated,
+		SourceType: wecom_model.AuthzSourceUser, SourceID: "api-user", TargetType: wecom_model.AuthzTargetTeam,
+		OrgID: team.OrgID, TeamID: team.ID, CreatedBy: 1, IsActive: true,
+	}
+	require.NoError(t, db.Insert(t.Context(), mapping))
 
 	req = NewRequest(t, "GET", "/api/v1/enterprise/wecom/mappings").AddTokenAuth(adminToken)
 	resp := MakeRequest(t, req, http.StatusOK)
 	listed := DecodeJSON(t, resp, &[]api.EnterpriseWeComAuthzMapping{})
 	require.Len(t, *listed, 1)
 	require.Equal(t, mapping.ID, (*listed)[0].ID)
+	require.Equal(t, "corp-api-map", (*listed)[0].CorpID)
+	require.Equal(t, "user", (*listed)[0].SourceType)
+	require.Equal(t, "api-user", (*listed)[0].SourceID)
+	require.Equal(t, "team", (*listed)[0].TargetType)
+	require.Equal(t, team.OrgID, (*listed)[0].OrgID)
+	require.Equal(t, team.ID, (*listed)[0].TeamID)
+	require.True(t, (*listed)[0].Active)
+	require.Equal(t, int64(1), (*listed)[0].CreatedBy)
+	require.False(t, (*listed)[0].Created.IsZero())
+	require.False(t, (*listed)[0].Updated.IsZero())
+	detail := MakeRequest(t, NewRequestf(t, "GET", "/api/v1/enterprise/wecom/mappings/%d", mapping.ID).AddTokenAuth(adminToken), http.StatusOK)
+	fetched := DecodeJSON(t, detail, &api.EnterpriseWeComAuthzMapping{})
+	require.Equal(t, (*listed)[0], *fetched)
+	legacy := &wecom_model.AuthzMapping{CorpID: "corp-api-map", AgentID: "1000002", Origin: "legacy", SourceType: wecom_model.AuthzSourceUser, SourceID: "legacy", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, IsActive: true}
+	require.NoError(t, db.Insert(t.Context(), legacy))
+	MakeRequest(t, NewRequestf(t, "GET", "/api/v1/enterprise/wecom/mappings/%d", legacy.ID).AddTokenAuth(adminToken), http.StatusNotFound)
+	resp = MakeRequest(t, NewRequest(t, "GET", "/api/v1/enterprise/wecom/mappings?include_inactive=true").AddTokenAuth(adminToken), http.StatusOK)
+	listed = DecodeJSON(t, resp, &[]api.EnterpriseWeComAuthzMapping{})
+	require.Len(t, *listed, 1)
 
 	req = NewRequestWithJSON(t, "PATCH", fmt.Sprintf("/api/v1/enterprise/wecom/mappings/%d", mapping.ID), &option).
 		AddTokenAuth(adminToken)
 	MakeRequest(t, req, http.StatusGone)
 
-	req = NewRequestWithJSON(t, "POST", "/api/v1/enterprise/wecom/mappings/dry-run", &api.EnterpriseWeComAuthzReconcileOption{ApplyID: "dry-run"}).
+	req = NewRequestWithJSON(t, "POST", "/api/v1/enterprise/wecom/mappings/dry-run", &map[string]any{"apply_id": "dry-run"}).
 		AddTokenAuth(adminToken)
 	MakeRequest(t, req, http.StatusGone)
 	isMember, err := organization.IsTeamMember(t.Context(), team.OrgID, team.ID, 1)
 	require.NoError(t, err)
 	require.False(t, isMember)
 
-	req = NewRequestWithJSON(t, "POST", "/api/v1/enterprise/wecom/mappings/apply", &api.EnterpriseWeComAuthzReconcileOption{ApplyID: "manual-apply"}).
+	req = NewRequestWithJSON(t, "POST", "/api/v1/enterprise/wecom/mappings/apply", &map[string]any{"apply_id": "manual-apply"}).
 		AddTokenAuth(adminToken)
 	MakeRequest(t, req, http.StatusGone)
 	isMember, err = organization.IsTeamMember(t.Context(), team.OrgID, team.ID, 1)

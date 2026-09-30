@@ -4,7 +4,9 @@
 package enterprisewecom
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"strings"
 
 	audit_model "gitea.dev/models/audit"
@@ -30,7 +32,7 @@ func ResolveProtectedAdminUsers(ctx context.Context, opts ProtectedAdminResolveO
 		return nil, nil
 	}
 	var authorities []wecom_model.AdminAuthority
-	if err := db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ? AND is_active = ? AND is_management = ?", opts.CorpID, opts.AgentID, true, true).Find(&authorities); err != nil {
+	if err := db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ? AND is_active = ? AND is_management = ?", opts.CorpID, opts.AgentID, true, true).OrderBy("wecom_userid").Find(&authorities); err != nil {
 		return nil, err
 	}
 	users := make([]*user_model.User, 0, len(authorities))
@@ -56,10 +58,40 @@ func ResolveProtectedAdminUsers(ctx context.Context, opts ProtectedAdminResolveO
 		seen[u.ID] = struct{}{}
 		users = append(users, u)
 	}
+	slices.SortFunc(users, func(a, b *user_model.User) int { return cmp.Compare(a.ID, b.ID) })
 	return users, nil
 }
 
 func PromoteProtectedAdmins(ctx context.Context, opts ProtectedAdminResolveOptions) (int, error) {
+	if !setting.EnterpriseWeCom.Enabled {
+		return 0, nil
+	}
+	opts.CorpID = strings.TrimSpace(firstNonEmpty(opts.CorpID, setting.EnterpriseWeCom.CorpID))
+	opts.AgentID = strings.TrimSpace(firstNonEmpty(opts.AgentID, setting.EnterpriseWeCom.AgentID))
+	if err := configuredGovernanceScope(opts.CorpID, opts.AgentID); err != nil {
+		return 0, err
+	}
+	if lease, ok := ctx.Value(governanceLeaseKey{}).(*governanceLease); ok && db.InTransaction(ctx) {
+		if lease.row.CorpID != opts.CorpID || lease.row.AgentID != opts.AgentID {
+			return 0, governanceError("preflight", "scope_mismatch")
+		}
+		return persistProtectedAdminPromotion(ctx, opts)
+	}
+	promoted := 0
+	err := withGovernanceLease(ctx, opts.CorpID, opts.AgentID, newGovernanceID("promotion"), func(ctx context.Context) error {
+		return publishGovernance(ctx, 0, func(ctx context.Context, _ int64) error {
+			var err error
+			promoted, err = persistProtectedAdminPromotion(ctx, opts)
+			return err
+		})
+	})
+	if err != nil {
+		return 0, safeGovernanceError("promotion", err)
+	}
+	return promoted, nil
+}
+
+func persistProtectedAdminPromotion(ctx context.Context, opts ProtectedAdminResolveOptions) (int, error) {
 	users, err := ResolveProtectedAdminUsers(ctx, opts)
 	if err != nil {
 		return 0, err

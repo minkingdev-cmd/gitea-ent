@@ -12,6 +12,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/models/webhook"
 	"gitea.dev/modules/git/gitcmd"
+	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/setting"
 	"gitea.dev/services/auth"
 	enterprisewecom_service "gitea.dev/services/enterprisewecom"
@@ -175,6 +176,15 @@ func enterpriseWeComDirectorySyncConfig() *BaseConfig {
 	}
 }
 
+func registerEnterpriseWeComAdminCallbacks() {
+	RegisterTaskFatal("scan_enterprise_wecom_admin_callbacks", &BaseConfig{Enabled: enterprisewecom_service.AdminCallbackEnabled(), RunAtStart: true, Schedule: "@every 1s"}, func(ctx context.Context, _ *user_model.User, _ *BaseConfig) error {
+		if err := enterprisewecom_service.InitAdminCallbackQueue(graceful.GetManager().ShutdownContext()); err != nil {
+			return err
+		}
+		return enterprisewecom_service.ScanAdminCallbacks(ctx)
+	})
+}
+
 func initBasicTasks() {
 	if setting.Mirror.Enabled {
 		registerUpdateMirrorTask()
@@ -193,4 +203,5 @@ func initBasicTasks() {
 	}
 	registerSyncRepoLicenses()
 	registerEnterpriseWeComDirectorySync()
+	registerEnterpriseWeComAdminCallbacks()
 }

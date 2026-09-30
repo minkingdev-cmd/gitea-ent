@@ -4,10 +4,14 @@
 package setting
 
 import (
+	"errors"
+	"net/http"
+
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitrepo"
 	"gitea.dev/modules/setting"
+	"gitea.dev/modules/util"
 	"gitea.dev/services/context"
 	repo_service "gitea.dev/services/repository"
 )
@@ -45,7 +49,11 @@ func AdoptOrDeleteRepository(ctx *context.Context) {
 			Name:      dir,
 			IsPrivate: true,
 		}); err != nil {
-			ctx.ServerError("repository.AdoptRepository", err)
+			if errors.Is(err, util.ErrPermissionDenied) {
+				ctx.HTTPError(http.StatusForbidden)
+			} else {
+				ctx.ServerError("repository.AdoptRepository", err)
+			}
 			return
 		}
 		ctx.Flash.Success(ctx.Tr("repo.adopt_preexisting_success", dir))

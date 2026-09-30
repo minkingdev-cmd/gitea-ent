@@ -316,6 +316,7 @@ func Routes() *web.Router {
 	routes.Methods("GET,HEAD", "/robots.txt", append(mid, misc.RobotsTxt)...)
 	routes.Get("/ssh_info", misc.SSHInfo)
 	routes.Get("/api/healthz", healthcheck.Check)
+	routes.Methods("GET,POST", "/enterprise/wecom/callback/admin-authority", AdminAuthorityCallback)
 
 	mid = append(mid, common.MustInitSessioner(), context.Contexter(), common.AuditOrigin(audit_model.OriginUI))
 

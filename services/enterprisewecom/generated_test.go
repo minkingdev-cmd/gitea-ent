@@ -20,10 +20,11 @@ import (
 func mockGeneratedSettings(t *testing.T) {
 	t.Helper()
 	t.Cleanup(test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
-		Enabled:    true,
-		CorpID:     "corp-generated",
-		AgentID:    "1000002",
-		CorpSecret: "secret",
+		Enabled:      true,
+		ManagedOrgID: unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2}).OrgID,
+		CorpID:       "corp-generated",
+		AgentID:      "1000002",
+		CorpSecret:   "secret",
 	}))
 }
 

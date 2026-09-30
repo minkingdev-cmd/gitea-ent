@@ -9,14 +9,17 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/unittest"
+	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/test"
+	"gitea.dev/modules/timeutil"
 
 	"github.com/markbates/goth"
 	"github.com/stretchr/testify/require"
@@ -91,6 +94,7 @@ func TestSyncDirectoryAuditsFailureWithoutSecrets(t *testing.T) {
 	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
 	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
 		Enabled:         true,
+		ManagedOrgID:    unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2}).OrgID,
 		CorpID:          "corp-audit",
 		AgentID:         "1000002",
 		CorpSecret:      "corp-secret-value",
@@ -201,7 +205,7 @@ func TestApplyAuthzMappingsAuditsSummaryWithoutSecrets(t *testing.T) {
 	team := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
 	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-audit-map", WeComUserID: "audit-map-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusActive})
 	require.NoError(t, err)
-	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "audit-map-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err = createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceUser, SourceID: "audit-map-user", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 	_, err = ApplyAuthzMappings(t.Context(), AuthzReconcileOptions{ActorID: 1, ApplyID: "audit-manual"})
 	require.NoError(t, err)
@@ -232,7 +236,7 @@ func TestSyncDirectoryPostSyncApplyAuditsSummaryWithoutSecrets(t *testing.T) {
 	_, _, err := wecom_model.BindIdentityToUser(t.Context(), wecom_model.BindIdentityOptions{UserID: 1, CorpID: "corp-audit-sync", WeComUserID: "audit-sync-user", LoginSourceID: 1, Status: wecom_model.IdentityStatusOutOfScope})
 	require.NoError(t, err)
 	require.NoError(t, wecom_model.UpsertDepartment(t.Context(), &wecom_model.Department{CorpID: "corp-audit-sync", DepartmentID: 2, Name: "研发"}))
-	_, err = CreateAuthzMapping(t.Context(), AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
+	_, err = createGeneratedMappingForTest(t, AuthzMappingOptions{SourceType: wecom_model.AuthzSourceDepartment, SourceID: "2", TargetType: wecom_model.AuthzTargetTeam, OrgID: team.OrgID, TeamID: team.ID, ActorID: 1})
 	require.NoError(t, err)
 
 	require.NoError(t, SyncDirectory(t.Context(), fakeDirectoryClient{
@@ -257,4 +261,45 @@ func findWeComAuditEvent(t *testing.T, events []*audit_model.Event, action audit
 	}
 	require.Failf(t, "missing audit action", "missing audit action %s", action)
 	return nil
+}
+
+func TestGovernanceFailureEvidenceAndLogsRedactProviderDetails(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	mockAutomationSettings(t)
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+	setting.EnterpriseWeCom.AdminCallbackEnabled = true
+	secrets := []string{"corp-secret-canary", "aes-key-canary", "access-token-canary", "suite-token-canary", "oauth-code-canary", "https://callback.invalid/?nonce=private", "13800138000", "private-profile@example.org"}
+	providerError := errors.New(strings.Join(secrets, " "))
+	checker, cleanup := test.NewLogChecker(log.DEFAULT)
+	defer cleanup()
+	checker.Filter(secrets...).StopMark("governance-redaction-check-finished")
+	run, err := RunAutomationPipeline(t.Context(), fakeAutomationClient{adminErr: providerError}, AutomationRunOptions{RunID: "redaction-full-run"})
+	require.Error(t, err)
+	require.NotNil(t, run)
+	defer test.MockVariableValue(&refreshAdminAuthorityForLogin, func(context.Context, *OAuthIdentity) error { return providerError })()
+	refreshAndPromoteProtectedAdminsAfterLogin(t.Context(), &OAuthIdentity{CorpID: setting.EnterpriseWeCom.CorpID, AgentID: setting.EnterpriseWeCom.AgentID})
+	now := timeutil.TimeStampNow()
+	receipt, _, receiptErr := wecom_model.AcceptCallbackReceipt(t.Context(), &wecom_model.CallbackReceipt{CorpID: setting.EnterpriseWeCom.CorpID, AgentID: setting.EnterpriseWeCom.AgentID, Event: WeComChangeAppAdminEvent, DedupKey: "redaction-receipt"}, now)
+	require.NoError(t, receiptErr)
+	require.NoError(t, processAdminCallback(t.Context(), fakeAdminAuthorityClient{err: providerError}, receipt.ID, now))
+	var runs []*wecom_model.ReconcileRun
+	require.NoError(t, db.GetEngine(t.Context()).Find(&runs))
+	storedReceipt := unittest.AssertExistsAndLoadBean(t, &wecom_model.CallbackReceipt{ID: receipt.ID})
+	for _, secret := range secrets {
+		require.NotContains(t, err.Error(), secret)
+		require.NotContains(t, storedReceipt.Reason, secret)
+		for _, stored := range runs {
+			require.NotContains(t, stored.ErrorMessage, secret)
+		}
+		for _, event := range weComAuditEvents(t) {
+			require.NotContains(t, event.Metadata, secret)
+			require.NotContains(t, event.Message, secret)
+		}
+	}
+	log.Info("governance-redaction-check-finished")
+	found, stopped := checker.Check(time.Second)
+	require.True(t, stopped)
+	for i, leaked := range found {
+		require.False(t, leaked, secrets[i])
+	}
 }

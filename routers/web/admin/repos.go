@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
+	"gitea.dev/modules/util"
 	"gitea.dev/routers/web/explore"
 	"gitea.dev/services/context"
 	repo_service "gitea.dev/services/repository"
@@ -141,7 +143,11 @@ func AdoptOrDeleteRepository(ctx *context.Context) {
 			Name:      dirSplit[1],
 			IsPrivate: true,
 		}); err != nil {
-			ctx.ServerError("repository.AdoptRepository", err)
+			if errors.Is(err, util.ErrPermissionDenied) {
+				ctx.HTTPError(http.StatusForbidden)
+			} else {
+				ctx.ServerError("repository.AdoptRepository", err)
+			}
 			return
 		}
 		ctx.Flash.Success(ctx.Tr("repo.adopt_preexisting_success", dir))

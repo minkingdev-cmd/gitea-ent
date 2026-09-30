@@ -21,6 +21,7 @@ type contextKey struct{ key string }
 
 var (
 	contextKeyEngine       = contextKey{"engine"}
+	contextKeyPostCommit   = contextKey{"post-commit"}
 	ContextKeyTestFixtures = contextKey{"test-fixtures"}
 )
 
@@ -90,11 +91,52 @@ type Committer interface {
 	Close() error
 }
 
+type postCommitter struct {
+	*xorm.Session
+	state *transactionState
+}
+
+type transactionState struct {
+	effects []func()
+	aborted error
+}
+
+func (c *postCommitter) Commit() error {
+	if c.state.aborted != nil {
+		return c.state.aborted
+	}
+	if !c.Session.IsInTx() {
+		return errors.New("transaction already closed")
+	}
+	if err := c.Session.Commit(); err != nil {
+		return err
+	}
+	_ = c.Session.Close()
+	effects := c.state.effects
+	c.state.effects = nil
+	for _, effect := range effects {
+		effect()
+	}
+	return nil
+}
+
+// AfterCommit delays external side effects until the outermost transaction commits.
+func AfterCommit(ctx context.Context, effect func()) {
+	if state, ok := ctx.Value(contextKeyPostCommit).(*transactionState); ok {
+		if state.aborted == nil {
+			state.effects = append(state.effects, effect)
+		}
+		return
+	}
+	effect()
+}
+
 // halfCommitter is a wrapper of Committer.
 // It can be closed early, but can't be committed early, it is useful for reusing a transaction.
 type halfCommitter struct {
 	committer Committer
 	committed bool
+	state     *transactionState
 }
 
 func (c *halfCommitter) Commit() error {
@@ -109,7 +151,11 @@ func (c *halfCommitter) Close() error {
 		return nil
 	}
 
-	// it's "rollback and close", let the parent committer rollback right now
+	if c.state != nil {
+		c.state.aborted = errors.New("nested transaction closed without commit")
+		c.state.effects = nil
+		return nil
+	}
 	return c.committer.Close()
 }
 
@@ -122,12 +168,13 @@ func (c *halfCommitter) Close() error {
 //	  a. Always call `Close()` before returning regardless of whether `Commit()` has been called.
 //	  b. Always call `Commit()` before returning if there are no errors, even if the code did not change any data.
 //	  c. Remember the `Committer` will be a halfCommitter when a transaction is being reused.
-//	     So calling `Commit()` will do nothing, but calling `Close()` without calling `Commit()` will rollback the transaction.
+//	     So calling `Commit()` will do nothing, but calling `Close()` without calling `Commit()` marks the whole transaction for rollback.
 //	     And all operations submitted by the caller stack will be rollbacked as well, not only the operations in the current function.
 //	  d. It doesn't mean rollback is forbidden, but always do it only when there is an error, and you do want to rollback.
 func TxContext(parentCtx context.Context) (context.Context, Committer, error) {
 	if sess := getTransactionSession(parentCtx); sess != nil {
-		return withContextEngine(parentCtx, sess), &halfCommitter{committer: sess}, nil
+		state, _ := parentCtx.Value(contextKeyPostCommit).(*transactionState)
+		return withContextEngine(parentCtx, sess), &halfCommitter{committer: sess, state: state}, nil
 	}
 
 	sess := xormEngine.NewSession()
@@ -135,7 +182,9 @@ func TxContext(parentCtx context.Context) (context.Context, Committer, error) {
 		_ = sess.Close()
 		return nil, nil, err
 	}
-	return withContextEngine(parentCtx, sess), sess, nil
+	state := new(transactionState)
+	ctx := context.WithValue(withContextEngine(parentCtx, sess), contextKeyPostCommit, state)
+	return ctx, &postCommitter{Session: sess, state: state}, nil
 }
 
 // WithTx represents executing database operations on a transaction, if the transaction exist,
@@ -144,8 +193,13 @@ func WithTx(parentCtx context.Context, f func(ctx context.Context) error) error 
 	if sess := getTransactionSession(parentCtx); sess != nil {
 		err := f(withContextEngine(parentCtx, sess))
 		if err != nil {
-			// rollback immediately, in case the caller ignores returned error and tries to commit the transaction.
-			_ = sess.Close()
+			// 保持 session 在事务中，防止调用方忽略错误后发生自动提交。
+			if state, ok := parentCtx.Value(contextKeyPostCommit).(*transactionState); ok {
+				state.aborted = err
+				state.effects = nil
+			} else {
+				_ = sess.Close()
+			}
 		}
 		return err
 	}
@@ -162,17 +216,15 @@ func WithTx2[T any](parentCtx context.Context, f func(ctx context.Context) (T, e
 }
 
 func txWithNoCheck(parentCtx context.Context, f func(ctx context.Context) error) error {
-	sess := xormEngine.NewSession()
-	defer sess.Close()
-	if err := sess.Begin(); err != nil {
+	ctx, committer, err := TxContext(parentCtx)
+	if err != nil {
 		return err
 	}
-
-	if err := f(withContextEngine(parentCtx, sess)); err != nil {
+	defer committer.Close()
+	if err := f(ctx); err != nil {
 		return err
 	}
-
-	return sess.Commit()
+	return committer.Commit()
 }
 
 // Insert inserts records into database

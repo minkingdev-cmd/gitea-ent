@@ -20,10 +20,11 @@ import (
 func mockTeamGovernanceSettings(t *testing.T) {
 	t.Helper()
 	t.Cleanup(test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
-		Enabled:    true,
-		CorpID:     "corp-team-gov",
-		AgentID:    "1000002",
-		CorpSecret: "secret",
+		Enabled:      true,
+		ManagedOrgID: unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2}).OrgID,
+		CorpID:       "corp-team-gov",
+		AgentID:      "1000002",
+		CorpSecret:   "secret",
 	}))
 }
 
@@ -97,7 +98,7 @@ func TestReconcileGeneratedTeamsCreatesMissingTagTeamAndMembership(t *testing.T)
 	require.Equal(t, "tag_has_no_admin_metadata", generatedTeam.UnresolvedReason)
 }
 
-func TestReconcileGeneratedTeamsIsIdempotentAndSkipsAmbiguousTargets(t *testing.T) {
+func TestReconcileGeneratedTeamsRejectsAmbiguousTargets(t *testing.T) {
 	require.NoError(t, unittest.PrepareTestDatabase())
 	mockTeamGovernanceSettings(t)
 	baseTeam := unittest.AssertExistsAndLoadBean(t, &organization.Team{ID: 2})
@@ -110,14 +111,9 @@ func TestReconcileGeneratedTeamsIsIdempotentAndSkipsAmbiguousTargets(t *testing.
 
 	_, err := DeriveGeneratedAuthorizationState(t.Context(), GeneratedDerivationOptions{OrgID: baseTeam.OrgID, RunID: "team-gov-ambiguous"})
 	require.NoError(t, err)
-	result, err := ReconcileGeneratedTeams(t.Context(), GeneratedTeamReconcileOptions{RunID: "team-gov-ambiguous"})
-	require.NoError(t, err)
-	require.Zero(t, result.CreatedTeams)
-	require.Equal(t, 1, result.Skipped)
-
-	result, err = ReconcileGeneratedTeams(t.Context(), GeneratedTeamReconcileOptions{RunID: "team-gov-ambiguous"})
-	require.NoError(t, err)
-	require.Zero(t, result.CreatedTeams)
+	_, err = ReconcileGeneratedTeams(t.Context(), GeneratedTeamReconcileOptions{RunID: "team-gov-ambiguous"})
+	require.ErrorContains(t, err, "ambiguous_team")
+	unittest.AssertNotExistsBean(t, &wecom_model.AuthzMapping{CorpID: "corp-team-gov", Origin: wecom_model.AuthzMappingOriginGenerated})
 }
 
 func TestReconcileGeneratedTeamsRemovesStaleGeneratedMembership(t *testing.T) {

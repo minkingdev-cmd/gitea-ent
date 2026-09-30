@@ -7,8 +7,11 @@ import (
 	"errors"
 	"net/http"
 
+	audit_model "gitea.dev/models/audit"
 	wecom_model "gitea.dev/models/enterprisewecom"
+	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
+	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
 	wecom_service "gitea.dev/services/enterprisewecom"
 )
@@ -17,7 +20,7 @@ import (
 func ListAuthzMappings(ctx *context.APIContext) {
 	// swagger:operation GET /enterprise/wecom/mappings enterprise enterpriseWeComAuthzMappingList
 	// ---
-	// summary: List Enterprise WeCom authorization mappings
+	// summary: List current application generated Enterprise WeCom mappings
 	// produces:
 	// - application/json
 	// parameters:
@@ -28,9 +31,17 @@ func ListAuthzMappings(ctx *context.APIContext) {
 	// responses:
 	//   "200":
 	//     "$ref": "#/responses/EnterpriseWeComAuthzMappingList"
+	//   "401":
+	//     "$ref": "#/responses/unauthorized"
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
-	mappings, err := wecom_service.ListAuthzMappings(ctx, wecom_service.AuthzMappingListOptions{IncludeInactive: ctx.FormBool("include_inactive")})
+	//   "404":
+	//     "$ref": "#/responses/notFound"
+	if !setting.EnterpriseWeCom.Enabled {
+		ctx.APIErrorNotFound()
+		return
+	}
+	mappings, err := wecom_service.ListGeneratedAuthzMappings(ctx, wecom_service.AuthzMappingListOptions{IncludeInactive: ctx.FormBool("include_inactive")})
 	if err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -46,7 +57,7 @@ func ListAuthzMappings(ctx *context.APIContext) {
 func GetAuthzMapping(ctx *context.APIContext) {
 	// swagger:operation GET /enterprise/wecom/mappings/{id} enterprise enterpriseWeComAuthzMappingGet
 	// ---
-	// summary: Get an Enterprise WeCom authorization mapping
+	// summary: Get a current application generated Enterprise WeCom mapping
 	// produces:
 	// - application/json
 	// parameters:
@@ -58,11 +69,17 @@ func GetAuthzMapping(ctx *context.APIContext) {
 	// responses:
 	//   "200":
 	//     "$ref": "#/responses/EnterpriseWeComAuthzMapping"
+	//   "401":
+	//     "$ref": "#/responses/unauthorized"
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
-	mapping, err := wecom_service.GetAuthzMapping(ctx, ctx.PathParamInt64("id"))
+	if !setting.EnterpriseWeCom.Enabled {
+		ctx.APIErrorNotFound()
+		return
+	}
+	mapping, err := wecom_service.GetGeneratedAuthzMapping(ctx, ctx.PathParamInt64("id"))
 	if err != nil {
 		handleMappingLookupError(ctx, err)
 		return
@@ -70,132 +87,111 @@ func GetAuthzMapping(ctx *context.APIContext) {
 	ctx.JSON(http.StatusOK, convertAuthzMapping(mapping))
 }
 
-// CreateAuthzMapping creates an Enterprise WeCom authorization mapping.
+// CreateAuthzMapping rejects legacy manual mapping maintenance.
 func CreateAuthzMapping(ctx *context.APIContext) {
 	// swagger:operation POST /enterprise/wecom/mappings enterprise enterpriseWeComAuthzMappingCreate
 	// ---
-	// summary: Create an Enterprise WeCom authorization mapping
-	// consumes:
-	// - application/json
+	// summary: Reject legacy manual Enterprise WeCom mapping maintenance
+	// deprecated: true
 	// produces:
 	// - application/json
-	// parameters:
-	// - name: body
-	//   in: body
-	//   schema:
-	//     "$ref": "#/definitions/EnterpriseWeComAuthzMappingOption"
 	// responses:
-	//   "201":
-	//     "$ref": "#/responses/EnterpriseWeComAuthzMapping"
+	//   "401":
+	//     "$ref": "#/responses/unauthorized"
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
-	//   "422":
-	//     "$ref": "#/responses/validationError"
+	//   "410":
+	//     description: Manual mapping maintenance is unavailable (manual_mapping_unavailable)
 	rejectManualMappingWorkflow(ctx)
 }
 
-// UpdateAuthzMapping updates an Enterprise WeCom authorization mapping.
+// UpdateAuthzMapping rejects legacy manual mapping maintenance.
 func UpdateAuthzMapping(ctx *context.APIContext) {
 	// swagger:operation PATCH /enterprise/wecom/mappings/{id} enterprise enterpriseWeComAuthzMappingUpdate
 	// ---
-	// summary: Update an Enterprise WeCom authorization mapping
-	// consumes:
-	// - application/json
+	// summary: Reject legacy manual Enterprise WeCom mapping maintenance
+	// deprecated: true
 	// produces:
 	// - application/json
 	// parameters:
 	// - name: id
 	//   in: path
-	//   description: mapping id
+	//   description: legacy mapping id (not looked up)
 	//   type: integer
 	//   required: true
-	// - name: body
-	//   in: body
-	//   schema:
-	//     "$ref": "#/definitions/EnterpriseWeComAuthzMappingOption"
 	// responses:
-	//   "200":
-	//     "$ref": "#/responses/EnterpriseWeComAuthzMapping"
+	//   "401":
+	//     "$ref": "#/responses/unauthorized"
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
-	//   "404":
-	//     "$ref": "#/responses/notFound"
-	//   "422":
-	//     "$ref": "#/responses/validationError"
+	//   "410":
+	//     description: Manual mapping maintenance is unavailable (manual_mapping_unavailable)
 	rejectManualMappingWorkflow(ctx)
 }
 
-// DisableAuthzMapping disables an Enterprise WeCom authorization mapping.
+// DisableAuthzMapping rejects legacy manual mapping maintenance.
 func DisableAuthzMapping(ctx *context.APIContext) {
 	// swagger:operation DELETE /enterprise/wecom/mappings/{id} enterprise enterpriseWeComAuthzMappingDelete
 	// ---
-	// summary: Disable an Enterprise WeCom authorization mapping
+	// summary: Reject legacy manual Enterprise WeCom mapping maintenance
+	// deprecated: true
 	// produces:
 	// - application/json
 	// parameters:
 	// - name: id
 	//   in: path
-	//   description: mapping id
+	//   description: legacy mapping id (not looked up)
 	//   type: integer
 	//   required: true
 	// responses:
-	//   "204":
-	//     "$ref": "#/responses/empty"
+	//   "401":
+	//     "$ref": "#/responses/unauthorized"
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
-	//   "404":
-	//     "$ref": "#/responses/notFound"
+	//   "410":
+	//     description: Manual mapping maintenance is unavailable (manual_mapping_unavailable)
 	rejectManualMappingWorkflow(ctx)
 }
 
-// DryRunAuthzMappings dry-runs active Enterprise WeCom authorization mappings.
+// DryRunAuthzMappings rejects legacy manual mapping maintenance.
 func DryRunAuthzMappings(ctx *context.APIContext) {
 	// swagger:operation POST /enterprise/wecom/mappings/dry-run enterprise enterpriseWeComAuthzMappingDryRun
 	// ---
-	// summary: Dry-run Enterprise WeCom authorization mapping reconciliation
-	// consumes:
-	// - application/json
+	// summary: Reject legacy manual Enterprise WeCom mapping maintenance
+	// deprecated: true
 	// produces:
 	// - application/json
-	// parameters:
-	// - name: body
-	//   in: body
-	//   schema:
-	//     "$ref": "#/definitions/EnterpriseWeComAuthzReconcileOption"
 	// responses:
-	//   "200":
-	//     "$ref": "#/responses/EnterpriseWeComAuthzReconcileResult"
+	//   "401":
+	//     "$ref": "#/responses/unauthorized"
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
+	//   "410":
+	//     description: Manual mapping maintenance is unavailable (manual_mapping_unavailable)
 	rejectManualMappingWorkflow(ctx)
 }
 
-// ApplyAuthzMappings applies active Enterprise WeCom authorization mappings.
+// ApplyAuthzMappings rejects legacy manual mapping maintenance.
 func ApplyAuthzMappings(ctx *context.APIContext) {
 	// swagger:operation POST /enterprise/wecom/mappings/apply enterprise enterpriseWeComAuthzMappingApply
 	// ---
-	// summary: Apply Enterprise WeCom authorization mappings
-	// consumes:
-	// - application/json
+	// summary: Reject legacy manual Enterprise WeCom mapping maintenance
+	// deprecated: true
 	// produces:
 	// - application/json
-	// parameters:
-	// - name: body
-	//   in: body
-	//   schema:
-	//     "$ref": "#/definitions/EnterpriseWeComAuthzReconcileOption"
 	// responses:
-	//   "200":
-	//     "$ref": "#/responses/EnterpriseWeComAuthzReconcileResult"
+	//   "401":
+	//     "$ref": "#/responses/unauthorized"
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
-	//   "422":
-	//     "$ref": "#/responses/validationError"
+	//   "410":
+	//     description: Manual mapping maintenance is unavailable (manual_mapping_unavailable)
 	rejectManualMappingWorkflow(ctx)
 }
 
 func rejectManualMappingWorkflow(ctx *context.APIContext) {
-	ctx.APIError(http.StatusGone, "enterprise wecom authorization is generated by scheduled automation; manual mapping maintenance is not available")
+	audit.Record(ctx, audit_model.EnterpriseWeComMappingUpdate, nil, "mapping_id", ctx.PathParamInt64("id"), "outcome", "denied", "reason", "manual_mapping_unavailable")
+	ctx.APIError(http.StatusGone, "manual_mapping_unavailable")
 }
 
 func convertAuthzMapping(mapping *wecom_model.AuthzMapping) api.EnterpriseWeComAuthzMapping {

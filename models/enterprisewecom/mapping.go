@@ -23,9 +23,16 @@ const (
 	AuthzTargetTeam AuthzTargetType = "team"
 )
 
+const (
+	AuthzMappingOriginLegacy    = "legacy"
+	AuthzMappingOriginGenerated = "generated"
+)
+
 type AuthzMapping struct {
 	ID          int64              `xorm:"pk autoincr"`
 	CorpID      string             `xorm:"VARCHAR(128) NOT NULL INDEX UNIQUE(mapping_unique)"`
+	AgentID     string             `xorm:"VARCHAR(64) NOT NULL DEFAULT '' INDEX UNIQUE(mapping_unique)"`
+	Origin      string             `xorm:"VARCHAR(32) NOT NULL DEFAULT 'legacy' INDEX UNIQUE(mapping_unique)"`
 	SourceType  AuthzSourceType    `xorm:"VARCHAR(32) NOT NULL UNIQUE(mapping_unique)"`
 	SourceID    string             `xorm:"VARCHAR(255) NOT NULL UNIQUE(mapping_unique)"`
 	TargetType  AuthzTargetType    `xorm:"VARCHAR(32) NOT NULL UNIQUE(mapping_unique)"`

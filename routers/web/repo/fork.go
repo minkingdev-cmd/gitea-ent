@@ -19,6 +19,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/structs"
 	"gitea.dev/modules/templates"
+	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/services/context"
 	"gitea.dev/services/forms"
@@ -208,6 +209,9 @@ func ForkRepoTo(ctx *context.Context, owner *user_model.User, forkOpts repo_serv
 		var errNameReserved db.ErrNameReserved
 		var errNamePatternNotAllowed db.ErrNamePatternNotAllowed
 		switch {
+		case errors.Is(err, util.ErrPermissionDenied):
+			ctx.HTTPError(http.StatusForbidden)
+			return nil
 		case repo_model.IsErrReachLimitOfRepo(err):
 			maxCreationLimit := owner.MaxCreationLimit()
 			msg := ctx.TrN(maxCreationLimit, "repo.form.reach_limit_of_creation_1", "repo.form.reach_limit_of_creation_n", maxCreationLimit)

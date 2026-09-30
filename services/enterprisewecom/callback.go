@@ -15,6 +15,8 @@ const WeComChangeAppAdminEvent = "change_app_admin"
 
 type AdminAuthorityCallback struct {
 	Validated bool
+	verified  bool
+	dedupKey  string
 	CorpID    string
 	AgentID   string
 	Event     string
@@ -23,26 +25,26 @@ type AdminAuthorityCallback struct {
 }
 
 func HandleAdminAuthorityCallback(ctx context.Context, client AdminAuthorityClient, callback AdminAuthorityCallback) (*AdminAuthorityRefreshResult, error) {
-	if !setting.EnterpriseWeCom.Enabled {
+	if !AdminCallbackEnabled() {
 		return nil, ErrWeComDisabled
 	}
-	if !callback.Validated {
+	if !callback.verified {
 		return nil, fmt.Errorf("%w: unvalidated callback", ErrWeComDenied)
 	}
 	event := strings.TrimSpace(firstNonEmpty(callback.Event, callback.InfoType))
 	if event != WeComChangeAppAdminEvent {
 		return nil, fmt.Errorf("%w: unsupported callback event", ErrWeComDenied)
 	}
-	if callback.CorpID != "" && callback.CorpID != setting.EnterpriseWeCom.CorpID {
+	if callback.CorpID == "" || callback.CorpID != setting.EnterpriseWeCom.CorpID {
 		return nil, fmt.Errorf("%w: callback corp mismatch", ErrWeComDenied)
 	}
-	if callback.AgentID != "" && callback.AgentID != setting.EnterpriseWeCom.AgentID {
+	if callback.AgentID == "" || callback.AgentID != setting.EnterpriseWeCom.AgentID {
 		return nil, fmt.Errorf("%w: callback agent mismatch", ErrWeComDenied)
 	}
 	return RefreshAdminAuthoritySnapshot(ctx, client, AdminAuthorityRefreshOptions{
 		CorpID:  setting.EnterpriseWeCom.CorpID,
 		AgentID: setting.EnterpriseWeCom.AgentID,
 		Trigger: "callback",
-		RunID:   firstNonEmpty(strings.TrimSpace(callback.TriggerID), "callback-admin-authority"),
+		RunID:   strings.TrimSpace(callback.TriggerID),
 	})
 }

@@ -5,7 +5,11 @@ package enterprisewecom
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	auth_model "gitea.dev/models/auth"
 	"gitea.dev/models/db"
@@ -14,6 +18,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/test"
+	"gitea.dev/modules/timeutil"
 
 	"github.com/markbates/goth"
 	"github.com/stretchr/testify/require"
@@ -135,14 +140,8 @@ func TestAuthenticateOAuthLoginRefreshesAuthorityBeforePromotion(t *testing.T) {
 		SuperAdminTagName: "超管",
 	})()
 	defer test.MockVariableValue(&refreshAdminAuthorityForLogin, func(ctx context.Context, identity *OAuthIdentity) error {
-		return db.Insert(ctx, &wecom_model.AdminAuthority{
-			CorpID:       identity.CorpID,
-			AgentID:      identity.AgentID,
-			WeComUserID:  identity.UserID,
-			AuthType:     wecom_model.AdminAuthorityAuthTypeManagement,
-			IsManagement: true,
-			IsActive:     true,
-		})
+		_, err := RefreshAdminAuthoritySnapshot(ctx, fakeAdminAuthorityClient{admins: []AppAdminInfo{{UserID: identity.UserID, AuthType: 1}}}, AdminAuthorityRefreshOptions{CorpID: identity.CorpID, AgentID: identity.AgentID, Trigger: "login"})
+		return err
 	})()
 
 	u, err := AuthenticateOAuthLogin(t.Context(), wecomAuthSource(10), nil, nil, goth.User{
@@ -158,6 +157,40 @@ func TestAuthenticateOAuthLoginRefreshesAuthorityBeforePromotion(t *testing.T) {
 	reloaded, err := user_model.GetUserByID(t.Context(), u.ID)
 	require.NoError(t, err)
 	require.True(t, reloaded.IsAdmin)
+}
+
+func TestLoginAuthorityRefreshUsesUniqueDefaultRuns(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	now := time.Now()
+	t.Cleanup(timeutil.MockSet(now))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cgi-bin/gettoken":
+			_, _ = io.WriteString(w, `{"errcode":0,"access_token":"token","expires_in":7200}`)
+		case "/cgi-bin/tag/list":
+			_, _ = io.WriteString(w, `{"errcode":0,"taglist":[{"tagid":9,"tagname":"超管"}]}`)
+		case "/cgi-bin/tag/get":
+			_, _ = io.WriteString(w, `{"errcode":0,"tagname":"超管","userlist":[{"userid":"login.admin"}],"partylist":[]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{Enabled: true, LoginOnly: true, CorpID: "corp-protected", AgentID: "1000002", CorpSecret: "secret", SuperAdminTagName: "超管", APIBaseURL: server.URL}))
+	for range 5 {
+		require.NoError(t, refreshAdminAuthorityForLogin(t.Context(), &OAuthIdentity{CorpID: "corp-protected", AgentID: "1000002", UserID: "login.admin"}))
+	}
+	var runs []wecom_model.ReconcileRun
+	require.NoError(t, db.GetEngine(t.Context()).Where("trigger = ?", "login").Find(&runs))
+	require.Len(t, runs, 5)
+	seen := make(map[string]struct{}, len(runs))
+	for _, run := range runs {
+		require.Equal(t, wecom_model.ReconcileRunStatusSuccess, run.Status)
+		require.Equal(t, timeutil.TimeStamp(now.Unix()), run.StartedUnix)
+		_, duplicate := seen[run.RunID]
+		require.False(t, duplicate)
+		seen[run.RunID] = struct{}{}
+	}
 }
 
 func wecomAuthSource(id int64) *auth_model.Source {

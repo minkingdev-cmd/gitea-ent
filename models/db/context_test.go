@@ -135,3 +135,33 @@ func TestContextSafety(t *testing.T) {
 		})
 	})
 }
+
+func TestPostCommitEffectsOnlyRunAfterOuterCommit(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	count := 0
+	require.NoError(t, db.WithTx(t.Context(), func(ctx context.Context) error {
+		return db.WithTx(ctx, func(ctx context.Context) error {
+			db.AfterCommit(ctx, func() { count++ })
+			require.Zero(t, count)
+			return nil
+		})
+	}))
+	require.Equal(t, 1, count)
+	require.Error(t, db.WithTx(t.Context(), func(ctx context.Context) error {
+		db.AfterCommit(ctx, func() { count++ })
+		return context.Canceled
+	}))
+	require.Equal(t, 1, count)
+}
+
+func TestPostCommitEffectsDoNotRunWhenNestedFailureIsIgnored(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	count := 0
+	err := db.WithTx(t.Context(), func(ctx context.Context) error {
+		db.AfterCommit(ctx, func() { count++ })
+		_ = db.WithTx(ctx, func(context.Context) error { return context.Canceled })
+		return nil
+	})
+	require.Error(t, err)
+	require.Zero(t, count)
+}

@@ -20,8 +20,6 @@ import (
 	"gitea.dev/services/audit"
 )
 
-const enterprisePersonalRepoQuota = 10
-
 var (
 	ErrEnterpriseOrgRepoRequiresApproval           = util.NewPermissionDeniedErrorf("organization repositories require Enterprise WeCom super-admin approval")
 	ErrEnterpriseOrgRepoApprovalRequiresSuperAdmin = util.NewPermissionDeniedErrorf("organization repository approval requires Enterprise WeCom super administrator")
@@ -66,14 +64,99 @@ func enforceEnterpriseRepoCreationGovernance(ctx context.Context, doer, owner *u
 	if err != nil {
 		return err
 	}
-	if count >= enterprisePersonalRepoQuota {
-		audit.RecordAs(ctx, doer, audit_model.EnterpriseWeComPersonalRepoQuotaDeny, owner,
-			"namespace_id", owner.ID,
-			"quota", enterprisePersonalRepoQuota,
-			"current_count", count,
-			"outcome", "denied",
-		)
+	if count >= int64(setting.EnterpriseWeCom.PersonalRepoQuota) {
+		recordEnterprisePersonalRepoQuotaDeny(ctx, doer, owner, setting.EnterpriseWeCom.PersonalRepoQuota, count)
 		return ErrEnterprisePersonalRepoQuotaExceeded
+	}
+	return nil
+}
+
+type enterprisePersonalRepoQuotaError struct {
+	quota int
+	count int64
+}
+
+func (err enterprisePersonalRepoQuotaError) Error() string {
+	return ErrEnterprisePersonalRepoQuotaExceeded.Error()
+}
+
+func (err enterprisePersonalRepoQuotaError) Unwrap() error {
+	return ErrEnterprisePersonalRepoQuotaExceeded
+}
+
+func recordEnterprisePersonalRepoQuotaDeny(ctx context.Context, doer, owner *user_model.User, quota int, count int64) {
+	audit.RecordAs(ctx, doer, audit_model.EnterpriseWeComPersonalRepoQuotaDeny, owner,
+		"namespace_id", owner.ID,
+		"quota", quota,
+		"current_count", count,
+		"reason", "personal_repo_quota_exceeded",
+		"outcome", "denied",
+	)
+}
+
+func withRepositoryCreationTx(ctx context.Context, doer, owner *user_model.User, create func(context.Context) error) error {
+	err := db.WithTx(ctx, create)
+	if quotaErr, ok := errors.AsType[enterprisePersonalRepoQuotaError](err); ok {
+		recordEnterprisePersonalRepoQuotaDeny(ctx, doer, owner, quotaErr.quota, quotaErr.count)
+	}
+	return err
+}
+
+func enforceEnterpriseRepoCreationInDB(ctx context.Context, doer, owner *user_model.User, repo *repo_model.Repository, isFork bool) error {
+	if !setting.EnterpriseWeCom.Enabled {
+		return nil
+	}
+	if doer == nil || owner == nil {
+		return util.ErrPermissionDenied
+	}
+	if !db.InTransaction(ctx) {
+		return errors.New("repository quota check requires a creation transaction")
+	}
+	if owner.IsOrganization() {
+		opts := CreateRepoOptions{IsPrivate: repo.IsPrivate}
+		err := enforceEnterpriseRepoCreationGovernance(ctx, doer, owner, &opts)
+		repo.IsPrivate = opts.IsPrivate
+		return err
+	}
+	if doer.ID != owner.ID {
+		return ErrEnterpriseRepoOwnerDenied
+	}
+	// 写锁必须先于重新计数，避免不同实例同时消耗最后一个额度。
+	if _, err := db.Exec(ctx, "UPDATE `user` SET num_repos=num_repos WHERE id=?", owner.ID); err != nil {
+		return err
+	}
+	freshOwner, err := user_model.GetUserByID(ctx, owner.ID)
+	if err != nil {
+		return err
+	}
+	var count int64
+	if setting.Database.Type.IsMySQL() {
+		// MySQL 的一致性读可能沿用调用者的旧快照，锁定读取得已提交的当前状态。
+		var repos []repo_model.Repository
+		if err := db.GetEngine(ctx).Where("owner_id = ? AND id > 0", owner.ID).Cols("id").ForUpdate().Find(&repos); err != nil {
+			return err
+		}
+		count = int64(len(repos))
+	} else {
+		count, err = repo_model.CountRepositories(ctx, repo_model.CountRepositoryOptions{OwnerID: owner.ID})
+		if err != nil {
+			return err
+		}
+	}
+	if count >= int64(setting.EnterpriseWeCom.PersonalRepoQuota) {
+		return enterprisePersonalRepoQuotaError{quota: setting.EnterpriseWeCom.PersonalRepoQuota, count: count}
+	}
+	freshOwner.NumRepos = int(count)
+	allowed := doer.CanCreateRepoIn(freshOwner)
+	if isFork {
+		allowed = doer.CanForkRepoIn(freshOwner)
+	}
+	if !allowed {
+		return repo_model.ErrReachLimitOfRepo{Limit: freshOwner.MaxRepoCreation}
+	}
+	if !repo.IsPrivate {
+		repo.IsPrivate = true
+		recordEnterpriseRepoVisibilityEnforced(ctx, doer, owner)
 	}
 	return nil
 }

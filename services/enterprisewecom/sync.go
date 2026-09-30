@@ -4,9 +4,11 @@
 package enterprisewecom
 
 import (
+	"cmp"
 	"context"
-	"fmt"
+	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	audit_model "gitea.dev/models/audit"
@@ -68,46 +70,22 @@ func SyncDirectory(ctx context.Context, client DirectoryClient) error {
 	if !setting.EnterpriseWeCom.Enabled {
 		return ErrWeComDisabled
 	}
-	corpID := setting.EnterpriseWeCom.CorpID
-	audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncStart, nil, "corp_id", corpID)
-
-	if err := syncDirectory(ctx, client, corpID); err != nil {
-		audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncFinish, nil,
-			"corp_id", corpID,
-			"outcome", "error",
-			"reason", "sync_failed",
-		)
-		return err
+	audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncStart, nil, "corp_id", setting.EnterpriseWeCom.CorpID)
+	automationClient, ok := client.(AutomationClient)
+	if !ok {
+		audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncFinish, nil, "corp_id", setting.EnterpriseWeCom.CorpID, "outcome", "error", "reason", "unsupported_authority_source")
+		return ErrWeComAuthorityUnsupported
 	}
-	if setting.EnterpriseWeCom.ApplyAuthzMappingsOnSync {
-		if _, err := ApplyAuthzMappings(ctx, AuthzReconcileOptions{CorpID: corpID, ApplyID: fmt.Sprintf("sync-%d", timeutil.TimeStampNow())}); err != nil {
-			audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncFinish, nil,
-				"corp_id", corpID,
-				"outcome", "error",
-				"reason", "authz_apply_failed",
-			)
-			return err
-		}
+	_, err := RunAutomationPipeline(ctx, automationClient, AutomationRunOptions{Trigger: "internal_sync"})
+	outcome, reason := "success", ""
+	if err != nil {
+		outcome, reason = "error", "sync_failed"
 	}
-	audit.RecordAs(ctx, user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncFinish, nil,
-		"corp_id", corpID,
-		"outcome", "success",
-	)
-	return nil
+	audit.RecordAs(context.WithoutCancel(ctx), user_model.NewAuthSourceUser(), audit_model.EnterpriseWeComSyncFinish, nil, "corp_id", setting.EnterpriseWeCom.CorpID, "outcome", outcome, "reason", reason)
+	return err
 }
 
-func syncDirectory(ctx context.Context, client DirectoryClient, corpID string) error {
-	if corpID == "" {
-		return fmt.Errorf("%w: missing corp id", ErrWeComDenied)
-	}
-
-	syncDepartments := setting.EnterpriseWeCom.SyncDepartments
-	syncTags := setting.EnterpriseWeCom.SyncTags
-	snapshot, err := fetchDirectorySnapshot(ctx, client, syncDepartments, syncTags)
-	if err != nil {
-		return err
-	}
-
+func persistDirectorySnapshot(ctx context.Context, snapshot *directorySnapshot, corpID string, syncDepartments, syncTags bool) error {
 	now := timeutil.TimeStamp(time.Now().Unix())
 	syncVersion := time.Now().UnixNano()
 	return db.WithTx(ctx, func(ctx context.Context) error {
@@ -136,7 +114,8 @@ func syncDirectory(ctx context.Context, client DirectoryClient, corpID string) e
 				return err
 			}
 		}
-		for _, member := range snapshot.members {
+		for _, userID := range slices.Sorted(maps.Keys(snapshot.members)) {
+			member := snapshot.members[userID]
 			if err := upsertSyncedMember(ctx, corpID, member, now, syncVersion); err != nil {
 				return err
 			}
@@ -159,25 +138,38 @@ func syncDirectory(ctx context.Context, client DirectoryClient, corpID string) e
 }
 
 func fetchDirectorySnapshot(ctx context.Context, client DirectoryClient, syncDepartments, syncTags bool) (*directorySnapshot, error) {
+	if client == nil {
+		return nil, governanceError("directory", "incomplete_directory_source")
+	}
 	snapshot := &directorySnapshot{members: map[string]MemberInfo{}}
 	if syncDepartments {
 		departments, err := client.ListDepartments(ctx)
 		if err != nil {
-			return nil, err
+			return nil, safeProviderError("directory", err)
 		}
 		if detailClient, ok := client.(DepartmentDetailClient); ok {
 			departments, err = enrichDepartmentDetails(ctx, detailClient, departments)
 			if err != nil {
-				return nil, err
+				return nil, safeProviderError("directory", err)
 			}
+		}
+		seenDepartments := map[int64]bool{}
+		for _, dept := range departments {
+			if dept.ID <= 0 || seenDepartments[dept.ID] {
+				return nil, governanceError("directory", "incomplete_directory_source")
+			}
+			seenDepartments[dept.ID] = true
 		}
 		snapshot.departments = departments
 		for _, dept := range departments {
 			members, err := client.ListMembers(ctx, dept.ID)
 			if err != nil {
-				return nil, err
+				return nil, safeProviderError("directory", err)
 			}
 			for _, member := range members {
+				if strings.TrimSpace(member.UserID) == "" {
+					return nil, governanceError("directory", "incomplete_directory_source")
+				}
 				snapshot.members[member.UserID] = member
 				snapshot.memberships = append(snapshot.memberships, directoryMembership{
 					UserID: member.UserID, Kind: wecom_model.MembershipDepartment, TargetID: dept.ID, IsLeader: member.IsLeaderOfDepartment(dept.ID),
@@ -188,15 +180,25 @@ func fetchDirectorySnapshot(ctx context.Context, client DirectoryClient, syncDep
 	if syncTags {
 		tags, err := client.ListTags(ctx)
 		if err != nil {
-			return nil, err
+			return nil, safeProviderError("directory", err)
+		}
+		seenTags := map[int64]bool{}
+		for _, tag := range tags {
+			if tag.ID <= 0 || seenTags[tag.ID] {
+				return nil, governanceError("directory", "incomplete_directory_source")
+			}
+			seenTags[tag.ID] = true
 		}
 		snapshot.tags = tags
 		for _, tag := range tags {
 			userIDs, err := client.ListTagMembers(ctx, tag.ID)
 			if err != nil {
-				return nil, err
+				return nil, safeProviderError("directory", err)
 			}
 			for _, userID := range userIDs {
+				if strings.TrimSpace(userID) == "" {
+					return nil, governanceError("directory", "incomplete_directory_source")
+				}
 				if _, ok := snapshot.members[userID]; !ok {
 					snapshot.members[userID] = MemberInfo{UserID: userID}
 				}
@@ -206,6 +208,11 @@ func fetchDirectorySnapshot(ctx context.Context, client DirectoryClient, syncDep
 			}
 		}
 	}
+	slices.SortFunc(snapshot.departments, func(a, b DepartmentInfo) int { return cmp.Compare(a.ID, b.ID) })
+	slices.SortFunc(snapshot.tags, func(a, b TagInfo) int { return cmp.Compare(a.ID, b.ID) })
+	slices.SortFunc(snapshot.memberships, func(a, b directoryMembership) int {
+		return cmp.Or(cmp.Compare(a.TargetID, b.TargetID), cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.UserID, b.UserID))
+	})
 	return snapshot, nil
 }
 
@@ -214,11 +221,10 @@ func enrichDepartmentDetails(ctx context.Context, client DepartmentDetailClient,
 	for _, dept := range departments {
 		detail, err := client.GetDepartment(ctx, dept.ID)
 		if err != nil {
-			return nil, err
+			return nil, safeProviderError("directory", err)
 		}
-		if detail == nil {
-			enriched = append(enriched, dept)
-			continue
+		if detail == nil || detail.ID != dept.ID {
+			return nil, governanceError("directory", "incomplete_directory_source")
 		}
 		if detail.Name != "" {
 			dept.Name = detail.Name

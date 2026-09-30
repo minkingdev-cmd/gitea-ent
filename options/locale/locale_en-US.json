@@ -3010,6 +3010,7 @@
   "admin.dashboard.reinit_missing_repos": "Reinitialize all missing Git repositories for which records exist",
   "admin.dashboard.sync_external_users": "Synchronize external user data",
   "admin.dashboard.sync_enterprise_wecom_directory": "Synchronize Enterprise WeCom directory",
+  "admin.dashboard.scan_enterprise_wecom_admin_callbacks": "Process Enterprise WeCom administrator callback receipts",
   "admin.dashboard.cleanup_hook_task_table": "Clean up hook_task table",
   "admin.dashboard.cleanup_packages": "Clean up expired packages",
   "admin.dashboard.cleanup_actions": "Clean up expired actions' resources",

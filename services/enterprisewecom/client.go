@@ -191,15 +191,18 @@ func (c *Client) GetUserInfo(ctx context.Context, accessToken, code string) (*Us
 }
 
 type weComError struct {
-	ErrCode int    `json:"errcode"`
+	ErrCode *int   `json:"errcode"`
 	ErrMsg  string `json:"errmsg"`
 }
 
 func (e weComError) Err(operation string) error {
-	if e.ErrCode == 0 {
+	if e.ErrCode == nil {
+		return fmt.Errorf("%w: %s response is missing error code", ErrWeComUnavailable, operation)
+	}
+	if *e.ErrCode == 0 {
 		return nil
 	}
-	return &APIError{Operation: operation, ErrorCode: e.ErrCode}
+	return &APIError{Operation: operation, ErrorCode: *e.ErrCode}
 }
 
 func (c *Client) getJSON(ctx context.Context, operation, path string, values url.Values, out any) error {
@@ -274,7 +277,7 @@ func (c *Client) ListAppAdmins(ctx context.Context) ([]AppAdminInfo, error) {
 		Admins []struct {
 			UserID     string `json:"userid"`
 			OpenUserID string `json:"open_userid"`
-			AuthType   int    `json:"auth_type"`
+			AuthType   *int   `json:"auth_type"`
 		} `json:"admin"`
 	}
 	if err := c.postJSON(ctx, "list app administrators", "/cgi-bin/service/get_admin_list", values, map[string]any{
@@ -286,9 +289,15 @@ func (c *Client) ListAppAdmins(ctx context.Context) ([]AppAdminInfo, error) {
 	if err := resp.Err("list app administrators"); err != nil {
 		return nil, err
 	}
+	if resp.Admins == nil {
+		return nil, governanceError("authority", "incomplete_authority_source")
+	}
 	admins := make([]AppAdminInfo, 0, len(resp.Admins))
 	for _, admin := range resp.Admins {
-		admins = append(admins, AppAdminInfo{UserID: admin.UserID, OpenUserID: admin.OpenUserID, AuthType: admin.AuthType})
+		if admin.AuthType == nil {
+			return nil, governanceError("authority", "incomplete_authority_source")
+		}
+		admins = append(admins, AppAdminInfo{UserID: admin.UserID, OpenUserID: admin.OpenUserID, AuthType: *admin.AuthType})
 	}
 	return admins, nil
 }
@@ -302,7 +311,19 @@ func (c *Client) listTaggedManagementAdmins(ctx context.Context) ([]AppAdminInfo
 	if err != nil {
 		return nil, err
 	}
+	var matching []TagInfo
 	for _, tag := range tags {
+		if strings.TrimSpace(tag.Name) == tagName {
+			matching = append(matching, tag)
+		}
+	}
+	if len(matching) == 0 {
+		return nil, governanceError("authority", "authority_source_missing")
+	}
+	if len(matching) != 1 {
+		return nil, governanceError("authority", "authority_source_ambiguous")
+	}
+	for _, tag := range matching {
 		if strings.TrimSpace(tag.Name) != tagName {
 			continue
 		}
@@ -315,7 +336,7 @@ func (c *Client) listTaggedManagementAdmins(ctx context.Context) ([]AppAdminInfo
 		for _, userID := range userIDs {
 			userID = strings.TrimSpace(userID)
 			if userID == "" {
-				continue
+				return nil, governanceError("authority", "incomplete_authority_source")
 			}
 			if _, ok := seen[userID]; ok {
 				continue
@@ -350,6 +371,9 @@ func (c *Client) ListDepartments(ctx context.Context) ([]DepartmentInfo, error) 
 	}
 	if err := resp.Err("list departments"); err != nil {
 		return nil, err
+	}
+	if resp.Departments == nil {
+		return nil, governanceError("directory", "incomplete_directory_source")
 	}
 	departments := make([]DepartmentInfo, 0, len(resp.Departments))
 	for _, dept := range resp.Departments {
@@ -422,6 +446,9 @@ func (c *Client) ListMembers(ctx context.Context, departmentID int64) ([]MemberI
 	if err := resp.Err("list department members"); err != nil {
 		return nil, err
 	}
+	if resp.Users == nil {
+		return nil, governanceError("directory", "incomplete_directory_source")
+	}
 	members := make([]MemberInfo, 0, len(resp.Users))
 	for _, user := range resp.Users {
 		members = append(members, MemberInfo{
@@ -465,6 +492,9 @@ func (c *Client) ListTags(ctx context.Context) ([]TagInfo, error) {
 	if err := resp.Err("list tags"); err != nil {
 		return nil, err
 	}
+	if resp.Tags == nil {
+		return nil, governanceError("directory", "incomplete_directory_source")
+	}
 	tags := make([]TagInfo, 0, len(resp.Tags))
 	for _, tag := range resp.Tags {
 		tags = append(tags, TagInfo{ID: tag.ID, Name: tag.Name})
@@ -491,6 +521,9 @@ func (c *Client) ListTagMembers(ctx context.Context, tagID int64) ([]string, err
 	}
 	if err := resp.Err("list tag members"); err != nil {
 		return nil, err
+	}
+	if resp.Users == nil {
+		return nil, governanceError("directory", "incomplete_directory_source")
 	}
 	userIDs := make([]string, 0, len(resp.Users))
 	for _, user := range resp.Users {

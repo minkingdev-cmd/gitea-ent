@@ -7,24 +7,30 @@ import (
 	"bytes"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	auth_model "gitea.dev/models/auth"
+	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/test"
+	"gitea.dev/routers"
 	"gitea.dev/services/auth/source/oauth2"
+	"gitea.dev/services/auth/source/sspi"
 	wecom_service "gitea.dev/services/enterprisewecom"
 	"gitea.dev/tests"
 
+	"github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -50,7 +56,7 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 	}))
 	defer mockWeCom.Close()
 
-	const sourceName = "enterprise-wecom-integration"
+	const sourceName = "wecom-integration"
 	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
 		Enabled:          true,
 		LoginOnly:        true,
@@ -73,6 +79,10 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 
 	addOAuth2Source(t, sourceName, oauth2.Source{Provider: oauth2.ProviderNameWeCom})
 	addOAuth2Source(t, "non-wecom-integration", oauth2.Source{Provider: "gitea"})
+	require.NoError(t, auth_model.CreateSource(t.Context(), &auth_model.Source{
+		Name: "sspi-integration", Type: auth_model.SSPI, IsActive: true,
+		Cfg: &sspi.Source{AutoCreateUsers: true, AutoActivateUsers: true},
+	}))
 
 	t.Run("only WeCom Web login is reachable", func(t *testing.T) {
 		resp := MakeRequest(t, NewRequest(t, "GET", "/user/login"), http.StatusSeeOther)
@@ -110,6 +120,26 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 		assert.Contains(t, resp.Header().Get("Location"), "/user/login")
 	})
 
+	t.Run("SSPI Negotiate cannot create a Web session", func(t *testing.T) {
+		require.True(t, auth_model.IsSSPIEnabled(t.Context()))
+		defer test.MockVariableValue(&testWebRoutes)()
+		func() {
+			defer test.MockVariableValue(&setting.EnterpriseWeCom.LoginOnly, false)()
+			testWebRoutes = routers.NormalRoutes()
+		}()
+		usersBefore := unittest.GetCount(t, &user_model.User{})
+		session := emptyTestSession(t)
+		req := NewRequestWithValues(t, "POST", "/user/login", map[string]string{"auth_with_sspi": "1"}).SetHeader("Authorization", "Negotiate dGVzdA==")
+		resp := session.MakeRequest(t, req, http.StatusForbidden)
+		require.Empty(t, resp.Header().Get("WWW-Authenticate"))
+		req = NewRequest(t, "GET", "/user/login?auth_with_sspi=1").SetHeader("Authorization", "Negotiate dGVzdA==")
+		resp = session.MakeRequest(t, req, http.StatusSeeOther)
+		require.Equal(t, "/user/oauth2/"+sourceName, resp.Header().Get("Location"))
+		require.Empty(t, resp.Header().Get("WWW-Authenticate"))
+		session.MakeRequest(t, NewRequest(t, "GET", "/user/settings"), http.StatusSeeOther)
+		require.Equal(t, usersBefore, unittest.GetCount(t, &user_model.User{}))
+	})
+
 	t.Run("WeCom callback creates a Web session", func(t *testing.T) {
 		session := emptyTestSession(t)
 		resp := session.MakeRequest(t, NewRequest(t, "GET", "/user/oauth2/"+sourceName), http.StatusTemporaryRedirect)
@@ -131,6 +161,29 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 		assert.Positive(t, identity.UserID)
 	})
 
+	t.Run("WeCom OAuth continues through legitimate MFA", func(t *testing.T) {
+		identity := unittest.AssertExistsAndLoadBean(t, &wecom_model.Identity{CorpID: "corp-integration", WeComUserID: "wecom-integration-user"})
+		key, err := totp.Generate(totp.GenerateOpts{Issuer: "gitea-test", AccountName: "wecom-mfa"})
+		require.NoError(t, err)
+		factor := &auth_model.TwoFactor{UID: identity.UserID}
+		require.NoError(t, factor.SetSecret(key.Secret()))
+		require.NoError(t, auth_model.NewTwoFactor(t.Context(), factor))
+		session := emptyTestSession(t)
+		response := session.MakeRequest(t, NewRequest(t, "GET", "/user/oauth2/"+sourceName), http.StatusTemporaryRedirect)
+		authorizeURL, err := url.Parse(response.Header().Get("Location"))
+		require.NoError(t, err)
+		state := authorizeURL.Query().Get("state")
+		require.NotEmpty(t, state)
+		response = session.MakeRequest(t, NewRequest(t, "GET", "/user/oauth2/"+sourceName+"/callback?code=integration-code&state="+url.QueryEscape(state)), http.StatusSeeOther)
+		require.Contains(t, response.Header().Get("Location"), "/user/two_factor")
+		session.MakeRequest(t, NewRequest(t, "GET", "/user/settings"), http.StatusSeeOther)
+		session.MakeRequest(t, NewRequest(t, "GET", "/user/two_factor"), http.StatusOK)
+		passcode, err := totp.GenerateCode(key.Secret(), time.Now())
+		require.NoError(t, err)
+		session.MakeRequest(t, NewRequestWithValues(t, "POST", "/user/two_factor", map[string]string{"passcode": passcode}), http.StatusSeeOther)
+		session.MakeRequest(t, NewRequest(t, "GET", "/user/settings"), http.StatusOK)
+	})
+
 	t.Run("PAT and Git HTTP token remain valid after mapping apply", func(t *testing.T) {
 		applyEnterpriseWeComAuthzMappingForUser(t, "corp-integration", "mapped-user2", "user2")
 
@@ -149,6 +202,10 @@ func TestEnterpriseWeComLoginOnlySmoke(t *testing.T) {
 			CorpID: "corp-smoke", AgentID: "1000002", CorpSecret: "smoke-secret",
 		})()
 		addOAuth2Source(t, sourceName, oauth2.Source{Provider: oauth2.ProviderNameWeCom})
+		require.NoError(t, auth_model.CreateSource(t.Context(), &auth_model.Source{
+			Name: "sspi-smoke", Type: auth_model.SSPI, IsActive: true,
+			Cfg: &sspi.Source{AutoCreateUsers: true, AutoActivateUsers: true},
+		}))
 		withKeyFile(t, "wecom-login-only-ssh", func(keyFile string) {
 			t.Run("CreateUserKey", doAPICreateUserKey(ctx, "wecom-login-only-ssh", keyFile))
 			applyEnterpriseWeComAuthzMappingForUser(t, "corp-smoke", "mapped-ssh-user2", "user2")
@@ -160,7 +217,9 @@ func TestEnterpriseWeComLoginOnlySmoke(t *testing.T) {
 
 			setting.EnterpriseWeCom.LoginOnly = true
 
-			httpClient := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+			jar, err := cookiejar.New(nil)
+			require.NoError(t, err)
+			httpClient := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 			req, err := http.NewRequest(http.MethodGet, u.ResolveReference(&url.URL{Path: "/user/login"}).String(), nil)
 			require.NoError(t, err)
 			resp, err := httpClient.Do(req)
@@ -175,6 +234,23 @@ func TestEnterpriseWeComLoginOnlySmoke(t *testing.T) {
 			require.NoError(t, err)
 			defer resp.Body.Close()
 			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+
+			req, err = http.NewRequest(http.MethodPost, u.ResolveReference(&url.URL{Path: "/user/login"}).String(), strings.NewReader(url.Values{"auth_with_sspi": {"1"}}.Encode()))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Authorization", "Negotiate dGVzdA==")
+			resp, err = httpClient.Do(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Equal(t, http.StatusForbidden, resp.StatusCode)
+			require.Empty(t, resp.Header.Get("WWW-Authenticate"))
+
+			req, err = http.NewRequest(http.MethodGet, u.ResolveReference(&url.URL{Path: "/user/settings"}).String(), nil)
+			require.NoError(t, err)
+			resp, err = httpClient.Do(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Equal(t, http.StatusSeeOther, resp.StatusCode)
 
 			req, err = http.NewRequest(http.MethodGet, u.ResolveReference(&url.URL{Path: "/api/v1/user"}).String(), nil)
 			require.NoError(t, err)
@@ -223,7 +299,7 @@ func applyEnterpriseWeComAuthzMappingForUser(t *testing.T, corpID, wecomUserID, 
 		Status:      wecom_model.IdentityStatusActive,
 	})
 	require.NoError(t, err)
-	_, err = wecom_service.CreateAuthzMapping(t.Context(), wecom_service.AuthzMappingOptions{
+	mapping, err := wecom_service.CreateAuthzMapping(t.Context(), wecom_service.AuthzMappingOptions{
 		CorpID:     corpID,
 		SourceType: wecom_model.AuthzSourceUser,
 		SourceID:   wecomUserID,
@@ -232,6 +308,10 @@ func applyEnterpriseWeComAuthzMappingForUser(t *testing.T, corpID, wecomUserID, 
 		ActorID:    user.ID,
 	})
 	require.NoError(t, err)
+	mapping.AgentID, mapping.Origin = setting.EnterpriseWeCom.AgentID, wecom_model.AuthzMappingOriginGenerated
+	_, err = db.GetEngine(t.Context()).ID(mapping.ID).Cols("agent_id", "origin").Update(mapping)
+	require.NoError(t, err)
+	defer test.MockVariableValue(&setting.EnterpriseWeCom.ManagedOrgID, org.ID)()
 	_, err = wecom_service.ApplyAuthzMappings(t.Context(), wecom_service.AuthzReconcileOptions{CorpID: corpID, ActorID: user.ID, ApplyID: "auth-regression"})
 	require.NoError(t, err)
 }

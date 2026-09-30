@@ -21,3 +21,10 @@ func TestSanitizedRequestURIHidesSensitiveQueryValues(t *testing.T) {
 	require.NotContains(t, uri, "token-1")
 	require.NotContains(t, uri, "secret-1")
 }
+
+func TestSanitizedRequestURIHidesAllAdminCallbackQueryValues(t *testing.T) {
+	for _, path := range []string{"/enterprise/wecom/callback/admin-authority", "/gitea/enterprise/wecom/callback/admin-authority"} {
+		req := httptest.NewRequest(http.MethodPost, path+"?msg_signature=private-signature&timestamp=123&nonce=private-nonce&echostr=private-ciphertext&unexpected=private-email", nil)
+		require.Equal(t, path, sanitizedRequestURI(req))
+	}
+}

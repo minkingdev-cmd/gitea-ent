@@ -4,8 +4,11 @@
 package enterprisewecom
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -21,6 +24,8 @@ import (
 )
 
 type AuthzReconcileOptions struct {
+	AgentID string
+	OrgID   int64
 	CorpID  string
 	ActorID int64
 	ApplyID string
@@ -72,6 +77,14 @@ type authzTargetUserKey struct {
 	TeamID     int64
 }
 
+func compareTargetUserKeys(a, b authzTargetUserKey) int {
+	return cmp.Or(cmp.Compare(a.OrgID, b.OrgID), cmp.Compare(a.TeamID, b.TeamID), cmp.Compare(a.TargetType, b.TargetType), cmp.Compare(a.UserID, b.UserID))
+}
+
+func orderedTargetUserKeys(changes map[authzTargetUserKey][]AuthzMembershipChange) []authzTargetUserKey {
+	return slices.SortedFunc(maps.Keys(changes), compareTargetUserKeys)
+}
+
 func PlanAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzReconcileResult, error) {
 	corpID := normalizeReconcileCorpID(opts.CorpID)
 	result := &AuthzReconcileResult{
@@ -83,7 +96,15 @@ func PlanAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzR
 		return result, nil
 	}
 
-	allMappings, err := ListAuthzMappings(ctx, AuthzMappingListOptions{CorpID: corpID, IncludeInactive: true})
+	if err := configuredGovernanceScope(corpID, firstNonEmpty(opts.AgentID, setting.EnterpriseWeCom.AgentID)); err != nil {
+		return nil, err
+	}
+	orgID, err := resolveGeneratedTargetOrg(ctx, opts.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	var allMappings []*wecom_model.AuthzMapping
+	err = db.GetEngine(ctx).Where("corp_id = ? AND agent_id = ? AND origin = ? AND org_id = ?", corpID, setting.EnterpriseWeCom.AgentID, wecom_model.AuthzMappingOriginGenerated, orgID).OrderBy("id ASC").Find(&allMappings)
 	if err != nil {
 		return nil, err
 	}
@@ -100,13 +121,11 @@ func PlanAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzR
 	desiredByTargetUser := make(map[authzTargetUserKey][]AuthzMembershipChange)
 	for _, mapping := range activeMappings {
 		if err := validateExistingMappingTarget(ctx, mapping); err != nil {
-			result.Errors = append(result.Errors, err.Error())
-			continue
+			return nil, safeGovernanceError("plan", err)
 		}
 		changes, skipped, err := resolveMappingUsers(ctx, mapping)
 		if err != nil {
-			result.Errors = append(result.Errors, err.Error())
-			continue
+			return nil, safeGovernanceError("plan", err)
 		}
 		result.Skipped = append(result.Skipped, skipped...)
 		for _, change := range changes {
@@ -136,7 +155,8 @@ func PlanAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzR
 		}
 	}
 
-	for targetKey, changes := range desiredByTargetUser {
+	for _, targetKey := range orderedTargetUserKeys(desiredByTargetUser) {
+		changes := desiredByTargetUser[targetKey]
 		hasMembership, err := hasNativeMembership(ctx, targetKey)
 		if err != nil {
 			return nil, err
@@ -148,7 +168,8 @@ func PlanAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzR
 	}
 
 	seenRemoval := make(map[authzTargetUserKey]bool)
-	for targetKey, changes := range currentManagedByTargetUser {
+	for _, targetKey := range orderedTargetUserKeys(currentManagedByTargetUser) {
+		changes := currentManagedByTargetUser[targetKey]
 		if _, stillDesired := desiredByTargetUser[targetKey]; stillDesired {
 			continue
 		}
@@ -160,7 +181,11 @@ func PlanAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzR
 			return nil, err
 		}
 		result.nativeMemberBefore[targetKey] = hasMembership
-		if hasMembership {
+		shared, err := db.GetEngine(ctx).Where("user_id = ? AND target_type = ? AND org_id = ? AND team_id = ?", targetKey.UserID, targetKey.TargetType, targetKey.OrgID, targetKey.TeamID).NotIn("mapping_id", mappingIDs).Exist(new(wecom_model.ManagedMembership))
+		if err != nil {
+			return nil, err
+		}
+		if hasMembership && !shared {
 			result.Removals = append(result.Removals, changes[0])
 		}
 		seenRemoval[targetKey] = true
@@ -170,6 +195,16 @@ func PlanAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzR
 }
 
 func ApplyAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzReconcileResult, error) {
+	var result *AuthzReconcileResult
+	err := withGeneratedMutation(ctx, func(ctx context.Context) error {
+		var err error
+		result, err = applyAuthzMappings(ctx, opts)
+		return err
+	})
+	return result, safeGovernanceError("memberships", err)
+}
+
+func applyAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*AuthzReconcileResult, error) {
 	result, err := PlanAuthzMappings(ctx, opts)
 	if err != nil {
 		recordMappingApplyAudit(ctx, opts.ActorID, result, "error", "plan_failed")
@@ -182,8 +217,13 @@ func ApplyAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*Authz
 
 	applyID := strings.TrimSpace(opts.ApplyID)
 	if applyID == "" {
-		applyID = fmt.Sprintf("apply-%d", timeutil.TimeStampNow())
+		applyID = newGovernanceID("apply")
 	}
+	sortChanges := func(a, b AuthzMembershipChange) int {
+		return cmp.Or(compareTargetUserKeys(makeTargetUserKey(a), makeTargetUserKey(b)), cmp.Compare(a.MappingID, b.MappingID))
+	}
+	slices.SortFunc(result.Removals, sortChanges)
+	slices.SortFunc(result.staleManagedChanges, sortChanges)
 	err = db.WithTx(ctx, func(ctx context.Context) error {
 		protectedKeys := make(map[authzTargetUserKey]bool)
 		for _, removal := range result.Removals {
@@ -207,12 +247,19 @@ func ApplyAuthzMappings(ctx context.Context, opts AuthzReconcileOptions) (*Authz
 		}
 
 		desiredByTargetUser := groupChangesByTargetUser(result.desiredChanges)
-		for targetKey, changes := range desiredByTargetUser {
+		for _, targetKey := range orderedTargetUserKeys(desiredByTargetUser) {
+			changes := desiredByTargetUser[targetKey]
 			hasMembership, err := hasNativeMembership(ctx, targetKey)
 			if err != nil {
 				return err
 			}
 			managedBefore := result.managedMemberBefore[targetKey]
+			if !managedBefore && hasMembership {
+				managedBefore, err = db.GetEngine(ctx).Where("user_id = ? AND target_type = ? AND org_id = ? AND team_id = ?", targetKey.UserID, targetKey.TargetType, targetKey.OrgID, targetKey.TeamID).Exist(new(wecom_model.ManagedMembership))
+				if err != nil {
+					return err
+				}
+			}
 			if !hasMembership {
 				if err := addAuthzMembership(ctx, changes[0]); err != nil {
 					return err
@@ -335,6 +382,9 @@ func changesForIdentities(ctx context.Context, mapping *wecom_model.AuthzMapping
 			continue
 		}
 		if _, err := user_model.GetUserByID(ctx, identity.UserID); err != nil {
+			if !user_model.IsErrUserNotExist(err) {
+				return nil, nil, err
+			}
 			skipped = append(skipped, skippedIdentity(mapping, identity.WeComUserID, "gitea_user_not_found", identity))
 			continue
 		}
@@ -356,7 +406,7 @@ func appendGeneratedTeamAdminChanges(ctx context.Context, mapping *wecom_model.A
 	}
 	var admins []wecom_model.GeneratedTeamAdmin
 	if err := db.GetEngine(ctx).
-		Where("corp_id = ? AND source_type = ? AND source_id = ? AND team_id = ? AND status = ? AND user_id > 0", mapping.CorpID, mapping.SourceType, mapping.SourceID, mapping.TeamID, wecom_model.GeneratedStateApplied).
+		Where("corp_id = ? AND agent_id = ? AND source_type = ? AND source_id = ? AND team_id = ? AND status = ? AND user_id > 0", mapping.CorpID, mapping.AgentID, mapping.SourceType, mapping.SourceID, mapping.TeamID, wecom_model.GeneratedStateApplied).
 		Find(&admins); err != nil {
 		return nil, nil, err
 	}
@@ -373,6 +423,9 @@ func appendGeneratedTeamAdminChanges(ctx context.Context, mapping *wecom_model.A
 			continue
 		}
 		if _, err := user_model.GetUserByID(ctx, admin.UserID); err != nil {
+			if !user_model.IsErrUserNotExist(err) {
+				return nil, nil, err
+			}
 			skipped = append(skipped, skippedIdentity(mapping, admin.WeComUserID, "generated_admin_user_not_found", nil))
 			continue
 		}
@@ -450,6 +503,10 @@ func removeAuthzMembership(ctx context.Context, change AuthzMembershipChange) (b
 	if err != nil {
 		return false, err
 	}
+	protected, err := wecom_model.IsActiveManagementAuthorityBoundUser(ctx, setting.EnterpriseWeCom.CorpID, setting.EnterpriseWeCom.AgentID, change.UserID)
+	if err != nil || protected {
+		return protected, err
+	}
 	switch change.TargetType {
 	case wecom_model.AuthzTargetOrg:
 		if hasTeamMembership, err := hasAnyTeamMembershipInOrg(ctx, change.OrgID, change.UserID); err != nil || hasTeamMembership {
@@ -471,10 +528,13 @@ func removeAuthzMembership(ctx context.Context, change AuthzMembershipChange) (b
 		if err != nil {
 			return false, err
 		}
-		if err := org_service.RemoveTeamMember(ctx, team, user); err != nil {
-			if organization.IsErrLastOrgOwner(err) {
-				return true, nil
+		if team.IsOwnerTeam() && team.NumMembers <= 1 {
+			member, err := organization.IsTeamMember(ctx, team.OrgID, team.ID, user.ID)
+			if err != nil || member {
+				return member, err
 			}
+		}
+		if err := org_service.RemoveTeamMember(ctx, team, user); err != nil {
 			return false, err
 		}
 		return false, nil

@@ -24,6 +24,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/globallock"
@@ -36,6 +37,7 @@ import (
 	"gitea.dev/modules/templates/vars"
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	issue_service "gitea.dev/services/issue"
 	notify_service "gitea.dev/services/notify"
 )
@@ -254,8 +256,16 @@ func addTestPullRequestTaskAfterWebOperation(pr *issues_model.PullRequest, doer 
 
 // Merge merges pull request to base repository.
 // Caller should check PR is ready to be merged (review and status checks)
-func Merge(pr *issues_model.PullRequest, doer *user_model.User, mergeStyle repo_model.MergeStyle, expectedHeadCommitID, message string, wasAutoMerged bool) error {
-	ctx := graceful.GetManager().HammerContext() // don't abort the git operation even if the user's request is canceled
+func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *user_model.User, mergeStyle repo_model.MergeStyle, expectedHeadCommitID, message string, wasAutoMerged bool) (err error) {
+	ctx := authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), operationCtx) // don't abort the git operation even if the user's request is canceled
+
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+		}
+		authz_service.FinishOperationObservation(ctx, doer.ID, pr.BaseRepoID, authz.MergePullRequest, outcome, authz_service.StageOperation)
+	}()
 
 	if err := pr.LoadBaseRepo(ctx); err != nil {
 		log.Error("Unable to load base repo: %v", err)
@@ -432,6 +442,11 @@ func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *use
 	)
 
 	mergeCtx.env = append(mergeCtx.env, repo_module.EnvPushTrigger+"="+string(pushTrigger))
+	parentAction := authz.MergePullRequest
+	if pushTrigger == repo_module.PushTriggerPRUpdateWithBase {
+		parentAction = authz.PushBranch
+	}
+	mergeCtx.env = repo_module.WithAuthzOperation(mergeCtx.env, string(authz_service.ManagedHookOperationTicket(ctx, doer, pr.BaseRepo, pr.BaseBranch, parentAction)))
 	pushCmd := gitcmd.NewCommand("push", "origin").AddDynamicArguments(tmpRepoBaseBranch + ":" + git.BranchPrefix + pr.BaseBranch)
 
 	// Push back to upstream.
@@ -646,7 +661,14 @@ func CheckPullBranchProtections(ctx context.Context, pr *issues_model.PullReques
 }
 
 // MergedManually mark pr as merged manually
-func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string) error {
+func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string) (err error) {
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+		}
+		authz_service.FinishOperationObservation(ctx, doer.ID, pr.BaseRepoID, authz.MergePullRequest, outcome, authz_service.StageOperation)
+	}()
 	releaser, err := globallock.Lock(ctx, getPullWorkingLockKey(pr.ID))
 	if err != nil {
 		log.Error("lock.Lock(): %v", err)

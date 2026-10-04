@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 
 	"github.com/gorilla/feeds"
@@ -18,6 +20,7 @@ func ShowBranchFeed(ctx *context.Context, repo *repo.Repository, formatType stri
 	if !checkRepoFeedTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	var commits []*git.Commit
 	var err error
 	if ctx.Repo.Commit != nil {

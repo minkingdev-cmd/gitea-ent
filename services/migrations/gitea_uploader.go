@@ -31,6 +31,7 @@ import (
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/modules/uri"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/pull"
 	repo_service "gitea.dev/services/repository"
 )
@@ -39,6 +40,7 @@ var _ base.Uploader = &GiteaLocalUploader{}
 
 // GiteaLocalUploader implements an Uploader to gitea sites
 type GiteaLocalUploader struct {
+	observation    *authz_service.Observation
 	doer           *user_model.User
 	repoOwner      string
 	repoName       string
@@ -112,6 +114,10 @@ func (g *GiteaLocalUploader) CreateRepo(ctx context.Context, repo *base.Reposito
 	}
 	if err != nil {
 		return err
+	}
+	ctx, observation := authz_service.WithMigrationTargetObservation(ctx, g.doer, r)
+	if observation != nil {
+		g.observation = observation
 	}
 	r.DefaultBranch = repo.DefaultBranch
 	r.Description = repo.Description

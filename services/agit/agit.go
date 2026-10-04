@@ -20,6 +20,7 @@ import (
 	"gitea.dev/modules/private"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 	pull_service "gitea.dev/services/pull"
 )
@@ -193,8 +194,18 @@ func ProcReceive(ctx context.Context, repo *repo_model.Repository, gitRepo *git.
 				Issue:       prIssue,
 				PullRequest: pr,
 			}
-			if err := pull_service.NewPullRequest(ctx, prOpts); err != nil {
-				return nil, err
+			observationCtx, observation := authz_service.BeginHookPullRequestObservation(ctx, pusher, repo, baseBranchName, string(opts.RefFullNames[i]))
+			createErr := pull_service.NewPullRequest(ctx, prOpts)
+			outcome := authz_service.NativeSuccess
+			if createErr != nil {
+				outcome = authz_service.NativeFailed
+				if errors.Is(createErr, issues_model.ErrMustCollaborator) || errors.Is(createErr, user_model.ErrBlockedUser) || errors.Is(createErr, util.ErrPermissionDenied) {
+					outcome = authz_service.NativeDenied
+				}
+			}
+			observation.Finish(observationCtx, outcome, authz_service.StageOperation)
+			if createErr != nil {
+				return nil, createErr
 			}
 
 			log.Trace("Pull request created: %d/%d", repo.ID, prIssue.ID)

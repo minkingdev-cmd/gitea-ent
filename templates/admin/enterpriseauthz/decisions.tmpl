@@ -1,0 +1,33 @@
+{{template "admin/enterpriseauthz/head" .}}
+<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_authz.decisions_title"}}</h4>
+<div class="ui attached segment">
+ <p>{{ctx.Locale.Tr "admin.enterprise_authz.current_names_notice"}}</p>
+ <div class="ui warning message">{{ctx.Locale.Tr "admin.enterprise_authz.history_notice"}}</div>
+ <form class="ui form" method="get" action="{{.AuthzBase}}/decisions">
+  <div class="two fields">
+   {{template "admin/enterpriseauthz/picker" .AuthzHistoryActorPicker}}
+   {{template "admin/enterpriseauthz/picker" .AuthzHistoryRepoPicker}}
+  </div>
+  <div class="two fields">
+   <div class="field"><label for="authz-history-action">{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</label><select id="authz-history-action" name="action"><option value="">{{ctx.Locale.Tr "admin.enterprise_authz.any"}}</option>{{range .AuthzActions}}<option value="{{.Key}}" {{if eq ($.AuthzHistoryQuery.Get "action") .Key}}selected{{end}}>{{.Key}}</option>{{end}}</select></div>
+   <div class="field"><label for="authz-history-candidate">{{ctx.Locale.Tr "admin.enterprise_authz.candidate"}}</label><select id="authz-history-candidate" name="decision"><option value="">{{ctx.Locale.Tr "admin.enterprise_authz.any"}}</option>{{range .AuthzCandidates}}<option value="{{.}}" {{if eq ($.AuthzHistoryQuery.Get "decision") .}}selected{{end}}>{{call $.AuthzLabel .}}</option>{{end}}</select></div>
+  </div>
+  <div class="two fields">
+   <div class="field"><label for="authz-history-since">{{ctx.Locale.Tr "admin.enterprise_authz.since"}}</label><input id="authz-history-since-value" type="hidden" name="since" value="{{.AuthzHistorySince}}"><input id="authz-history-since" type="datetime-local" step="1" data-authz-time="authz-history-since-value" data-error="{{ctx.Locale.Tr "admin.enterprise_authz.invalid_local_time"}}" disabled></div>
+   <div class="field"><label for="authz-history-until">{{ctx.Locale.Tr "admin.enterprise_authz.until"}}</label><input id="authz-history-until-value" type="hidden" name="until" value="{{.AuthzHistoryUntil}}"><input id="authz-history-until" type="datetime-local" step="1" data-authz-time="authz-history-until-value" data-error="{{ctx.Locale.Tr "admin.enterprise_authz.invalid_local_time"}}" disabled></div>
+  </div>
+  <p>{{ctx.Locale.Tr "admin.enterprise_authz.local_timezone"}}: <span data-authz-timezone></span></p>
+  <noscript><p>{{ctx.Locale.Tr "admin.enterprise_authz.time_requires_js"}}</p></noscript>
+  <div class="field"><label for="authz-history-limit">{{ctx.Locale.Tr "admin.enterprise_authz.page_size"}}</label><input id="authz-history-limit" type="number" name="limit" min="1" max="100" value="{{.AuthzHistoryLimit}}" required></div>
+  <button class="ui primary button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.filter"}}</button>
+  <a class="ui button" href="{{.AuthzBase}}/decisions">{{ctx.Locale.Tr "admin.enterprise_authz.clear_filter"}}</a>
+ </form>
+ <p data-total="{{.AuthzTotal}}">{{ctx.Locale.Tr "admin.enterprise_authz.total"}}: {{.AuthzTotal}}</p>
+ {{if .AuthzDecisions}}
+  <div class="tw-overflow-x-auto"><table class="ui striped table"><thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_authz.record_id"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.history_actor"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.history_repo"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.candidate"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.native_outcome"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.stage"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.mismatch"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.created"}}</th></tr></thead><tbody>
+   {{range .AuthzDecisions}}<tr><td><a href="{{$.AuthzBase}}/decisions/{{.ID}}">{{ctx.Locale.Tr "admin.enterprise_authz.view_details"}}</a></td><td>{{.ActorName}}</td><td>{{.RepoName}}</td><td><code>{{.Action}}</code></td><td>{{call $.AuthzLabel .CandidateDecision}}</td><td>{{call $.AuthzLabel .NativeOutcome}}</td><td>{{call $.AuthzLabel .NativeStage}}</td><td>{{call $.AuthzLabel (printf "mismatch_%s" .Mismatch)}}</td><td>{{DateUtils.FullTime .Created}}</td></tr>{{end}}
+  </tbody></table></div>
+ {{else}}<p>{{ctx.Locale.Tr "admin.enterprise_authz.no_decisions"}}</p>{{end}}
+ <nav class="flex-text-inline" aria-label="{{ctx.Locale.Tr "admin.enterprise_authz.pagination"}}">{{if .AuthzHistoryPrevious}}<a class="ui button" href="{{.AuthzHistoryPrevious}}">{{ctx.Locale.Tr "repo.issues.previous"}}</a>{{end}}{{if .AuthzHistoryNext}}<a class="ui button" href="{{.AuthzHistoryNext}}">{{ctx.Locale.Tr "repo.issues.next"}}</a>{{end}}</nav>
+</div>
+{{template "admin/enterpriseauthz/foot" .}}

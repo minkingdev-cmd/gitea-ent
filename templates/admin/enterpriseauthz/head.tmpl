@@ -1,0 +1,20 @@
+{{template "admin/layout_head" (dict "pageClass" "admin enterprise-authz")}}
+<div data-authz-config data-authz-root="{{.AuthzRoot}}" data-authz-scope-type="{{.AuthzScope.Type}}" data-authz-scope-id="{{.AuthzScope.ID}}" data-choose="{{ctx.Locale.Tr "admin.enterprise_authz.choose_object"}}" data-loading="{{ctx.Locale.Tr "admin.enterprise_authz.search_loading"}}" data-error="{{ctx.Locale.Tr "admin.enterprise_authz.search_failed"}}" data-empty="{{ctx.Locale.Tr "admin.enterprise_authz.empty"}}" data-next="{{ctx.Locale.Tr "admin.enterprise_authz.next_page"}}" data-previous="{{ctx.Locale.Tr "admin.enterprise_authz.previous"}}"></div>
+<h2 class="ui header">{{ctx.Locale.Tr "admin.enterprise_authz.title"}}</h2>
+<div class="ui info message">{{ctx.Locale.Tr "admin.enterprise_authz.shadow_only"}}</div>
+<h3>{{.AuthzScopeLabel}}</h3>
+<form class="ui form tw-mb-4" action="{{.AuthzRoot}}/scope" method="get" data-authz-scope>
+ <div class="inline fields">
+  <div class="field"><label for="authz-scope-type">{{ctx.Locale.Tr "admin.enterprise_authz.scope_type"}}</label><select id="authz-scope-type" name="scope_type"><option value="system" {{if eq .AuthzScope.Type "system"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.scope.system"}}</option><option value="org" {{if eq .AuthzScope.Type "org"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.scope.org"}}</option><option value="repo" {{if eq .AuthzScope.Type "repo"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.scope.repo"}}</option></select></div>
+
+  <button class="ui button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.switch_scope"}}</button>
+ </div>
+ {{template "admin/enterpriseauthz/picker" .AuthzScopePicker}}
+</form>
+<div class="ui secondary pointing menu">
+ <a class="item {{if eq .AuthzTab "roles"}}active{{end}}" href="{{.AuthzBase}}/roles">{{ctx.Locale.Tr "admin.enterprise_authz.roles"}}</a>
+ <a class="item {{if eq .AuthzTab "bindings"}}active{{end}}" href="{{.AuthzBase}}/bindings">{{ctx.Locale.Tr "admin.enterprise_authz.bindings"}}</a>
+ <a class="item {{if eq .AuthzTab "diagnostic"}}active{{end}}" href="{{.AuthzBase}}/effective-permissions">{{ctx.Locale.Tr "admin.enterprise_authz.diagnostic"}}</a>
+ <a class="item {{if eq .AuthzTab "decisions"}}active{{end}}" href="{{.AuthzBase}}/decisions">{{ctx.Locale.Tr "admin.enterprise_authz.decisions"}}</a>
+</div>
+{{if .AuthzError}}<div class="ui negative message" role="alert">{{.AuthzError}}</div>{{end}}

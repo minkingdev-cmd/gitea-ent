@@ -11,6 +11,7 @@ import (
 	activities_model "gitea.dev/models/activities"
 	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	org_model "gitea.dev/models/organization"
 	packages_model "gitea.dev/models/packages"
 	access_model "gitea.dev/models/perm/access"
@@ -79,6 +80,9 @@ func DeleteOrganization(ctx context.Context, org *org_model.Organization, purge 
 			return packages_model.ErrUserOwnPackages{UID: org.ID}
 		}
 
+		if err := authz_model.DeleteOrganization(ctx, org.ID); err != nil {
+			return err
+		}
 		if err := deleteOrganization(ctx, org); err != nil {
 			return fmt.Errorf("DeleteOrganization: %w", err)
 		}

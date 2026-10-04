@@ -14,6 +14,7 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
@@ -82,6 +83,7 @@ func getRunnerByID(ctx *context.APIContext, ownerID, repoID, runnerID int64) (*a
 	}
 
 	if !runner.EditableInContext(ownerID, repoID) {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.APIErrorNotFound("No permission to access this runner")
 		return nil, false
 	}

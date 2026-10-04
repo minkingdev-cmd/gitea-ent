@@ -62,6 +62,13 @@ func IsActionFilter(action Action) bool {
 }
 
 var (
+	EnterpriseAuthzMigrationFailure = define("enterprise:authz:migration:failure", "Repository migration failed before target creation at {stage}: {reason}.")
+	EnterpriseAuthzDiagnostic       = define("enterprise:authz:diagnostic", "Diagnosed enterprise authorization for repository {repo_id}.")
+	EnterpriseAuthzRoleCreate       = define("enterprise:authz:role:create", "Created enterprise authorization role {role_id}.")
+	EnterpriseAuthzRoleUpdate       = define("enterprise:authz:role:update", "Updated enterprise authorization role {role_id}.")
+	EnterpriseAuthzRoleDelete       = define("enterprise:authz:role:delete", "Deleted enterprise authorization role {role_id}.")
+	EnterpriseAuthzBindingAdd       = define("enterprise:authz:binding:add", "Added enterprise authorization binding {binding_id} for role {role_id}.")
+	EnterpriseAuthzBindingRemove    = define("enterprise:authz:binding:remove", "Removed enterprise authorization binding {binding_id} for role {role_id}.")
 	UserImpersonation               = define("user:impersonation:start", "User {actor} started impersonating user {scope}.")
 	UserImpersonationExit           = define("user:impersonation:exit", "User {actor} stopped impersonating user {scope}.")
 	UserCreate                      = define("user:create", "Created user {scope}.")
@@ -109,6 +116,8 @@ var (
 	UserWebhookAdd                  = define("user:webhook:add", "Added webhook {webhook} to user {scope}.")
 	UserWebhookUpdate               = define("user:webhook:update", "Updated webhook {webhook} of user {scope}.")
 	UserWebhookRemove               = define("user:webhook:remove", "Removed webhook {webhook} of user {scope}.")
+
+	EnterpriseAuthzDecision = define("enterprise:authz:decision", "Enterprise authorization shadow decision {decision_id} for repository {repo_id}: {action} {candidate_decision} ({reason}).")
 
 	EnterpriseWeComLoginSuccess   = define("enterprise:wecom:login:success", "Enterprise WeCom login succeeded for user {scope} with identity {external_id}.")
 	EnterpriseWeComLoginDeny      = define("enterprise:wecom:login:deny", "Enterprise WeCom login was denied for identity {external_id}: {reason}.")

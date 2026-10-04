@@ -9,7 +9,9 @@ import (
 	"strconv"
 
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 )
 
@@ -45,6 +47,7 @@ func (l languageResponse) MarshalJSON() ([]byte, error) {
 
 // GetLanguages returns languages and number of bytes of code written
 func GetLanguages(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/languages repository repoGetLanguages
 	// ---
 	// summary: Get languages and number of bytes of code written

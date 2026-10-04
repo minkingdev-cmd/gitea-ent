@@ -25,6 +25,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/commitstatus"
 	"gitea.dev/modules/emoji"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/fileicon"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
@@ -37,6 +38,7 @@ import (
 	"gitea.dev/modules/translation"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/utils"
 	shared_user "gitea.dev/routers/web/shared/user"
 	actions_service "gitea.dev/services/actions"
@@ -44,6 +46,7 @@ import (
 	"gitea.dev/services/automerge"
 	"gitea.dev/services/context"
 	"gitea.dev/services/context/upload"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	git_service "gitea.dev/services/git"
 	"gitea.dev/services/gitdiff"
@@ -602,6 +605,7 @@ type pullCommitList struct {
 
 // GetPullCommits get all commits for given pull request
 func GetPullCommits(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	issue, ok := getPullInfo(ctx)
 	if !ok {
 		return
@@ -631,6 +635,7 @@ func GetPullCommits(ctx *context.Context) {
 
 // ViewPullCommits show commits for a pull request
 func ViewPullCommits(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	ctx.Data["PageIsPullList"] = true
 	ctx.Data["PageIsPullCommits"] = true
 
@@ -679,6 +684,7 @@ func indexCommit(commits []*git.Commit, commitID string) *git.Commit {
 
 // ViewPullFiles render pull request changed files list page
 func viewPullFiles(ctx *context.Context, beforeCommitID, afterCommitID string) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	var err error
 
 	ctx.Data["PageIsPullList"] = true
@@ -1000,7 +1006,7 @@ func UpdatePullRequest(ctx *context.Context) {
 	// default merge commit message
 	message := fmt.Sprintf("Merge branch '%s' into %s", issue.PullRequest.BaseBranch, issue.PullRequest.HeadBranch)
 
-	if err = pull_service.Update(issue.PullRequest, ctx.Doer, message, rebase); err != nil {
+	if err = pull_service.Update(ctx, issue.PullRequest, ctx.Doer, message, rebase); err != nil {
 		if conflictError, ok := err.(pull_service.ErrMergeConflicts); ok {
 			flashError, err := ctx.RenderToHTML(tplAlertDetails, map[string]any{
 				"Message": ctx.Tr("repo.pulls.merge_conflict"),
@@ -1048,6 +1054,10 @@ func MergePullRequest(ctx *context.Context) {
 	pr := issue.PullRequest
 	pr.Issue = issue
 	pr.Issue.Repo = ctx.Repo.Repository
+
+	nativeOutcome := authz_service.NativeFailed
+	finishObservation := common.ObserveRepoBranchMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.MergePullRequest, "web", pr.BaseBranch)
+	defer func() { finishObservation(nativeOutcome) }()
 
 	manuallyMerged := repo_model.MergeStyle(form.Do) == repo_model.MergeStyleManuallyMerged
 
@@ -1106,6 +1116,7 @@ func MergePullRequest(ctx *context.Context) {
 			return
 		}
 
+		nativeOutcome = authz_service.NativeSuccess
 		ctx.JSONRedirect(issue.Link())
 		return
 	}
@@ -1138,6 +1149,7 @@ func MergePullRequest(ctx *context.Context) {
 			ctx.ServerError("ScheduleAutoMerge", err)
 			return
 		} else if scheduled {
+			nativeOutcome = authz_service.NativeUnknown
 			// nothing more to do ...
 			ctx.Flash.Success(ctx.Tr("repo.pulls.auto_merge_newly_scheduled"))
 			ctx.JSONRedirect(fmt.Sprintf("%s/pulls/%d", ctx.Repo.RepoLink, pr.Index))
@@ -1145,7 +1157,7 @@ func MergePullRequest(ctx *context.Context) {
 		}
 	}
 
-	if err := pull_service.Merge(pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false); err != nil {
+	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false); err != nil {
 		if pull_service.IsErrInvalidMergeStyle(err) {
 			ctx.JSONError(ctx.Tr("repo.pulls.invalid_merge_option"))
 		} else if conflictError, ok := err.(pull_service.ErrMergeConflicts); ok {
@@ -1207,6 +1219,7 @@ func MergePullRequest(ctx *context.Context) {
 		}
 		return
 	}
+	nativeOutcome = authz_service.NativeSuccess
 	log.Trace("Pull request merged: %d", pr.ID)
 
 	// FIXME: calling it here is wrong.
@@ -1313,6 +1326,9 @@ func PullsNewRedirect(ctx *context.Context) {
 
 // CompareAndPullRequestPost response for creating pull request
 func CompareAndPullRequestPost(ctx *context.Context) {
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.CreatePullRequest, "web")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	form := web.GetForm[*forms.CreateIssueForm](ctx)
 	repo := ctx.Repo.Repository
 	comparePageInfo := newComparePageInfo()
@@ -1417,6 +1433,7 @@ func CompareAndPullRequestPost(ctx *context.Context) {
 			}
 			ctx.JSONError(flashError)
 		case errors.Is(err, user_model.ErrBlockedUser):
+			outcome = authz_service.NativeDenied
 			flashError, err := ctx.RenderToHTML(tplAlertDetails, map[string]any{
 				"Message": ctx.Tr("repo.pulls.push_rejected"),
 				"Summary": ctx.Tr("repo.pulls.new.blocked_user"),
@@ -1427,6 +1444,7 @@ func CompareAndPullRequestPost(ctx *context.Context) {
 			}
 			ctx.JSONError(flashError)
 		case errors.Is(err, issues_model.ErrMustCollaborator):
+			outcome = authz_service.NativeDenied
 			flashError, err := ctx.RenderToHTML(tplAlertDetails, map[string]any{
 				"Message": ctx.Tr("repo.pulls.push_rejected"),
 				"Summary": ctx.Tr("repo.pulls.new.must_collaborator"),
@@ -1445,6 +1463,7 @@ func CompareAndPullRequestPost(ctx *context.Context) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	log.Trace("Pull request created: %d/%d", repo.ID, pullIssue.ID)
 	ctx.JSONRedirect(pullIssue.Link())
 }
@@ -1475,6 +1494,7 @@ func DownloadPullPatch(ctx *context.Context) {
 
 // DownloadPullDiffOrPatch render a pull's raw diff or patch
 func DownloadPullDiffOrPatch(ctx *context.Context, patch bool) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	pr, err := issues_model.GetPullRequestByIndex(ctx, ctx.Repo.Repository.ID, ctx.PathParamInt64("index"))
 	if err != nil {
 		if issues_model.IsErrPullRequestNotExist(err) {

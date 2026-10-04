@@ -12,13 +12,16 @@ import (
 	"gitea.dev/models/organization"
 	pull_model "gitea.dev/models/pull"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/context/upload"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	issue_service "gitea.dev/services/issue"
 	pull_service "gitea.dev/services/pull"
@@ -71,6 +74,9 @@ func CreateCodeComment(ctx *context.Context) {
 		return
 	}
 
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "web")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	if ctx.HasError() {
 		ctx.Flash.Error(ctx.GetErrMsg())
 		ctx.Redirect(fmt.Sprintf("%s/pulls/%d/files", ctx.Repo.RepoLink, issue.Index))
@@ -105,11 +111,13 @@ func CreateCodeComment(ctx *context.Context) {
 	}
 
 	if comment == nil {
+		outcome = authz_service.NativeUnknown
 		log.Trace("Comment not created: %-v #%d[%d]", ctx.Repo.Repository, issue.Index, issue.ID)
 		ctx.Redirect(fmt.Sprintf("%s/pulls/%d/files", ctx.Repo.RepoLink, issue.Index))
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	log.Trace("Comment created: %-v #%d[%d] Comment[%d]", ctx.Repo.Repository, issue.Index, issue.ID, comment.ID)
 
 	renderConversation(ctx, comment, form.Origin)
@@ -117,6 +125,7 @@ func CreateCodeComment(ctx *context.Context) {
 
 // UpdateResolveConversation add or remove an Conversation resolved mark
 func UpdateResolveConversation(ctx *context.Context) {
+	outcome := authz_service.NativeFailed
 	origin := ctx.FormString("origin")
 	action := ctx.FormString("action")
 	commentID := ctx.FormInt64("comment_id")
@@ -135,6 +144,11 @@ func UpdateResolveConversation(ctx *context.Context) {
 	if comment.Issue.RepoID != ctx.Repo.Repository.ID {
 		ctx.NotFound(errors.New("comment's repoID is incorrect"))
 		return
+	}
+
+	if comment.Issue.IsPull && comment.Type == issues_model.CommentTypeCode {
+		finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "web")
+		defer func() { finish(outcome) }()
 	}
 
 	var permResult bool
@@ -163,6 +177,7 @@ func UpdateResolveConversation(ctx *context.Context) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	renderConversation(ctx, comment, origin)
 }
 
@@ -229,6 +244,10 @@ func SubmitReview(ctx *context.Context) {
 	if !issue.IsPull {
 		return
 	}
+
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "web")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	if ctx.HasError() {
 		ctx.Flash.Error(ctx.GetErrMsg())
 		ctx.JSONRedirect(fmt.Sprintf("%s/pulls/%d/files", ctx.Repo.RepoLink, issue.Index))
@@ -244,6 +263,7 @@ func SubmitReview(ctx *context.Context) {
 	// can not approve/reject your own PR
 	case issues_model.ReviewTypeApprove, issues_model.ReviewTypeReject:
 		if issue.IsPoster(ctx.Doer.ID) {
+			outcome = authz_service.NativeDenied
 			var translated string
 			if reviewType == issues_model.ReviewTypeApprove {
 				translated = ctx.Locale.TrString("repo.issues.review.self.approval")
@@ -268,17 +288,22 @@ func SubmitReview(ctx *context.Context) {
 			ctx.Flash.Error(ctx.Tr("repo.issues.review.content.empty"))
 			ctx.JSONRedirect(fmt.Sprintf("%s/pulls/%d/files", ctx.Repo.RepoLink, issue.Index))
 		} else if errors.Is(err, pull_service.ErrSubmitReviewOnClosedPR) {
+			outcome = authz_service.NativeDenied
 			ctx.Status(http.StatusUnprocessableEntity)
 		} else {
 			ctx.ServerError("SubmitReview", err)
 		}
 		return
 	}
+	outcome = authz_service.NativeSuccess
 	ctx.JSONRedirect(fmt.Sprintf("%s/pulls/%d#%s", ctx.Repo.RepoLink, issue.Index, comm.HashTag()))
 }
 
 // DismissReview dismissing stale review by repo admin
 func DismissReview(ctx *context.Context) {
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "web")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	form := web.GetForm[*forms.DismissReviewForm](ctx)
 	comm, err := pull_service.DismissReview(ctx, form.ReviewID, ctx.Repo.Repository.ID, form.Message, ctx.Doer, true, true)
 	if err != nil {
@@ -290,6 +315,7 @@ func DismissReview(ctx *context.Context) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.Redirect(fmt.Sprintf("%s/pulls/%d#%s", ctx.Repo.RepoLink, comm.Issue.Index, comm.HashTag()))
 }
 

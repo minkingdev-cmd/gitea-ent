@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/repository"
@@ -24,7 +25,8 @@ const (
 
 // HookOptions represents the options for the Hook calls
 type HookOptions struct {
-	IsWiki bool
+	AuthzOperation authz.HookOperationTicket
+	IsWiki         bool
 
 	OldCommitIDs []string
 	NewCommitIDs []string

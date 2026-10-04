@@ -8,12 +8,15 @@ import (
 	"net/http"
 
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	archiver_service "gitea.dev/services/repository/archiver"
 )
 
 func serveRepoArchive(ctx *context.APIContext, reqFileName string, paths []string) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	aReq, err := archiver_service.NewRequest(ctx, ctx.Repo.Repository, ctx.Repo.GitRepo, reqFileName, paths)
 	if err != nil {
 		if errors.Is(err, util.ErrInvalidArgument) {

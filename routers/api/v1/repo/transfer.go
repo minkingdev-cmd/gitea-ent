@@ -13,17 +13,28 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	repo_service "gitea.dev/services/repository"
 )
 
 // Transfer transfers the ownership of a repository
 func Transfer(ctx *context.APIContext) {
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.Transfer, "api")
+	defer func() {
+		outcome := authz_service.NativeFailed
+		if status := ctx.WrittenStatus(); status >= 200 && status < 300 {
+			outcome = authz_service.NativeSuccess
+		}
+		finish(outcome)
+	}()
 	// swagger:operation POST /repos/{owner}/{repo}/transfer repository repoTransfer
 	// ---
 	// summary: Transfer a repo ownership
@@ -71,6 +82,7 @@ func Transfer(ctx *context.APIContext) {
 	if newOwner.Type == user_model.UserTypeOrganization {
 		if !ctx.Doer.IsAdmin && newOwner.Visibility == api.VisibleTypePrivate && !organization.OrgFromUser(newOwner).HasMemberWithUserID(ctx, ctx.Doer.ID) {
 			// The user shouldn't know about this organization
+			common.MarkNativeMutationDenied(ctx.Base)
 			ctx.APIError(http.StatusNotFound, "The new owner does not exist or cannot be found")
 			return
 		}

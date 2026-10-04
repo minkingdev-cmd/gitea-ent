@@ -19,6 +19,7 @@ import (
 	"gitea.dev/modules/web"
 	"gitea.dev/services/agit"
 	gitea_context "gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	pull_service "gitea.dev/services/pull"
 )
 
@@ -97,6 +98,8 @@ func HookPreReceive(ctx *gitea_context.PrivateContext) {
 		opts:           opts,
 	}
 
+	operationCtx, operation := receiveOperation(ctx, opts)
+
 	// Iterate across the provided old commit IDs
 	for i := range opts.OldCommitIDs {
 		oldCommitID := opts.OldCommitIDs[i]
@@ -105,11 +108,21 @@ func HookPreReceive(ctx *gitea_context.PrivateContext) {
 
 		switch {
 		case refFullName.IsBranch():
+			finish := observeReceiveBranch(operationCtx, ctx, operation, oldCommitID, refFullName)
 			preReceiveBranch(ourCtx, oldCommitID, newCommitID, refFullName)
+			finish()
 		case refFullName.IsTag():
 			preReceiveTag(ourCtx, refFullName)
 		case git.DefaultFeatures().SupportProcReceive && refFullName.IsFor():
 			preReceiveFor(ourCtx, refFullName)
+			if ctx.Written() {
+				outcome := authz_service.NativeFailed
+				if ctx.WrittenStatus() == http.StatusForbidden || ctx.WrittenStatus() == http.StatusUnauthorized {
+					outcome = authz_service.NativeDenied
+				}
+				observationCtx, observation := authz_service.BeginHookPullRequestObservation(operationCtx, ctx.Doer, ctx.Repo.Repository, "", string(refFullName))
+				observation.Finish(observationCtx, outcome, authz_service.StagePreReceive)
+			}
 		default:
 			ourCtx.assertCanWriteRef(refFullName)
 		}

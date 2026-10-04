@@ -13,12 +13,15 @@ import (
 	"gitea.dev/models/organization"
 	access_model "gitea.dev/models/perm/access"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	issue_service "gitea.dev/services/issue"
 	pull_service "gitea.dev/services/pull"
 )
@@ -258,6 +261,9 @@ func CreatePullReviewCommentReply(ctx *context.APIContext) {
 	if parent == nil {
 		return
 	}
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	if parent.Issue.Index != ctx.PathParamInt64("index") {
 		ctx.APIErrorNotFound()
 		return
@@ -283,6 +289,7 @@ func CreatePullReviewCommentReply(ctx *context.APIContext) {
 	}
 	comment.Issue = parent.Issue
 
+	outcome = authz_service.NativeSuccess
 	ctx.JSON(http.StatusCreated, convert.ToPullReviewComment(ctx, comment, ctx.Doer))
 }
 
@@ -363,6 +370,9 @@ func updatePullReviewCommentResolve(ctx *context.APIContext, isResolve bool) {
 	if comment == nil {
 		return
 	}
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 
 	canMarkConv, err := issues_model.CanMarkConversation(ctx, comment.Issue, ctx.Doer)
 	if err != nil {
@@ -379,6 +389,7 @@ func updatePullReviewCommentResolve(ctx *context.APIContext, isResolve bool) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -440,6 +451,9 @@ func DeletePullReview(ctx *context.APIContext) {
 	//   "404":
 	//     "$ref": "#/responses/notFound"
 
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	review, _, statusSet := prepareSingleReview(ctx)
 	if statusSet {
 		return
@@ -459,6 +473,7 @@ func DeletePullReview(ctx *context.APIContext) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -499,6 +514,9 @@ func CreatePullReview(ctx *context.APIContext) {
 	//   "422":
 	//     "$ref": "#/responses/validationError"
 
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	opts := web.GetForm[*api.CreatePullReviewOptions](ctx)
 	pr, err := issues_model.GetPullRequestByIndex(ctx, ctx.Repo.Repository.ID, ctx.PathParamInt64("index"))
 	if err != nil {
@@ -509,6 +527,9 @@ func CreatePullReview(ctx *context.APIContext) {
 	// determine review type
 	reviewType, isWrong := preparePullReviewType(ctx, pr, opts.Event, opts.Body, len(opts.Comments) > 0)
 	if isWrong {
+		if pr.Issue != nil && pr.Issue.IsPoster(ctx.Doer.ID) && (opts.Event == api.ReviewStateApproved || opts.Event == api.ReviewStateRequestChanges) {
+			outcome = authz_service.NativeDenied
+		}
 		return
 	}
 
@@ -563,6 +584,7 @@ func CreatePullReview(ctx *context.APIContext) {
 	review, _, err := pull_service.SubmitReview(ctx, ctx.Doer, ctx.Repo.GitRepo, pr.Issue, reviewType, opts.Body, opts.CommitID, nil)
 	if err != nil {
 		if errors.Is(err, pull_service.ErrSubmitReviewOnClosedPR) {
+			outcome = authz_service.NativeDenied
 			ctx.APIError(http.StatusUnprocessableEntity, err.Error())
 		} else {
 			ctx.APIErrorInternal(err)
@@ -576,6 +598,7 @@ func CreatePullReview(ctx *context.APIContext) {
 		ctx.APIErrorInternal(err)
 		return
 	}
+	outcome = authz_service.NativeSuccess
 	ctx.JSON(http.StatusOK, apiReview)
 }
 
@@ -622,6 +645,9 @@ func SubmitPullReview(ctx *context.APIContext) {
 	//   "422":
 	//     "$ref": "#/responses/validationError"
 
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	opts := web.GetForm[*api.SubmitPullReviewOptions](ctx)
 	review, pr, isWrong := prepareSingleReview(ctx)
 	if isWrong {
@@ -636,6 +662,9 @@ func SubmitPullReview(ctx *context.APIContext) {
 	// determine review type
 	reviewType, isWrong := preparePullReviewType(ctx, pr, opts.Event, opts.Body, len(review.Comments) > 0)
 	if isWrong {
+		if pr.Issue != nil && pr.Issue.IsPoster(ctx.Doer.ID) && (opts.Event == api.ReviewStateApproved || opts.Event == api.ReviewStateRequestChanges) {
+			outcome = authz_service.NativeDenied
+		}
 		return
 	}
 
@@ -655,6 +684,7 @@ func SubmitPullReview(ctx *context.APIContext) {
 	review, _, err = pull_service.SubmitReview(ctx, ctx.Doer, ctx.Repo.GitRepo, pr.Issue, reviewType, opts.Body, headCommitID, nil)
 	if err != nil {
 		if errors.Is(err, pull_service.ErrSubmitReviewOnClosedPR) {
+			outcome = authz_service.NativeDenied
 			ctx.APIError(http.StatusUnprocessableEntity, err.Error())
 		} else {
 			ctx.APIErrorInternal(err)
@@ -668,6 +698,7 @@ func SubmitPullReview(ctx *context.APIContext) {
 		ctx.APIErrorInternal(err)
 		return
 	}
+	outcome = authz_service.NativeSuccess
 	ctx.JSON(http.StatusOK, apiReview)
 }
 
@@ -743,6 +774,7 @@ func prepareSingleReview(ctx *context.APIContext) (*issues_model.Review, *issues
 
 	// make sure that the user has access to this review if it is pending
 	if review.Type == issues_model.ReviewTypePending && review.ReviewerID != ctx.Doer.ID && !ctx.Doer.IsAdmin {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.APIErrorNotFound()
 		return nil, nil, true
 	}
@@ -1061,6 +1093,9 @@ func UnDismissPullReview(ctx *context.APIContext) {
 }
 
 func dismissReview(ctx *context.APIContext, msg string, isDismiss, dismissPriors bool) {
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReviewPullRequest, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	if !ctx.Repo.Permission.IsAdmin() {
 		ctx.APIError(http.StatusForbidden, "Must be repo admin")
 		return
@@ -1096,5 +1131,6 @@ func dismissReview(ctx *context.APIContext, msg string, isDismiss, dismissPriors
 		ctx.APIErrorInternal(err)
 		return
 	}
+	outcome = authz_service.NativeSuccess
 	ctx.JSON(http.StatusOK, apiReview)
 }

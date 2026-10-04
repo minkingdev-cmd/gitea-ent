@@ -15,6 +15,7 @@ import (
 	actions_model "gitea.dev/models/actions"
 	auth_model "gitea.dev/models/auth"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/perm"
@@ -23,6 +24,7 @@ import (
 	user_model "gitea.dev/models/user"
 	actions_module "gitea.dev/modules/actions"
 	"gitea.dev/modules/commitstatus"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/setting"
@@ -1469,6 +1471,8 @@ jobs:
 
 func TestWorkflowApi(t *testing.T) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
+		defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, false)()
+		defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
 		user2 := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
 		session := loginUser(t, user2.Name)
 		token := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeWriteRepository)
@@ -1567,9 +1571,16 @@ jobs:
 		assert.Equal(t, workflows.Workflows[0].State, workflow.State)
 
 		// Disable the workflow
-		req = NewRequest(t, "PUT", workflows.Workflows[0].URL+"/disable").
-			AddTokenAuth(token)
-		_ = MakeRequest(t, req, http.StatusNoContent)
+		{
+			before := unittest.GetCount(t, &authz_model.DecisionRecord{})
+			setting.EnterpriseAuthz.Enabled = true
+			req = NewRequest(t, "PUT", workflows.Workflows[0].URL+"/disable").
+				AddTokenAuth(token)
+			_ = MakeRequest(t, req, http.StatusNoContent)
+			setting.EnterpriseAuthz.Enabled = false
+			require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+			unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: user2.ID, RepoID: repo.ID, Action: authz.ManageCI, RequestSource: "api", NativeOutcome: "success"}, unittest.Cond("id = (SELECT MAX(id) FROM enterprise_authz_decision)"))
+		}
 
 		// Use the provided url instead of the hardcoded one
 		req = NewRequest(t, "GET", workflows.Workflows[0].URL).
@@ -1597,9 +1608,16 @@ jobs:
 		_ = MakeRequest(t, req, http.StatusForbidden)
 
 		// Enable the workflow again
-		req = NewRequest(t, "PUT", workflows.Workflows[0].URL+"/enable").
-			AddTokenAuth(token)
-		_ = MakeRequest(t, req, http.StatusNoContent)
+		{
+			before := unittest.GetCount(t, &authz_model.DecisionRecord{})
+			setting.EnterpriseAuthz.Enabled = true
+			req = NewRequest(t, "PUT", workflows.Workflows[0].URL+"/enable").
+				AddTokenAuth(token)
+			_ = MakeRequest(t, req, http.StatusNoContent)
+			setting.EnterpriseAuthz.Enabled = false
+			require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+			unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: user2.ID, RepoID: repo.ID, Action: authz.ManageCI, RequestSource: "api", NativeOutcome: "success"}, unittest.Cond("id = (SELECT MAX(id) FROM enterprise_authz_decision)"))
+		}
 
 		// Use the provided url instead of the hardcoded one
 		req = NewRequest(t, "GET", workflows.Workflows[0].URL).

@@ -13,9 +13,11 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	issue_service "gitea.dev/services/issue"
@@ -25,6 +27,7 @@ import (
 
 // ListCollaborators list a repository's collaborators
 func ListCollaborators(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/collaborators repository repoListCollaborators
 	// ---
 	// summary: List a repository's collaborators
@@ -75,6 +78,7 @@ func ListCollaborators(ctx *context.APIContext) {
 
 // IsCollaborator check if a user is a collaborator of a repository
 func IsCollaborator(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/collaborators/{collaborator} repository repoCheckCollaborator
 	// ---
 	// summary: Check if a user is a collaborator of a repository
@@ -254,6 +258,7 @@ func DeleteCollaborator(ctx *context.APIContext) {
 
 // GetRepoPermissions gets repository permissions for a user
 func GetRepoPermissions(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/collaborators/{collaborator}/permission repository repoGetRepoPermissions
 	// ---
 	// summary: Get repository permissions for a user

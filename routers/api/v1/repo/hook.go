@@ -11,12 +11,14 @@ import (
 	"gitea.dev/models/perm"
 	access_model "gitea.dev/models/perm/access"
 	"gitea.dev/models/webhook"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/web"
 	webhook_module "gitea.dev/modules/webhook"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	webhook_service "gitea.dev/services/webhook"
@@ -198,6 +200,7 @@ func TestHook(ctx *context.APIContext) {
 
 // CreateHook create a hook for a repository
 func CreateHook(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageWebhook, "api")()
 	// swagger:operation POST /repos/{owner}/{repo}/hooks repository repoCreateHook
 	// ---
 	// summary: Create a hook
@@ -231,6 +234,7 @@ func CreateHook(ctx *context.APIContext) {
 
 // EditHook modify a hook of a repository
 func EditHook(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageWebhook, "api")()
 	// swagger:operation PATCH /repos/{owner}/{repo}/hooks/{id} repository repoEditHook
 	// ---
 	// summary: Edit a hook in a repository
@@ -269,6 +273,7 @@ func EditHook(ctx *context.APIContext) {
 
 // DeleteHook delete a hook of a repository
 func DeleteHook(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageWebhook, "api")()
 	// swagger:operation DELETE /repos/{owner}/{repo}/hooks/{id} repository repoDeleteHook
 	// ---
 	// summary: Delete a hook in a repository

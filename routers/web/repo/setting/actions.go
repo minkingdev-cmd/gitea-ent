@@ -11,8 +11,10 @@ import (
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	shared_actions "gitea.dev/routers/web/shared/actions"
 	"gitea.dev/services/context"
 	repo_service "gitea.dev/services/repository"
@@ -72,6 +74,7 @@ func ActionsGeneralSettings(ctx *context.Context) {
 }
 
 func ActionsUnitPost(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	redirectURL := ctx.Repo.RepoLink + "/settings/actions/general"
 	enableActionsUnit := ctx.FormBool("enable_actions")
 	repo := ctx.Repo.Repository
@@ -88,11 +91,13 @@ func ActionsUnitPost(ctx *context.Context) {
 		return
 	}
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("repo.settings.update_settings_success"))
 	ctx.Redirect(redirectURL)
 }
 
 func AddCollaborativeOwner(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	collUser, err := user_model.GetUserByName(ctx, ctx.FormString("collaborative_owner"))
 	if err != nil {
 		if errors.Is(err, util.ErrNotExist) {
@@ -115,10 +120,12 @@ func AddCollaborativeOwner(ctx *context.Context) {
 		return
 	}
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.JSONOK()
 }
 
 func DeleteCollaborativeOwner(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	ownerID := ctx.FormInt64("id")
 
 	actionsUnit, err := ctx.Repo.Repository.GetUnit(ctx, unit_model.TypeActions)
@@ -138,11 +145,13 @@ func DeleteCollaborativeOwner(ctx *context.Context) {
 		return
 	}
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.JSONOK()
 }
 
 // UpdateTokenPermissions updates the token permission settings for the repository
 func UpdateTokenPermissions(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	redirectURL := ctx.Repo.RepoLink + "/settings/actions/general"
 
 	actionsUnit, err := ctx.Repo.Repository.GetUnit(ctx, unit_model.TypeActions)
@@ -186,6 +195,7 @@ func UpdateTokenPermissions(ctx *context.Context) {
 		return
 	}
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("repo.settings.update_settings_success"))
 	ctx.Redirect(redirectURL)
 }

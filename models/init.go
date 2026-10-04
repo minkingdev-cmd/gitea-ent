@@ -6,6 +6,7 @@ package models
 import (
 	"context"
 
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/unit"
 
 	_ "gitea.dev/models/enterprisewecom" // register Enterprise WeCom models
@@ -13,5 +14,8 @@ import (
 
 // Init initialize model
 func Init(ctx context.Context) error {
-	return unit.LoadUnitConfig()
+	if err := unit.LoadUnitConfig(); err != nil {
+		return err
+	}
+	return authz_model.CheckReady(ctx)
 }

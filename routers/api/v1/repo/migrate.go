@@ -27,6 +27,7 @@ import (
 	"gitea.dev/modules/web"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/migrations"
 	notify_service "gitea.dev/services/notify"
 	repo_service "gitea.dev/services/repository"
@@ -57,6 +58,7 @@ func Migrate(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 
 	form := web.GetForm[*api.MigrateRepoOptions](ctx)
+	auditCtx := authz_service.WithMigrationSource(ctx, "api")
 
 	// get repoOwner
 	var (
@@ -71,6 +73,7 @@ func Migrate(ctx *context.APIContext) {
 		repoOwner = ctx.Doer
 	}
 	if err != nil {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, 0, "authorize_owner", "owner_resolution_failed")
 		if user_model.IsErrUserNotExist(err) {
 			ctx.APIError(http.StatusUnprocessableEntity, err.Error())
 		} else {
@@ -81,6 +84,7 @@ func Migrate(ctx *context.APIContext) {
 
 	if !ctx.Doer.IsAdmin {
 		if !repoOwner.IsOrganization() && ctx.Doer.ID != repoOwner.ID {
+			authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, 0, "authorize_owner", "owner_permission_denied")
 			ctx.APIError(http.StatusForbidden, "Given user is not an organization.")
 			return
 		}
@@ -89,9 +93,11 @@ func Migrate(ctx *context.APIContext) {
 			// Check ownership of organization.
 			isOwner, err := organization.OrgFromUser(repoOwner).IsOwnedBy(ctx, ctx.Doer.ID)
 			if err != nil {
+				authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, 0, "authorize_owner", "owner_resolution_failed")
 				ctx.APIErrorInternal(err)
 				return
 			} else if !isOwner {
+				authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, 0, "authorize_owner", "owner_permission_denied")
 				ctx.APIError(http.StatusForbidden, "Given user is not owner of organization.")
 				return
 			}
@@ -103,6 +109,7 @@ func Migrate(ctx *context.APIContext) {
 		err = migrations.IsMigrateURLAllowed(remoteAddr, ctx.Doer)
 	}
 	if err != nil {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, repoOwner.ID, "validate_source", authz_service.MigrationSourceFailureReason(err))
 		handleRemoteAddrError(ctx, err)
 		return
 	}
@@ -110,11 +117,13 @@ func Migrate(ctx *context.APIContext) {
 	gitServiceType := convert.ToGitServiceType(form.Service)
 
 	if form.Mirror && setting.Mirror.DisableNewPull {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, repoOwner.ID, "site_policy", "mirror_creation_disabled")
 		ctx.APIError(http.StatusForbidden, "the site administrator has disabled the creation of new pull mirrors")
 		return
 	}
 
 	if setting.Repository.DisableMigrations {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, repoOwner.ID, "site_policy", "migration_disabled")
 		ctx.APIError(http.StatusForbidden, "the site administrator has disabled migrations")
 		return
 	}
@@ -124,11 +133,13 @@ func Migrate(ctx *context.APIContext) {
 	if form.LFS && len(form.LFSEndpoint) > 0 {
 		ep := lfs.DetermineEndpoint("", form.LFSEndpoint)
 		if ep == nil {
+			authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, repoOwner.ID, "validate_source", "source_invalid")
 			ctx.APIErrorInternal(errors.New("the LFS endpoint is not valid"))
 			return
 		}
 		err = migrations.IsMigrateURLAllowed(ep.String(), ctx.Doer)
 		if err != nil {
+			authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, repoOwner.ID, "validate_source", authz_service.MigrationSourceFailureReason(err))
 			handleRemoteAddrError(ctx, err)
 			return
 		}
@@ -169,7 +180,7 @@ func Migrate(ctx *context.APIContext) {
 		opts.AWSSecretAccessKey = form.AWSSecretAccessKey
 	}
 
-	createdRepo, err := repo_service.CreateRepositoryDirectly(ctx, ctx.Doer, repoOwner, repo_service.CreateRepoOptions{
+	createdRepo, err := repo_service.CreateRepositoryDirectly(auditCtx, ctx.Doer, repoOwner, repo_service.CreateRepoOptions{
 		Name:           opts.RepoName,
 		Description:    opts.Description,
 		OriginalURL:    form.CloneAddr,
@@ -179,13 +190,19 @@ func Migrate(ctx *context.APIContext) {
 		Status:         repo_model.RepositoryBeingMigrated,
 	}, false)
 	if err != nil {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, repoOwner.ID, "create_target", authz_service.MigrationTargetFailureReason(err))
 		handleMigrateError(ctx, repoOwner, err)
 		return
 	}
 
 	opts.MigrateToRepoID = createdRepo.ID
+	auditCtx, observation := authz_service.WithMigrationTargetObservation(auditCtx, ctx.Doer, createdRepo)
 
 	doLongTimeMigrate := func(ctx gocontext.Context, doer *user_model.User) (migratedRepo *repo_model.Repository, retErr error) {
+		defer func() {
+			outcome := authz_service.MigrationNativeOutcome(retErr)
+			observation.Finish(ctx, outcome, authz_service.StageMigration)
+		}()
 		defer func() {
 			if e := recover(); e != nil {
 				log.Error("MigrateRepository panic: %v\n%s", e, log.Stack(2))
@@ -207,7 +224,7 @@ func Migrate(ctx *context.APIContext) {
 	// use a background context, don't cancel the migration even if the client goes away
 	// HammerContext doesn't seem right (from https://github.com/go-gitea/gitea/pull/9335/files)
 	// There are other abuses, maybe most HammerContext abuses should be fixed together in the future.
-	migratedRepo, err := doLongTimeMigrate(graceful.GetManager().HammerContext(), ctx.Doer)
+	migratedRepo, err := doLongTimeMigrate(authz_service.WithManagedMigration(authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), auditCtx)), ctx.Doer)
 	if err != nil {
 		handleMigrateError(ctx, repoOwner, err)
 		return

@@ -336,6 +336,7 @@ func runServ(ctx context.Context, c *cli.Command) error {
 	// to avoid breaking, here only use the minimal environment variables for the "gitea serv" command.
 	// it could be re-considered whether to use the same git.CommonGitCmdEnvs() as "git" command later.
 	command.Env = append(command.Env, gitcmd.CommonCmdServEnvs()...)
+	command.Env = repo_module.WithAuthzOperation(command.Env, string(results.AuthzOperation))
 
 	if err = command.Run(); err != nil {
 		return fail(ctx, "Failed to execute git command", "Failed to execute git command: %v", err)

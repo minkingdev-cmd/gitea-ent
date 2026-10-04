@@ -18,6 +18,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/models/webhook"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/setting"
@@ -26,6 +27,7 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	webhook_module "gitea.dev/modules/webhook"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
@@ -219,6 +221,7 @@ type webhookParams struct {
 }
 
 func createWebhook(ctx *context.Context, params webhookParams) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageWebhook)()
 	ctx.Data["Title"] = ctx.Tr("repo.settings.add_webhook")
 	ctx.Data["PageIsSettingsHooks"] = true
 	ctx.Data["PageIsSettingsHooksNew"] = true
@@ -275,11 +278,13 @@ func createWebhook(ctx *context.Context, params webhookParams) {
 
 	orCtx.recordWebhookAudit(ctx, audit.WebhookAdd, w.URL)
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageWebhook)
 	ctx.Flash.Success(ctx.Tr("repo.settings.add_hook_success"))
 	ctx.Redirect(orCtx.Link)
 }
 
 func editWebhook(ctx *context.Context, params webhookParams) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageWebhook)()
 	ctx.Data["Title"] = ctx.Tr("repo.settings.update_webhook")
 	ctx.Data["PageIsSettingsHooks"] = true
 	ctx.Data["PageIsSettingsHooksEdit"] = true
@@ -330,6 +335,7 @@ func editWebhook(ctx *context.Context, params webhookParams) {
 
 	orCtx.recordWebhookAudit(ctx, audit.WebhookUpdate, w.URL)
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageWebhook)
 	ctx.Flash.Success(ctx.Tr("repo.settings.update_hook_success"))
 	ctx.Redirect(fmt.Sprintf("%s/%d", orCtx.Link, w.ID))
 }
@@ -755,6 +761,7 @@ func ReplayWebhook(ctx *context.Context) {
 
 // DeleteWebhook delete a webhook
 func DeleteWebhook(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageWebhook)()
 	hook, err := webhook.GetWebhookByRepoID(ctx, ctx.Repo.Repository.ID, ctx.FormInt64("id"))
 	if err != nil {
 		ctx.Flash.Error("GetWebhookByRepoID: " + err.Error())
@@ -763,6 +770,7 @@ func DeleteWebhook(ctx *context.Context) {
 	} else {
 		audit.RecordScoped(ctx, nil, ctx.Repo.Repository, audit.WebhookRemove, "webhook", hook.URL)
 
+		common.MarkRepoSettingSuccess(ctx.Base, authz.ManageWebhook)
 		ctx.Flash.Success(ctx.Tr("repo.settings.webhook_deletion_success"))
 	}
 

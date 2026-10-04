@@ -22,8 +22,10 @@ import (
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	issue_service "gitea.dev/services/issue"
 	pull_service "gitea.dev/services/pull"
@@ -204,6 +206,10 @@ func UpdateCommentContent(ctx *context.Context) {
 		return
 	}
 
+	finish := common.ObservePullReviewComment(ctx.Base, ctx.Doer, ctx.Repo, comment, "web")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
+
 	if !ctx.IsSigned || (ctx.Doer.ID != comment.PosterID && !ctx.Repo.Permission.CanWriteIssuesOrPulls(comment.Issue.IsPull)) {
 		ctx.HTTPError(http.StatusForbidden)
 		return
@@ -228,6 +234,7 @@ func UpdateCommentContent(ctx *context.Context) {
 
 		if err = issue_service.UpdateComment(ctx, comment, contentVersion, ctx.Doer, oldContent); err != nil {
 			if errors.Is(err, user_model.ErrBlockedUser) {
+				outcome = authz_service.NativeDenied
 				ctx.JSONError(ctx.Tr("repo.issues.comment.blocked_user"))
 			} else if errors.Is(err, issues_model.ErrCommentAlreadyChanged) {
 				ctx.JSONError(ctx.Tr("repo.comments.edit.already_changed"))
@@ -263,6 +270,7 @@ func UpdateCommentContent(ctx *context.Context) {
 		}
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.JSON(http.StatusOK, map[string]any{
 		"content":        commentContentHTML(ctx, renderedContent),
 		"contentVersion": comment.ContentVersion,
@@ -288,6 +296,10 @@ func DeleteComment(ctx *context.Context) {
 		return
 	}
 
+	finish := common.ObservePullReviewComment(ctx.Base, ctx.Doer, ctx.Repo, comment, "web")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
+
 	if !ctx.IsSigned || (ctx.Doer.ID != comment.PosterID && !ctx.Repo.Permission.CanWriteIssuesOrPulls(comment.Issue.IsPull)) {
 		ctx.HTTPError(http.StatusForbidden)
 		return
@@ -301,6 +313,7 @@ func DeleteComment(ctx *context.Context) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.Status(http.StatusOK)
 }
 

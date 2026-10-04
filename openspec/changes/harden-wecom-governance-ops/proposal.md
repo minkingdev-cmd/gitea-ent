@@ -13,6 +13,7 @@
 - 不实现 repo action evaluator、企业角色、feature grant、merge gate、策略模板、新管理控制台或 offboarding。
 - SSH key、PAT/API token 和 Git HTTP token 的创建、验证、吊销、scope 与账号状态语义均不变；本地 Gitea user 继续作为授权与审计主体。
 - 数据库部署与验收仅面向 PostgreSQL（2026-09-30 用户确认）；无需适配或验收 MySQL/MSSQL。SQLite 仅保留既有快速测试用途，不删除 Gitea 原有数据库支持代码。
+- 服务端永久仅部署 Linux（2026-09-30 用户确认），Windows 服务端及其原生 SSPI 回归不属于支持或验收范围；不限制 Windows 客户端访问，不删除无关的上游兼容代码。
 
 ## Capabilities
 

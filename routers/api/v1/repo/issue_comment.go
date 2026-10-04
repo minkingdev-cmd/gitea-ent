@@ -18,8 +18,10 @@ import (
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	issue_service "gitea.dev/services/issue"
 )
 
@@ -572,6 +574,10 @@ func editIssueComment(ctx *context.APIContext, form api.EditIssueCommentOption) 
 		return
 	}
 
+	finish := common.ObservePullReviewComment(ctx.Base, ctx.Doer, ctx.Repo, comment, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
+
 	if !ctx.IsSigned || (ctx.Doer.ID != comment.PosterID && !ctx.Repo.Permission.CanWriteIssuesOrPulls(comment.Issue.IsPull)) {
 		ctx.Status(http.StatusForbidden)
 		return
@@ -595,6 +601,7 @@ func editIssueComment(ctx *context.APIContext, form api.EditIssueCommentOption) 
 		}
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.JSON(http.StatusOK, convert.ToAPIComment(ctx, ctx.Repo.Repository, comment))
 }
 
@@ -677,6 +684,10 @@ func deleteIssueComment(ctx *context.APIContext) {
 		return
 	}
 
+	finish := common.ObservePullReviewComment(ctx.Base, ctx.Doer, ctx.Repo, comment, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
+
 	if !ctx.IsSigned || (ctx.Doer.ID != comment.PosterID && !ctx.Repo.Permission.CanWriteIssuesOrPulls(comment.Issue.IsPull)) {
 		ctx.Status(http.StatusForbidden)
 		return
@@ -690,5 +701,6 @@ func deleteIssueComment(ctx *context.APIContext) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.Status(http.StatusNoContent)
 }

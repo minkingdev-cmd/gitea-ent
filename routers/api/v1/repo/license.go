@@ -7,12 +7,15 @@ import (
 	"net/http"
 
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 )
 
 // GetLicenses returns licenses
 func GetLicenses(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/licenses repository repoGetLicenses
 	// ---
 	// summary: Get repo licenses

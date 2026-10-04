@@ -11,11 +11,13 @@ import (
 	issues_model "gitea.dev/models/issues"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/log"
 	repo_module "gitea.dev/modules/repository"
 	"gitea.dev/modules/setting"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // updateHeadByRebaseOnToBase handles updating a PR's head branch by rebasing it on the PR current base branch
@@ -72,15 +74,12 @@ func updateHeadByRebaseOnToBase(ctx context.Context, pr *issues_model.PullReques
 	//       that prevents us from doint the whole merge in one db transaction
 	mergeCtx.outbuf.Reset()
 
+	env := repo_module.FullPushingEnvironment(
+		headUser, doer, pr.HeadRepo, pr.HeadRepo.Name, pr.ID, pr.Index,
+	)
+	env = repo_module.WithAuthzOperation(env, string(authz_service.ManagedHookOperationTicket(ctx, doer, pr.HeadRepo, pr.HeadBranch, authz.PushBranch)))
 	if err := pushCmd.
-		WithEnv(repo_module.FullPushingEnvironment(
-			headUser,
-			doer,
-			pr.HeadRepo,
-			pr.HeadRepo.Name,
-			pr.ID,
-			pr.Index,
-		)).
+		WithEnv(env).
 		WithRepo(mergeCtx.tmpRepo).
 		WithStdoutBuffer(mergeCtx.outbuf).
 		RunWithStderr(ctx); err != nil {

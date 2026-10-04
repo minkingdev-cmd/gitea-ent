@@ -12,19 +12,23 @@ import (
 	activities_model "gitea.dev/models/activities"
 	"gitea.dev/models/db"
 	"gitea.dev/models/organization"
+	access_model "gitea.dev/models/perm/access"
 	"gitea.dev/models/renderhelper"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/markup/markdown"
 	"gitea.dev/modules/optional"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/feed"
 	"gitea.dev/routers/web/org"
 	shared_user "gitea.dev/routers/web/shared/user"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	feed_service "gitea.dev/services/feed"
 )
 
@@ -52,6 +56,8 @@ func OwnerProfile(ctx *context.Context) {
 }
 
 func userProfile(ctx *context.Context) {
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "web")
+	defer finish()
 	// check view permissions
 	if !user_model.IsUserVisibleToViewer(ctx, ctx.ContextUser, ctx.Doer) {
 		ctx.NotFound(fmt.Errorf("%s", ctx.ContextUser.Name))
@@ -61,9 +67,12 @@ func userProfile(ctx *context.Context) {
 	ctx.Data["Title"] = ctx.ContextUser.DisplayName()
 	ctx.Data["PageIsUserProfile"] = true
 
+	observeCode, finishCode := common.RepoReadResultCollector(ctx.Base, ctx.Doer, "web")
+	defer finishCode()
+
 	profileDbRepo, profileReadmeBlob := shared_user.FindOwnerProfileReadme(ctx, ctx.Doer)
 
-	prepareUserProfileTabData(ctx, profileDbRepo, profileReadmeBlob)
+	prepareUserProfileTabData(ctx, profileDbRepo, profileReadmeBlob, observe, observeCode)
 
 	// prepare the user nav header data after "prepareUserProfileTabData" to avoid re-querying the NumFollowers & NumFollowing
 	// because ctx.Data["NumFollowers"] and "NumFollowing" logic duplicates in both of them
@@ -76,7 +85,7 @@ func userProfile(ctx *context.Context) {
 	ctx.HTML(http.StatusOK, tplProfile)
 }
 
-func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.Repository, profileReadme *git.Blob) {
+func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.Repository, profileReadme *git.Blob, observe func(*repo_model.Repository, *access_model.Permission), observeCode func(*repo_model.Repository) func(authz_service.NativeOutcome)) {
 	// if there is a profile readme, default to "overview" page, otherwise, default to "repositories" page
 	// if there is not a profile readme, the overview tab should be treated as the repositories tab
 	tab := ctx.FormString("tab")
@@ -249,6 +258,7 @@ func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.R
 
 		total = count
 	case "overview":
+		readResult := observeCode(profileDbRepo)
 		if bytes, err := profileReadme.GetBlobContent(ctx, setting.UI.MaxDisplayFileSize); err != nil {
 			log.Error("failed to GetBlobContent: %v", err)
 		} else {
@@ -259,6 +269,7 @@ func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.R
 				log.Error("failed to RenderString: %v", err)
 			} else {
 				ctx.Data["ProfileReadmeContent"] = profileContent
+				readResult(authz_service.NativeSuccess)
 			}
 		}
 	case "organizations":
@@ -303,6 +314,9 @@ func prepareUserProfileTabData(ctx *context.Context, profileDbRepo *repo_model.R
 		}
 
 		total = count
+	}
+	for _, repo := range repos {
+		observe(repo, nil)
 	}
 	ctx.Data["Repos"] = repos
 	ctx.Data["Total"] = total

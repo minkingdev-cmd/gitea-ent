@@ -22,6 +22,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	secret_model "gitea.dev/models/secret"
 	"gitea.dev/modules/actions"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/optional"
 	api "gitea.dev/modules/structs"
@@ -29,6 +30,7 @@ import (
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/shared"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
@@ -97,6 +99,7 @@ func (Action) ListActionsSecrets(ctx *context.APIContext) {
 
 // create or update one secret of the repository
 func (Action) CreateOrUpdateSecret(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageSecret, "api")()
 	// swagger:operation PUT /repos/{owner}/{repo}/actions/secrets/{secretname} repository updateRepoSecret
 	// ---
 	// summary: Create or Update a secret value in a repository
@@ -159,6 +162,7 @@ func (Action) CreateOrUpdateSecret(ctx *context.APIContext) {
 
 // DeleteSecret delete one secret of the repository
 func (Action) DeleteSecret(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageSecret, "api")()
 	// swagger:operation DELETE /repos/{owner}/{repo}/actions/secrets/{secretname} repository deleteRepoSecret
 	// ---
 	// summary: Delete a secret in a repository
@@ -259,6 +263,7 @@ func (Action) GetVariable(ctx *context.APIContext) {
 
 // DeleteVariable delete a repo-level variable
 func (Action) DeleteVariable(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation DELETE /repos/{owner}/{repo}/actions/variables/{variablename} repository deleteRepoVariable
 	// ---
 	// summary: Delete a repo-level variable
@@ -302,6 +307,7 @@ func (Action) DeleteVariable(ctx *context.APIContext) {
 
 // CreateVariable create a repo-level variable
 func (Action) CreateVariable(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation POST /repos/{owner}/{repo}/actions/variables/{variablename} repository createRepoVariable
 	// ---
 	// summary: Create a repo-level variable
@@ -365,6 +371,7 @@ func (Action) CreateVariable(ctx *context.APIContext) {
 
 // UpdateVariable update a repo-level variable
 func (Action) UpdateVariable(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation PUT /repos/{owner}/{repo}/actions/variables/{variablename} repository updateRepoVariable
 	// ---
 	// summary: Update a repo-level variable
@@ -490,6 +497,7 @@ func (Action) ListVariables(ctx *context.APIContext) {
 
 // CreateRegistrationToken returns the token to register repo runners
 func (Action) CreateRegistrationToken(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation POST /repos/{owner}/{repo}/actions/runners/registration-token repository repoCreateRunnerRegistrationToken
 	// ---
 	// summary: Get a repository's actions runner registration token
@@ -581,6 +589,7 @@ func (Action) GetRunner(ctx *context.APIContext) {
 
 // DeleteRunner delete a repo-level runner
 func (Action) DeleteRunner(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation DELETE /repos/{owner}/{repo}/actions/runners/{runner_id} repository deleteRepoRunner
 	// ---
 	// summary: Delete a repo-level runner
@@ -614,6 +623,7 @@ func (Action) DeleteRunner(ctx *context.APIContext) {
 
 // UpdateRunner update a repo-level runner
 func (Action) UpdateRunner(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation PATCH /repos/{owner}/{repo}/actions/runners/{runner_id} repository updateRepoRunner
 	// ---
 	// summary: Update a repo-level runner
@@ -1052,6 +1062,7 @@ func ActionsListWorkflowRuns(ctx *context.APIContext) {
 }
 
 func ActionsDisableWorkflow(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable repository ActionsDisableWorkflow
 	// ---
 	// summary: Disable a workflow
@@ -1203,6 +1214,7 @@ func ActionsDispatchWorkflow(ctx *context.APIContext) {
 }
 
 func ActionsEnableWorkflow(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
 	// swagger:operation PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable repository ActionsEnableWorkflow
 	// ---
 	// summary: Enable a workflow

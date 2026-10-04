@@ -9,6 +9,8 @@ import (
 
 	"gitea.dev/models/organization"
 	access_model "gitea.dev/models/perm/access"
+	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	repo_service "gitea.dev/services/repository"
@@ -16,6 +18,7 @@ import (
 
 // ListTeams list a repository's teams
 func ListTeams(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/teams repository repoListTeams
 	// ---
 	// summary: List a repository's teams
@@ -60,6 +63,7 @@ func ListTeams(ctx *context.APIContext) {
 
 // IsTeam check if a team is assigned to a repository
 func IsTeam(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/teams/{team} repository repoCheckTeam
 	// ---
 	// summary: Check if a team is assigned to a repository

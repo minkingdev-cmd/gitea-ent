@@ -337,6 +337,7 @@ func (t *TemporaryUploadRepository) CommitTree(ctx context.Context, opts *Commit
 func (t *TemporaryUploadRepository) Push(ctx context.Context, doer *user_model.User, commitHash, branch string, force bool) error {
 	// Because calls hooks we need to pass in the environment
 	env := repo_module.PushingEnvironment(doer, t.repo)
+	env = repo_module.WithAuthzOperation(env, string(fileMutationTicket(ctx, t.repo.ID, doer.ID, strings.TrimSpace(branch))))
 	if err := git.PushFromLocal(ctx, t.basePath, t.repo, git.PushOptions{
 		Branch: strings.TrimSpace(commitHash) + ":" + git.BranchPrefix + strings.TrimSpace(branch),
 		Env:    env,
@@ -349,6 +350,7 @@ func (t *TemporaryUploadRepository) Push(ctx context.Context, doer *user_model.U
 		}
 		return fmt.Errorf("unable to push back to repo %s from temporary repo, error: %w", t.repo.FullName(), err)
 	}
+	markFileMutationPushed(ctx, t.repo.ID, doer.ID, strings.TrimSpace(branch))
 	return nil
 }
 

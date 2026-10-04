@@ -187,6 +187,55 @@ func TxContext(parentCtx context.Context) (context.Context, Committer, error) {
 	return ctx, &postCommitter{Session: sess, state: state}, nil
 }
 
+// WithIndependentReadTx 不复用业务事务，保证策略读取来自同一快照。
+func WithIndependentReadTx(parentCtx context.Context, f func(context.Context) error) error {
+	if err := parentCtx.Err(); err != nil {
+		return err
+	}
+	if InTransaction(parentCtx) {
+		return ErrIndependentTransactionInUse
+	}
+	sess := xormEngine.NewSession().Context(parentCtx)
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return err
+	}
+	if setting.Database.Type.IsPostgreSQL() {
+		if _, err := sess.Exec("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"); err != nil {
+			return err
+		}
+	}
+	state := new(transactionState)
+	ctx := context.WithValue(withContextEngine(parentCtx, sess), contextKeyPostCommit, state)
+	if err := f(ctx); err != nil {
+		return err
+	}
+	committer := &postCommitter{Session: sess, state: state}
+	return committer.Commit()
+}
+
+var ErrIndependentTransactionInUse = errors.New("independent_transaction_in_business_transaction")
+
+func WithIndependentTx(parentCtx context.Context, f func(context.Context) error) error {
+	if err := parentCtx.Err(); err != nil {
+		return err
+	}
+	if InTransaction(parentCtx) {
+		return ErrIndependentTransactionInUse
+	}
+	sess := xormEngine.NewSession().Context(parentCtx)
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return err
+	}
+	state := new(transactionState)
+	ctx := context.WithValue(withContextEngine(parentCtx, sess), contextKeyPostCommit, state)
+	if err := f(ctx); err != nil {
+		return err
+	}
+	return (&postCommitter{Session: sess, state: state}).Commit()
+}
+
 // WithTx represents executing database operations on a transaction, if the transaction exist,
 // this function will reuse it otherwise will create a new one and close it when finished.
 func WithTx(parentCtx context.Context, f func(ctx context.Context) error) error {

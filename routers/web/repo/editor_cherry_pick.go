@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"net/http"
 
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/forms"
 	"gitea.dev/services/repository/files"
@@ -19,6 +21,8 @@ func CherryPick(ctx *context.Context) {
 	if ctx.Written() {
 		return
 	}
+
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	fromCommitID := ctx.PathParam("sha")
 	ctx.Data["FromCommitID"] = fromCommitID

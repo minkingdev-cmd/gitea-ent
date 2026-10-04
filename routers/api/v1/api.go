@@ -70,12 +70,14 @@ import (
 
 	audit_model "gitea.dev/models/audit"
 	auth_model "gitea.dev/models/auth"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/perm"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
@@ -85,6 +87,7 @@ import (
 	"gitea.dev/modules/web/middleware"
 	"gitea.dev/routers/api/v1/activitypub"
 	"gitea.dev/routers/api/v1/admin"
+	enterpriseauthz_router "gitea.dev/routers/api/v1/enterpriseauthz"
 	enterprisewecom_router "gitea.dev/routers/api/v1/enterprisewecom"
 	"gitea.dev/routers/api/v1/misc"
 	"gitea.dev/routers/api/v1/notify"
@@ -430,6 +433,7 @@ func reqOwner() func(ctx *context.APIContext) {
 	return func(ctx *context.APIContext) {
 		if !ctx.Repo.Permission.IsOwner() && !ctx.IsUserSiteAdmin() {
 			ctx.APIError(http.StatusForbidden, "user should be the owner of the repo")
+			common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 			return
 		}
 	}
@@ -439,6 +443,7 @@ func reqRepoDangerZone() func(ctx *context.APIContext) {
 	return func(ctx *context.APIContext) {
 		if !access_model.CanDoerManageRepoDangerZone(ctx, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission) {
 			ctx.APIError(http.StatusForbidden, "user has no permission to manage the danger zone")
+			common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 			return
 		}
 	}
@@ -459,6 +464,7 @@ func reqAdmin() func(ctx *context.APIContext) {
 	return func(ctx *context.APIContext) {
 		if !ctx.IsUserRepoAdmin() && !ctx.IsUserSiteAdmin() {
 			ctx.APIError(http.StatusForbidden, "user should be an owner or a collaborator with admin write of a repository")
+			common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 			return
 		}
 	}
@@ -469,6 +475,7 @@ func reqRepoWriter(unitTypes ...unit.Type) func(ctx *context.APIContext) {
 	return func(ctx *context.APIContext) {
 		if !ctx.IsUserRepoWriter(unitTypes) && !ctx.IsUserRepoAdmin() && !ctx.IsUserSiteAdmin() {
 			ctx.APIError(http.StatusForbidden, "user should have a permission to write to a repo")
+			common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 			return
 		}
 	}
@@ -664,6 +671,7 @@ func reqWebhooksEnabled() func(ctx *context.APIContext) {
 	return func(ctx *context.APIContext) {
 		if setting.DisableWebhooks {
 			ctx.APIError(http.StatusForbidden, "webhooks disabled by administrator")
+			common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 			return
 		}
 	}
@@ -759,6 +767,15 @@ func mustEnableIssues(ctx *context.APIContext) {
 		}
 		ctx.APIErrorNotFound()
 		return
+	}
+}
+
+func observePullMutationGuard(guard func(*context.APIContext)) func(*context.APIContext) {
+	return func(ctx *context.APIContext) {
+		guard(ctx)
+		if ctx.Written() {
+			common.ObserveMarkedPullDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
+		}
 	}
 }
 
@@ -883,6 +900,7 @@ func mustEnableRepoProjects(ctx *context.APIContext) {
 func mustNotBeArchived(ctx *context.APIContext) {
 	if ctx.Repo.Repository.IsArchived {
 		ctx.APIError(http.StatusLocked, "repo is archived")
+		common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 		return
 	}
 }
@@ -907,6 +925,8 @@ func bind[T any](tmpl T) any {
 		form, errs := middleware.BindFormAny(ctx.Req, validation.Binder(), tmpl)
 		if len(errs) > 0 {
 			ctx.APIError(http.StatusUnprocessableEntity, fmt.Sprintf("%s: %s", errs[0].FieldNames, errs[0].Error()))
+			common.ObserveMarkedPullValidationFailure(ctx.Base, ctx.Doer, ctx.Repo)
+			common.ObserveMarkedRepoValidationFailure(ctx.Base, ctx.Doer, ctx.Repo)
 			return
 		}
 		web.SetForm(ctx, form)
@@ -1055,25 +1075,25 @@ func Routes() *web.Router {
 			m.Group("/secrets", func() {
 				m.Get("", reqToken(), reqOwnerCheck, act.ListActionsSecrets)
 				m.Combo("/{secretname}").
-					Put(reqToken(), reqOwnerCheck, bind(api.CreateOrUpdateSecretOption{}), act.CreateOrUpdateSecret).
-					Delete(reqToken(), reqOwnerCheck, act.DeleteSecret)
+					Put(common.RepoMutationRoute(authz.ManageSecret), reqToken(), reqOwnerCheck, bind(api.CreateOrUpdateSecretOption{}), act.CreateOrUpdateSecret).
+					Delete(common.RepoMutationRoute(authz.ManageSecret), reqToken(), reqOwnerCheck, act.DeleteSecret)
 			})
 
 			m.Group("/variables", func() {
 				m.Get("", reqToken(), reqOwnerCheck, act.ListVariables)
 				m.Combo("/{variablename}").
 					Get(reqToken(), reqOwnerCheck, act.GetVariable).
-					Delete(reqToken(), reqOwnerCheck, act.DeleteVariable).
-					Post(reqToken(), reqOwnerCheck, bind(api.CreateVariableOption{}), act.CreateVariable).
-					Put(reqToken(), reqOwnerCheck, bind(api.UpdateVariableOption{}), act.UpdateVariable)
+					Delete(common.RepoMutationRoute(authz.ManageCI), reqToken(), reqOwnerCheck, act.DeleteVariable).
+					Post(common.RepoMutationRoute(authz.ManageCI), reqToken(), reqOwnerCheck, bind(api.CreateVariableOption{}), act.CreateVariable).
+					Put(common.RepoMutationRoute(authz.ManageCI), reqToken(), reqOwnerCheck, bind(api.UpdateVariableOption{}), act.UpdateVariable)
 			})
 
 			m.Group("/runners", func() {
 				m.Get("", reqToken(), reqOwnerCheck, act.ListRunners)
-				m.Post("/registration-token", reqToken(), reqOwnerCheck, act.CreateRegistrationToken)
+				m.Post("/registration-token", common.RepoMutationRoute(authz.ManageCI), reqToken(), reqOwnerCheck, act.CreateRegistrationToken)
 				m.Get("/{runner_id}", reqToken(), reqOwnerCheck, act.GetRunner)
-				m.Delete("/{runner_id}", reqToken(), reqOwnerCheck, act.DeleteRunner)
-				m.Patch("/{runner_id}", reqToken(), reqOwnerCheck, bind(api.EditActionRunnerOption{}), act.UpdateRunner)
+				m.Delete("/{runner_id}", common.RepoMutationRoute(authz.ManageCI), reqToken(), reqOwnerCheck, act.DeleteRunner)
+				m.Patch("/{runner_id}", common.RepoMutationRoute(authz.ManageCI), reqToken(), reqOwnerCheck, bind(api.EditActionRunnerOption{}), act.UpdateRunner)
 			})
 			m.Get("/runs", reqToken(), reqReaderCheck, act.ListWorkflowRuns)
 			m.Get("/jobs", reqToken(), reqReaderCheck, act.ListWorkflowJobs)
@@ -1320,14 +1340,19 @@ func Routes() *web.Router {
 			m.Post("/migrate", reqToken(), rejectPublicOnly(), bind(api.MigrateRepoOptions{}), repo.Migrate)
 
 			m.Group("/{username}/{reponame}", func() {
+				m.Group("/enterprise/authz", func() {
+					addEnterpriseAuthzRoutes(m)
+					m.Get("/effective-permissions", enterpriseauthz_router.RequireDiagnostic, enterpriseauthz_router.EffectivePermissions)
+					m.Post("/evaluate", enterpriseauthz_router.RequireDiagnostic, enterpriseauthz_router.Evaluate)
+				}, reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeRepo))
 				m.Get("/compare/*", reqRepoReader(unit.TypeCode), repo.CompareDiff)
 
 				m.Combo("").Get(reqAnyRepoReader(), repo.Get).
-					Delete(reqToken(), reqRepoDangerZone(), repo.Delete).
-					Patch(reqToken(), reqAdmin(), bind(api.EditRepoOption{}), repo.Edit)
+					Delete(reqToken(), reqRepoDangerZone(), repo.Delete, common.RepoMutationRoute(authz.Delete)).
+					Patch(reqToken(), reqAdmin(), bind(api.EditRepoOption{}), repo.Edit, common.RepoLifecycleMutationRoute(true))
 				m.Post("/generate", reqToken(), reqRepoReader(unit.TypeCode), bind(api.GenerateRepoOption{}), repo.Generate)
 				m.Group("/transfer", func() {
-					m.Post("", reqRepoDangerZone(), bind(api.TransferRepoOption{}), repo.Transfer)
+					m.Post("", reqRepoDangerZone(), bind(api.TransferRepoOption{}), repo.Transfer, common.RepoMutationRoute(authz.Transfer))
 					m.Post("/accept", repo.AcceptTransfer)
 					m.Post("/reject", repo.RejectTransfer)
 				}, reqToken())
@@ -1339,8 +1364,8 @@ func Routes() *web.Router {
 					m.Get("", repo.ActionsListRepositoryWorkflows)
 					m.Get("/{workflow_id}", repo.ActionsGetWorkflow)
 					m.Get("/{workflow_id}/runs", repo.ActionsListWorkflowRuns)
-					m.Put("/{workflow_id}/disable", reqRepoWriter(unit.TypeActions), repo.ActionsDisableWorkflow)
-					m.Put("/{workflow_id}/enable", reqRepoWriter(unit.TypeActions), repo.ActionsEnableWorkflow)
+					m.Put("/{workflow_id}/disable", common.RepoMutationRoute(authz.ManageCI), reqRepoWriter(unit.TypeActions), repo.ActionsDisableWorkflow)
+					m.Put("/{workflow_id}/enable", common.RepoMutationRoute(authz.ManageCI), reqRepoWriter(unit.TypeActions), repo.ActionsEnableWorkflow)
 					m.Post("/{workflow_id}/dispatches", reqRepoWriter(unit.TypeActions), bind(api.CreateActionWorkflowDispatch{}), repo.ActionsDispatchWorkflow)
 				}, context.ReferencesGitRepo(), reqToken(), reqRepoReader(unit.TypeActions))
 
@@ -1359,11 +1384,11 @@ func Routes() *web.Router {
 				}, reqToken(), reqAdmin(), reqGitHook(), context.ReferencesGitRepo(true))
 				m.Group("/hooks", func() {
 					m.Combo("").Get(repo.ListHooks).
-						Post(bind(api.CreateHookOption{}), repo.CreateHook)
+						Post(bind(api.CreateHookOption{}), repo.CreateHook, common.RepoMutationRoute(authz.ManageWebhook))
 					m.Group("/{id}", func() {
 						m.Combo("").Get(repo.GetHook).
-							Patch(bind(api.EditHookOption{}), repo.EditHook).
-							Delete(repo.DeleteHook)
+							Patch(bind(api.EditHookOption{}), repo.EditHook, common.RepoMutationRoute(authz.ManageWebhook)).
+							Delete(repo.DeleteHook, common.RepoMutationRoute(authz.ManageWebhook))
 						m.Post("/tests", context.ReferencesGitRepo(), context.RepoRefForAPI, repo.TestHook)
 					})
 				}, reqToken(), reqAdmin(), reqWebhooksEnabled())
@@ -1390,14 +1415,14 @@ func Routes() *web.Router {
 				m.Methods("HEAD,GET", "/archive/*", reqRepoReader(unit.TypeCode), context.ReferencesGitRepo(true), repo.GetArchive)
 				m.Combo("/forks").Get(repo.ListForks).
 					Post(reqToken(), reqRepoReader(unit.TypeCode), bind(api.CreateForkOption{}), repo.CreateFork)
-				m.Post("/merge-upstream", reqToken(), mustNotBeArchived, reqRepoWriter(unit.TypeCode), bind(api.MergeUpstreamRequest{}), repo.MergeUpstream)
+				m.Post("/merge-upstream", common.RepoMutationRoute(authz.PushBranch), reqToken(), mustNotBeArchived, reqRepoWriter(unit.TypeCode), bind(api.MergeUpstreamRequest{}), repo.MergeUpstream)
 				m.Group("/branches", func() {
 					m.Get("", repo.ListBranches)
 					m.Get("/*", repo.GetBranch)
-					m.Delete("/*", reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, repo.DeleteBranch)
-					m.Post("", reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.CreateBranchRepoOption{}), repo.CreateBranch)
-					m.Put("/*", reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.UpdateBranchRepoOption{}), repo.UpdateBranch)
-					m.Patch("/*", reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.RenameBranchRepoOption{}), repo.RenameBranch)
+					m.Delete("/*", common.RepoMutationRoute(authz.PushBranch), reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, repo.DeleteBranch)
+					m.Post("", common.RepoMutationRoute(authz.CreateBranch), reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.CreateBranchRepoOption{}), repo.CreateBranch)
+					m.Put("/*", common.RepoMutationRoute(authz.PushBranch), reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.UpdateBranchRepoOption{}), repo.UpdateBranch)
+					m.Patch("/*", common.RepoMutationRoute(authz.PushBranch), reqToken(), reqRepoWriter(unit.TypeCode), mustNotBeArchived, bind(api.RenameBranchRepoOption{}), repo.RenameBranch)
 				}, context.ReferencesGitRepo(), reqRepoReader(unit.TypeCode))
 				m.Group("/branch_protections", func() {
 					m.Get("", repo.ListBranchProtections)
@@ -1408,7 +1433,7 @@ func Routes() *web.Router {
 						m.Delete("", mustNotBeArchived, repo.DeleteBranchProtection)
 					})
 					m.Post("/priority", bind(api.UpdateBranchProtectionPriories{}), mustNotBeArchived, repo.UpdateBranchProtectionPriories)
-				}, reqToken(), reqAdmin())
+				}, reqToken(), reqAdmin(), common.RepoMutationRoute(authz.ManageBranchProtection))
 				m.Group("/tags", func() {
 					m.Get("", repo.ListTags)
 					m.Get("/*", repo.GetTag)
@@ -1519,10 +1544,10 @@ func Routes() *web.Router {
 				m.Get("/editorconfig/{filename}", context.ReferencesGitRepo(), context.RepoRefForAPI, reqRepoReader(unit.TypeCode), repo.GetEditorconfig)
 				m.Group("/pulls", func() {
 					m.Combo("").Get(repo.ListPullRequests).
-						Post(reqToken(), mustNotBeArchived, bind(api.CreatePullRequestOption{}), repo.CreatePullRequest)
+						Post(reqToken(), mustNotBeArchived, bind(api.CreatePullRequestOption{}), common.PullMutationRoute(authz.CreatePullRequest, common.PullTargetRepository), repo.CreatePullRequest)
 					m.Get("/pinned", repo.ListPinnedPullRequests)
-					m.Post("/comments/{id}/resolve", reqToken(), mustNotBeArchived, repo.ResolvePullReviewComment)
-					m.Post("/comments/{id}/unresolve", reqToken(), mustNotBeArchived, repo.UnresolvePullReviewComment)
+					m.Post("/comments/{id}/resolve", reqToken(), mustNotBeArchived, common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetComment), repo.ResolvePullReviewComment)
+					m.Post("/comments/{id}/unresolve", reqToken(), mustNotBeArchived, common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetComment), repo.UnresolvePullReviewComment)
 					m.Group("/{index}", func() {
 						m.Combo("").Get(repo.GetPullRequest).
 							Patch(reqToken(), bind(api.EditPullRequestOption{}), repo.EditPullRequest)
@@ -1531,30 +1556,30 @@ func Routes() *web.Router {
 						m.Get("/commits", repo.GetPullRequestCommits)
 						m.Get("/files", repo.GetPullRequestFiles)
 						m.Combo("/merge").Get(repo.IsPullRequestMerged).
-							Post(reqToken(), mustNotBeArchived, bind(forms.MergePullRequestForm{}), repo.MergePullRequest).
+							Post(reqToken(), mustNotBeArchived, bind(forms.MergePullRequestForm{}), common.PullMutationRoute(authz.MergePullRequest, common.PullTargetIndex), repo.MergePullRequest).
 							Delete(reqToken(), mustNotBeArchived, repo.CancelScheduledAutoMerge)
 						m.Group("/reviews", func() {
 							m.Combo("").
 								Get(repo.ListPullReviews).
-								Post(reqToken(), bind(api.CreatePullReviewOptions{}), repo.CreatePullReview)
+								Post(reqToken(), bind(api.CreatePullReviewOptions{}), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetIndex), repo.CreatePullReview)
 							m.Group("/{id}", func() {
 								m.Combo("").
 									Get(repo.GetPullReview).
-									Delete(reqToken(), repo.DeletePullReview).
-									Post(reqToken(), bind(api.SubmitPullReviewOptions{}), repo.SubmitPullReview)
+									Delete(reqToken(), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetReview), repo.DeletePullReview).
+									Post(reqToken(), bind(api.SubmitPullReviewOptions{}), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetReview), repo.SubmitPullReview)
 								m.Combo("/comments").
 									Get(repo.GetPullReviewComments)
-								m.Post("/dismissals", reqToken(), bind(api.DismissPullReviewOptions{}), repo.DismissPullReview)
-								m.Post("/undismissals", reqToken(), repo.UnDismissPullReview)
+								m.Post("/dismissals", reqToken(), bind(api.DismissPullReviewOptions{}), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetReview), repo.DismissPullReview)
+								m.Post("/undismissals", reqToken(), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetReview), repo.UnDismissPullReview)
 							})
 						})
 						m.Combo("/requested_reviewers", reqToken()).
 							Delete(bind(api.PullReviewRequestOptions{}), repo.DeleteReviewRequests).
 							Post(bind(api.PullReviewRequestOptions{}), repo.CreateReviewRequests)
-						m.Post("/comments/{id}/replies", reqToken(), mustNotBeArchived, bind(api.CreatePullReviewCommentReplyOptions{}), repo.CreatePullReviewCommentReply)
+						m.Post("/comments/{id}/replies", reqToken(), mustNotBeArchived, bind(api.CreatePullReviewCommentReplyOptions{}), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetReply), repo.CreatePullReviewCommentReply)
 					})
 					m.Get("/{base}/*", repo.GetPullRequestByBaseHead)
-				}, mustAllowPulls, reqRepoReader(unit.TypeCode), context.ReferencesGitRepo())
+				}, observePullMutationGuard(mustAllowPulls), reqRepoReader(unit.TypeCode), context.ReferencesGitRepo())
 				m.Group("/statuses", func() { // "/statuses/{sha}" only accepts commit ID
 					m.Combo("/{sha}").Get(repo.GetCommitStatuses).
 						Post(reqToken(), reqRepoWriter(unit.TypeCode), bind(api.CreateStatusOption{}), repo.NewCommitStatus)
@@ -1659,7 +1684,7 @@ func Routes() *web.Router {
 						m.Group("/{id}", func() {
 							m.Combo("").
 								Get(repo.GetIssueComment).
-								Patch(mustNotBeArchived, reqToken(), bind(api.EditIssueCommentOption{}), repo.EditIssueComment).
+								Patch(observePullMutationGuard(mustNotBeArchived), reqToken(), bind(api.EditIssueCommentOption{}), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetReviewContent), repo.EditIssueComment).
 								Delete(reqToken(), repo.DeleteIssueComment)
 							m.Combo("/reactions").
 								Get(repo.GetIssueCommentReactions).
@@ -1687,7 +1712,7 @@ func Routes() *web.Router {
 						m.Group("/comments", func() {
 							m.Combo("").Get(repo.ListIssueComments).
 								Post(reqToken(), mustNotBeArchived, bind(api.CreateIssueCommentOption{}), repo.CreateIssueComment)
-							m.Combo("/{id}", reqToken()).Patch(bind(api.EditIssueCommentOption{}), repo.EditIssueCommentDeprecated).
+							m.Combo("/{id}", reqToken()).Patch(bind(api.EditIssueCommentOption{}), common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetReviewContent), repo.EditIssueCommentDeprecated).
 								Delete(repo.DeleteIssueCommentDeprecated)
 						})
 						m.Get("/timeline", repo.ListIssueCommentsAndTimeline)
@@ -1802,6 +1827,7 @@ func Routes() *web.Router {
 		m.Post("/orgs", tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), reqToken(), bind(api.CreateOrgOption{}), org.Create)
 		m.Get("/orgs", tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), org.GetAll)
 		m.Group("/orgs/{org}", func() {
+			m.Group("/enterprise/authz", func() { addEnterpriseAuthzRoutes(m) }, reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeOrg))
 			m.Combo("").Get(org.Get).
 				Patch(reqToken(), reqOrgOwnership(), bind(api.EditOrgOption{}), org.Edit).
 				Delete(reqToken(), reqOrgOwnership(), org.Delete)
@@ -1890,6 +1916,11 @@ func Routes() *web.Router {
 			})
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), orgAssignment(false, true), reqToken(), checkTokenPublicOnly())
 
+		m.Group("/enterprise/authz", func() {
+			addEnterpriseAuthzRoutes(m)
+			m.Get("/actions", enterpriseauthz_router.RequireManagement, enterpriseauthz_router.Actions)
+		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryAdmin), reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeSystem))
+
 		m.Group("/enterprise/wecom/mappings", func() {
 			m.Get("", enterprisewecom_router.ListAuthzMappings)
 			m.Post("", enterprisewecom_router.CreateAuthzMapping)
@@ -1961,4 +1992,15 @@ func Routes() *web.Router {
 	}, sudo())
 
 	return m
+}
+
+func addEnterpriseAuthzRoutes(m *web.Router) {
+	m.Group("", func() {
+		m.Combo("/roles").Get(enterpriseauthz_router.ListRoles).Post(enterpriseauthz_router.CreateRole)
+		m.Combo("/roles/{id}").Get(enterpriseauthz_router.GetRole).Patch(enterpriseauthz_router.UpdateRole).Delete(enterpriseauthz_router.DeleteRole)
+		m.Combo("/bindings").Get(enterpriseauthz_router.ListBindings).Put(enterpriseauthz_router.PutBinding)
+		m.Delete("/bindings/{id}", enterpriseauthz_router.DeleteBinding)
+	}, enterpriseauthz_router.RequireManagement)
+	m.Get("/decisions", enterpriseauthz_router.RequireDecisionManagement, enterpriseauthz_router.ListDecisions)
+	m.Get("/decisions/{id}", enterpriseauthz_router.RequireDecisionManagement, enterpriseauthz_router.GetDecision)
 }

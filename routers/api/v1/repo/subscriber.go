@@ -7,14 +7,17 @@ import (
 	"net/http"
 
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
 
 // ListSubscribers list a repo's subscribers (i.e. watchers)
 func ListSubscribers(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/subscribers repository repoListSubscribers
 	// ---
 	// summary: List a repo's watchers

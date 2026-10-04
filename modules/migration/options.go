@@ -4,7 +4,10 @@
 
 package migration
 
-import "gitea.dev/modules/structs"
+import (
+	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/modules/structs"
+)
 
 // MigrateOptions defines the way a repository gets migrated
 // this is for internal usage by migrations module and func who interact with it
@@ -37,7 +40,8 @@ type MigrateOptions struct {
 	PullRequests    bool
 	ReleaseAssets   bool
 	MigrateToRepoID int64
-	MirrorInterval  string `json:"mirror_interval"`
+	AuthzOperation  authz.HookOperationTicket `json:"authz_operation,omitzero"`
+	MirrorInterval  string                    `json:"mirror_interval"`
 
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string `json:",omitempty"`

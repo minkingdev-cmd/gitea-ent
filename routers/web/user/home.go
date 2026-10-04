@@ -25,6 +25,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/container"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/indexer"
 	issue_indexer "gitea.dev/modules/indexer/issues"
 	"gitea.dev/modules/log"
@@ -33,6 +34,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/feed"
 	"gitea.dev/routers/web/shared/issue"
 	"gitea.dev/routers/web/shared/user"
@@ -137,6 +139,8 @@ func Dashboard(ctx *context.Context) {
 
 // Milestones render the user milestones page
 func Milestones(ctx *context.Context) {
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "web")
+	defer finish()
 	if unit.TypeIssues.UnitGlobalDisabled() && unit.TypePullRequests.UnitGlobalDisabled() {
 		log.Debug("Milestones overview page not available as both issues and pull requests are globally disabled")
 		ctx.Status(http.StatusNotFound)
@@ -311,6 +315,9 @@ func Milestones(ctx *context.Context) {
 	}
 
 	ctx.Data["Milestones"] = milestones
+	for _, repo := range showRepos {
+		observe(repo, nil)
+	}
 	ctx.Data["Repos"] = showRepos
 	ctx.Data["Counts"] = counts
 	ctx.Data["MilestoneStats"] = milestoneStats

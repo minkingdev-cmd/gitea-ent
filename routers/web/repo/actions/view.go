@@ -28,6 +28,7 @@ import (
 	"gitea.dev/modules/actions"
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/cache"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/json"
@@ -1346,6 +1347,7 @@ func EnableWorkflowFile(ctx *context_module.Context) {
 }
 
 func disableOrEnableWorkflowFile(ctx *context_module.Context, isEnable bool) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	workflow := ctx.FormString("workflow")
 	if len(workflow) == 0 {
 		ctx.JSONError("workflow is required")
@@ -1365,6 +1367,7 @@ func disableOrEnableWorkflowFile(ctx *context_module.Context, isEnable bool) {
 				return
 			}
 			if required {
+				common.MarkNativeMutationDenied(ctx.Base)
 				ctx.JSONError(ctx.Locale.Tr("actions.workflow.scoped_required_cannot_disable"))
 				return
 			}
@@ -1383,6 +1386,7 @@ func disableOrEnableWorkflowFile(ctx *context_module.Context, isEnable bool) {
 		return
 	}
 	actions_service.RecordWorkflowToggle(ctx, ctx.Repo.Repository, workflow, isEnable)
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 
 	if isEnable {
 		ctx.Flash.Success(ctx.Tr("actions.workflow.enable_success", workflow))

@@ -1,0 +1,48 @@
+{{template "admin/enterpriseauthz/head" .}}
+<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_authz.decision_title"}}</h4>
+<div class="ui attached segment">
+ <a class="ui button" href="{{.AuthzBase}}/decisions">{{ctx.Locale.Tr "admin.enterprise_authz.back_history"}}</a>
+ <p>{{ctx.Locale.Tr "admin.enterprise_authz.current_names_notice"}}</p>
+ <div class="ui warning message">{{ctx.Locale.Tr "admin.enterprise_authz.history_notice"}}</div>
+ {{with .AuthzDecision}}
+  <dl data-native-outcome="{{.NativeOutcome}}" data-mismatch="{{.Mismatch}}">
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.history_actor"}}</dt><dd>{{.ActorName}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.history_repo"}}</dt><dd>{{.RepoName}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</dt><dd><code>{{.Action}}</code></dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.source"}}</dt><dd>{{call $.AuthzLabel .RequestSource}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.candidate"}}</dt><dd>{{call $.AuthzLabel .CandidateDecision}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.native_outcome"}}</dt><dd>{{call $.AuthzLabel .NativeOutcome}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.stage"}}</dt><dd>{{call $.AuthzLabel .NativeStage}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.reason"}}</dt><dd>{{call $.AuthzLabel .Reason}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.mismatch"}}</dt><dd>{{call $.AuthzLabel (printf "mismatch_%s" .Mismatch)}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.created"}}</dt><dd>{{DateUtils.FullTime .Created}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.missing_actions"}}</dt><dd>{{range .MissingActions}}<code>{{.}}</code> {{else}}—{{end}}</dd>
+  </dl>
+  <details class="ui segment"><summary>{{ctx.Locale.Tr "admin.enterprise_authz.technical_identifiers"}}</summary><dl>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.record_id"}}</dt><dd>{{.ID}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.operation_id"}}</dt><dd class="tw-break-all"><code>{{.OperationID}}</code></dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.observation_id"}}</dt><dd class="tw-break-all"><code>{{.ObservationID}}</code></dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.actor_id"}}</dt><dd>{{.ActorID}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.repo_id"}}</dt><dd>{{.RepoID}}{{if .DeletedRepo}} — {{ctx.Locale.Tr "admin.enterprise_authz.deleted_repo"}}{{end}}</dd>
+   <dt>{{ctx.Locale.Tr "admin.enterprise_authz.owner_id"}}</dt><dd>{{.OwnerID}}</dd>
+  </dl></details>
+  {{with .Snapshot}}
+   <h5>{{ctx.Locale.Tr "admin.enterprise_authz.snapshot_title"}}</h5>
+   <p>{{ctx.Locale.Tr "admin.enterprise_authz.snapshot_help"}}</p>
+   <dl>
+    <dt>{{ctx.Locale.Tr "admin.enterprise_authz.catalog_version"}}</dt><dd>{{.CatalogVersion}}</dd>
+    <dt>{{ctx.Locale.Tr "admin.enterprise_authz.native_mode"}}</dt><dd>{{.NativeMode}}</dd>
+    <dt>{{ctx.Locale.Tr "admin.enterprise_authz.archived"}}</dt><dd>{{if $.AuthzDecision.ArchivedKnown}}{{if $.AuthzDecision.Archived}}{{ctx.Locale.Tr "admin.enterprise_authz.yes"}}{{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no"}}{{end}}{{else}}—{{end}}</dd>
+    <dt>{{ctx.Locale.Tr "admin.enterprise_authz.branch_known"}}</dt><dd>{{if .BranchKnown}}{{ctx.Locale.Tr "admin.enterprise_authz.yes"}}{{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no"}}{{end}}</dd>
+    <dt>{{ctx.Locale.Tr "admin.enterprise_authz.paths_complete"}}</dt><dd>{{if .PathsComplete}}{{ctx.Locale.Tr "admin.enterprise_authz.yes"}}{{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no"}}{{end}} ({{.PathCount}})</dd>
+    <dt>{{ctx.Locale.Tr "admin.enterprise_authz.credential_ceiling"}}</dt><dd>{{ctx.Locale.Tr "admin.enterprise_authz.read"}}: {{if .CredentialCeiling.Read}}{{ctx.Locale.Tr "admin.enterprise_authz.yes"}}{{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no"}}{{end}}; {{ctx.Locale.Tr "admin.enterprise_authz.write"}}: {{if .CredentialCeiling.Write}}{{ctx.Locale.Tr "admin.enterprise_authz.yes"}}{{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no"}}{{end}}; {{ctx.Locale.Tr "admin.enterprise_authz.native_only"}}: {{if .CredentialCeiling.NativeOnly}}{{ctx.Locale.Tr "admin.enterprise_authz.yes"}}{{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no"}}{{end}}</dd>
+    <dt>{{ctx.Locale.Tr "admin.enterprise_authz.role_eligible"}}</dt><dd>{{if .RoleEligible}}{{ctx.Locale.Tr "admin.enterprise_authz.yes"}}{{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no"}}{{end}}</dd>
+   </dl>
+   <p>{{ctx.Locale.Tr "admin.enterprise_authz.native_actions"}}: {{range .NativeActions}}<code>{{.}}</code> {{else}}—{{end}}</p>
+   <p>{{ctx.Locale.Tr "admin.enterprise_authz.unit_modes"}}: {{range .UnitModes}}{{.Key}}: {{.Mode}} {{else}}—{{end}}</p>
+   <p>{{ctx.Locale.Tr "admin.enterprise_authz.recorded_roles"}}: {{range .Roles}}<span data-recorded-role="{{.ID}}" data-recorded-revision="{{.Revision}}">{{.ID}} ({{ctx.Locale.Tr "admin.enterprise_authz.revision"}} {{.Revision}})</span> {{else}}—{{end}}</p>
+   {{if .Conditions}}<div class="tw-overflow-x-auto"><table class="ui striped table"><thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_authz.role"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.binding"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.revision"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.condition_hash"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.condition_result"}}</th></tr></thead><tbody>{{range .Conditions}}<tr><td>{{.RoleID}}</td><td>{{.BindingID}}</td><td>{{.Revision}}</td><td><code>{{.Action}}</code></td><td class="tw-break-all"><code>{{.ConditionHash}}</code></td><td>{{call $.AuthzLabel .Result}}</td></tr>{{end}}</tbody></table></div>{{end}}
+  {{end}}
+ {{end}}
+</div>
+{{template "admin/enterpriseauthz/foot" .}}

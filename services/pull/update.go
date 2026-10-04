@@ -19,11 +19,24 @@ import (
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/repository"
+	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // Update updates pull request with base branch.
-func Update(pr *issues_model.PullRequest, doer *user_model.User, message string, rebase bool) error {
-	ctx := graceful.GetManager().HammerContext() // don't abort the git operation even if the user's request is canceled
+func Update(operationCtx context.Context, pr *issues_model.PullRequest, doer *user_model.User, message string, rebase bool) (err error) {
+	operationCtx, observation := authz_service.WithRepoPushObservation(operationCtx, doer, pr.HeadRepoID, pr.HeadBranch)
+	ctx := authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), operationCtx)
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+			if errors.Is(err, util.ErrPermissionDenied) || git.IsErrPushRejected(err) {
+				outcome = authz_service.NativeDenied
+			}
+		}
+		observation.Finish(ctx, outcome, authz_service.StageOperation)
+	}()
 	if pr.Flow == issues_model.PullRequestFlowAGit {
 		// TODO: update of agit flow pull request's head branch is unsupported
 		return errors.New("update of agit flow pull request's head branch is unsupported")

@@ -1,4 +1,5 @@
 - Never assume, verify before claiming
+- 本项目服务端永久仅部署 Linux；不开发、适配或要求 Windows 服务端验收。不限制 Windows 客户端访问，也不主动删除无关的上游 Windows 兼容代码。
 - List development targets with `make help`
 - Read relevant developer documentation in the `docs` folder
 - PR descriptions: minimal, only what and why, no task or file listings. Include screenshots for UI changes, before and after when modifying existing UI. Aim for less than 1000 characters

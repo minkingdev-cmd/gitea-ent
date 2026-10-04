@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -164,7 +165,7 @@ func TestActionsJobTokenPermissiveAccess(t *testing.T) {
 
 				t.Run("WriteGitContent", func(t *testing.T) {
 					req := NewRequestWithJSON(t, "POST", fmt.Sprintf("/api/v1/repos/%s/contents/test-filename", repo.FullName()), &structs.CreateFileOptions{
-						FileOptions:   structs.FileOptions{NewBranchName: "new-branch" + t.Name()},
+						FileOptions:   structs.FileOptions{NewBranchName: fmt.Sprintf("job-token-%x", sha256.Sum256([]byte(t.Name())))},
 						ContentBase64: base64.StdEncoding.EncodeToString([]byte(`dummy content`)),
 					}).AddTokenAuth(task.Token)
 					resp := MakeRequest(t, req, NoExpectedStatus)

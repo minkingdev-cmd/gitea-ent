@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 
 	"github.com/gorilla/feeds"
@@ -19,6 +21,7 @@ func ShowFileFeed(ctx *context.Context, repo *repo.Repository, formatType string
 	if !checkRepoFeedTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	fileName := ctx.Repo.TreePath
 	if len(fileName) == 0 {
 		return

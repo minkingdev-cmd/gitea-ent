@@ -11,13 +11,17 @@ import (
 	"time"
 
 	auth_model "gitea.dev/models/auth"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/perm"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
+	"gitea.dev/modules/setting"
+	"gitea.dev/modules/test"
 	pull_service "gitea.dev/services/pull"
 	repo_service "gitea.dev/services/repository"
 	files_service "gitea.dev/services/repository/files"
@@ -47,7 +51,12 @@ func TestAPIPullUpdate(t *testing.T) {
 		token := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeWriteRepository)
 		req := NewRequestf(t, "POST", "/api/v1/repos/%s/%s/pulls/%d/update", pr.BaseRepo.OwnerName, pr.BaseRepo.Name, pr.Issue.Index).
 			AddTokenAuth(token)
+		defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, true)()
+		defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+		before := unittest.GetCount(t, &authz_model.DecisionRecord{})
 		session.MakeRequest(t, req, http.StatusOK)
+		require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+		unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: 2, RepoID: pr.HeadRepoID, Action: authz.PushBranch, RequestSource: "api", NativeOutcome: "success"})
 
 		// Test GetDiverging after update
 		diffCount, err = git.GetDivergingCommits(t.Context(), pr.BaseRepo, pr.BaseBranch, pr.GetGitHeadRefName())

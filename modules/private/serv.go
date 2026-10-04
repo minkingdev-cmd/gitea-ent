@@ -11,6 +11,7 @@ import (
 	asymkey_model "gitea.dev/models/asymkey"
 	"gitea.dev/models/perm"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/setting"
 )
 
@@ -33,7 +34,8 @@ func ServNoCommand(ctx context.Context, keyID int64) (*asymkey_model.PublicKey, 
 
 // ServCommandResults are the results of a call to the private route serv
 type ServCommandResults struct {
-	IsWiki bool
+	AuthzOperation authz.HookOperationTicket
+	IsWiki         bool
 
 	OwnerName string
 	RepoName  string

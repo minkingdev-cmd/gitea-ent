@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net/http"
 
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/templates"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	contributors_service "gitea.dev/services/repository"
 )
@@ -18,6 +20,7 @@ const (
 
 // CodeFrequency renders the page to show repository code frequency
 func CodeFrequency(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	ctx.Data["Title"] = ctx.Tr("repo.activity.navbar.code_frequency")
 
 	ctx.Data["PageIsActivity"] = true
@@ -29,6 +32,7 @@ func CodeFrequency(ctx *context.Context) {
 
 // CodeFrequencyData returns JSON of code frequency data
 func CodeFrequencyData(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	if contributorStats, err := contributors_service.GetContributorStats(ctx, ctx.Cache, ctx.Repo.Repository, ctx.Repo.Repository.DefaultBranch); err != nil {
 		if errors.Is(err, contributors_service.ErrAwaitGeneration) {
 			ctx.Status(http.StatusAccepted)

@@ -13,6 +13,7 @@ import (
 	git_model "gitea.dev/models/git"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/optional"
@@ -21,8 +22,10 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/utils"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	pull_service "gitea.dev/services/pull"
 	release_service "gitea.dev/services/release"
@@ -35,6 +38,7 @@ const (
 
 // Branches render repository branch page
 func Branches(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	ctx.Data["Title"] = "Branches"
 	ctx.Data["AllowsPulls"] = ctx.Repo.Repository.AllowsPulls(ctx)
 	ctx.Data["IsWriter"] = ctx.Repo.Permission.CanWrite(unit.TypeCode)
@@ -110,18 +114,26 @@ func RestoreBranchPost(ctx *context.Context) {
 
 	deletedBranch, err := git_model.GetDeletedBranchByID(ctx, ctx.Repo.Repository.ID, branchID)
 	if err != nil {
+		finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.CreateBranch, "web")
+		finish(authz_service.NativeFailed)
 		ctx.JSONErrorAuto(err)
 		return
 	}
+	finish := common.ObserveRepoBranchMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.CreateBranch, "web", deletedBranch.Name)
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 
 	if err := git.PushManaged(ctx, ctx.Repo.Repository, ctx.Repo.Repository, git.PushOptions{
 		Branch: fmt.Sprintf("%s:%s%s", deletedBranch.CommitID, git.BranchPrefix, deletedBranch.Name),
-		Env:    repo_module.PushingEnvironment(ctx.Doer, ctx.Repo.Repository),
+		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(ctx.Doer, ctx.Repo.Repository), string(authz_service.ManagedHookOperationTicket(ctx, ctx.Doer, ctx.Repo.Repository, deletedBranch.Name, authz.CreateBranch))),
 	}); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			log.Debug("RestoreBranch: Can't restore branch '%s', since one with same name already exist", deletedBranch.Name)
 			ctx.JSONError(ctx.Tr("repo.branch.already_exists", deletedBranch.Name))
 			return
+		}
+		if git.IsErrPushRejected(err) {
+			outcome = authz_service.NativeDenied
 		}
 		log.Error("RestoreBranch: CreateBranch: %v", err)
 		ctx.JSONError(ctx.Tr("repo.branch.restore_failed", deletedBranch.Name))
@@ -130,6 +142,7 @@ func RestoreBranchPost(ctx *context.Context) {
 
 	objectFormat := git.ObjectFormatFromName(ctx.Repo.Repository.ObjectFormatName)
 
+	outcome = authz_service.NativeSuccess
 	// Don't return error below this
 	if err := repo_service.PushUpdates(
 		&repo_module.PushUpdateOptions{
@@ -151,7 +164,14 @@ func RestoreBranchPost(ctx *context.Context) {
 // CreateBranch creates new branch in repository
 func CreateBranch(ctx *context.Context) {
 	form := web.GetForm[*forms.NewBranchForm](ctx)
+	outcome := authz_service.NativeFailed
+	if !form.CreateTag {
+		finish := common.ObserveRepoBranchMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.CreateBranch, "web", form.NewBranchName)
+		defer func() { finish(outcome) }()
+	}
+
 	if !ctx.Repo.CanCreateBranch() {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.NotFound(nil)
 		return
 	}
@@ -226,6 +246,7 @@ func CreateBranch(ctx *context.Context) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.Flash.Success(ctx.Tr("repo.branch.create_success", form.NewBranchName))
 	ctx.Redirect(ctx.Repo.RepoLink + "/src/branch/" + util.PathEscapeSegments(form.NewBranchName) + "/" + util.PathEscapeSegments(form.CurrentPath))
 }

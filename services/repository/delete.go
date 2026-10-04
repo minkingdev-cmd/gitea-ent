@@ -12,6 +12,7 @@ import (
 	activities_model "gitea.dev/models/activities"
 	admin_model "gitea.dev/models/admin"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/organization"
@@ -71,6 +72,10 @@ func DeleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams 
 			OwnerName: "",
 			Name:      "",
 		}
+	}
+
+	if err := authz_model.DeleteScope(ctx, authz_model.Scope{Type: authz_model.ScopeRepo, ID: repo.ID}); err != nil {
+		return err
 	}
 
 	// Query the action tasks of this repo, they will be needed after they have been deleted to remove the logs

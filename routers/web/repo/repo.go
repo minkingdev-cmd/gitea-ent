@@ -18,6 +18,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/optional"
@@ -27,6 +28,7 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	"gitea.dev/services/forms"
@@ -390,6 +392,7 @@ func Download(ctx *context.Context) {
 	if !checkDownloadTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	aReq, err := archiver_service.NewRequest(ctx, ctx.Repo.Repository, ctx.Repo.GitRepo, ctx.PathParam("*"), ctx.FormStrings("path"))
 	if err != nil {
@@ -419,6 +422,7 @@ func InitiateDownload(ctx *context.Context) {
 	if !checkDownloadTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	paths := ctx.FormStrings("path")
 	if setting.Repository.StreamArchives || len(paths) > 0 {
@@ -600,6 +604,7 @@ type branchTagSearchResponse struct {
 
 // GetBranchesList get branches for current repo'
 func GetBranchesList(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	branchOpts := git_model.FindBranchOptions{
 		RepoID:          ctx.Repo.Repository.ID,
 		IsDeletedBranch: optional.Some(false),
@@ -622,6 +627,7 @@ func GetBranchesList(ctx *context.Context) {
 
 // GetTagList get tag list for current repo
 func GetTagList(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	tags, err := repo_model.GetTagNamesByRepoID(ctx, ctx.Repo.Repository.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, err)

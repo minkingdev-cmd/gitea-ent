@@ -19,6 +19,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitrepo"
 	"gitea.dev/modules/graceful"
@@ -29,6 +30,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/structs"
 	"gitea.dev/services/audit"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 	pull_service "gitea.dev/services/pull"
 )
@@ -60,7 +62,15 @@ func CreateRepository(ctx context.Context, doer, owner *user_model.User, opts Cr
 }
 
 // DeleteRepository deletes a repository for a user or organization.
-func DeleteRepository(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, notify bool) error {
+func DeleteRepository(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, notify bool) (err error) {
+	ctx, observation := authz_service.WithRepoMutationObservation(ctx, doer, repo, authz.Delete)
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+		}
+		observation.Finish(ctx, outcome, authz_service.StageOperation)
+	}()
 	if err := pull_service.CloseRepoBranchesPulls(ctx, doer, repo); err != nil {
 		log.Error("CloseRepoBranchesPulls failed: %v", err)
 	}

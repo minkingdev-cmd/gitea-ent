@@ -11,14 +11,17 @@ import (
 	"gitea.dev/models/organization"
 	"gitea.dev/models/renderhelper"
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/markup/markdown"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	shared_user "gitea.dev/routers/web/shared/user"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 const tplOrgHome templates.TplName = "org/home"
@@ -46,6 +49,8 @@ func Repositories(ctx *context.Context) {
 }
 
 func home(ctx *context.Context, viewRepositories bool) {
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "web")
+	defer finish()
 	org := ctx.Org.Organization
 
 	ctx.Data["PageIsUserProfile"] = true
@@ -123,6 +128,9 @@ func home(ctx *context.Context, viewRepositories bool) {
 	ctx.Data["DisableNewPullMirrors"] = setting.Mirror.DisableNewPull
 	ctx.Data["ShowMemberAndTeamTab"] = ctx.Org.IsMember || len(members) > 0
 
+	observeCode, finishCode := common.RepoReadResultCollector(ctx.Base, ctx.Doer, "web")
+	defer finishCode()
+
 	prepareResult, err := shared_user.RenderUserOrgHeader(ctx)
 	if err != nil {
 		ctx.ServerError("RenderUserOrgHeader", err)
@@ -130,7 +138,7 @@ func home(ctx *context.Context, viewRepositories bool) {
 	}
 
 	// if no profile readme, it still means "view repositories"
-	isViewOverview := !viewRepositories && prepareOrgProfileReadme(ctx, prepareResult)
+	isViewOverview := !viewRepositories && prepareOrgProfileReadme(ctx, prepareResult, observeCode)
 	ctx.Data["PageIsViewRepositories"] = !isViewOverview
 	ctx.Data["PageIsViewOverview"] = isViewOverview
 	ctx.Data["ShowOrgProfileReadmeSelector"] = isViewOverview && prepareResult.ProfilePublicReadmeBlob != nil && prepareResult.ProfilePrivateReadmeBlob != nil
@@ -158,6 +166,9 @@ func home(ctx *context.Context, viewRepositories bool) {
 		return
 	}
 
+	for _, repo := range repos {
+		observe(repo, nil)
+	}
 	ctx.Data["Repos"] = repos
 	ctx.Data["Total"] = count
 
@@ -167,7 +178,7 @@ func home(ctx *context.Context, viewRepositories bool) {
 	ctx.HTML(http.StatusOK, tplOrgHome)
 }
 
-func prepareOrgProfileReadme(ctx *context.Context, prepareResult *shared_user.PrepareOwnerHeaderResult) bool {
+func prepareOrgProfileReadme(ctx *context.Context, prepareResult *shared_user.PrepareOwnerHeaderResult, observeCode func(*repo_model.Repository) func(authz_service.NativeOutcome)) bool {
 	viewAs := ctx.FormString("view_as", util.Iif(ctx.Org.IsMember, "member", "public"))
 	viewAsMember := viewAs == "member"
 
@@ -192,6 +203,7 @@ func prepareOrgProfileReadme(ctx *context.Context, prepareResult *shared_user.Pr
 		return false
 	}
 
+	readResult := observeCode(profileRepo)
 	readmeBytes, err := readmeBlob.GetBlobContent(ctx, setting.UI.MaxDisplayFileSize)
 	if err != nil {
 		log.Error("failed to GetBlobContent for profile %q (view as %q) readme: %v", profileRepo.FullName(), viewAs, err)
@@ -206,6 +218,7 @@ func prepareOrgProfileReadme(ctx *context.Context, prepareResult *shared_user.Pr
 		log.Error("failed to GetBlobContent for profile %q (view as %q) readme: %v", profileRepo.FullName(), viewAs, err)
 		return false
 	}
+	readResult(authz_service.NativeSuccess)
 	ctx.Data["IsViewingOrgAsMember"] = viewAsMember
 	return true
 }

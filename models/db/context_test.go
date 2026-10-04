@@ -5,6 +5,7 @@ package db_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"gitea.dev/models/db"
@@ -13,6 +14,48 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIndependentSnapshotTransaction(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	var outerEngine db.Engine
+	var closedTx context.Context
+	rollback := errors.New("business rollback")
+	valueKey := struct{ name string }{"safe request"}
+	ctx := context.WithValue(t.Context(), valueKey, "request-1")
+	err := db.WithTx(ctx, func(tx context.Context) error {
+		outerEngine = db.GetEngine(tx)
+		closedTx = tx
+		called := false
+		err := db.WithIndependentReadTx(tx, func(context.Context) error { called = true; return nil })
+		require.ErrorIs(t, err, db.ErrIndependentTransactionInUse)
+		require.False(t, called)
+		return rollback
+	})
+	require.ErrorIs(t, err, rollback)
+	require.NoError(t, db.WithIndependentReadTx(closedTx, func(snapshot context.Context) error {
+		require.Equal(t, "request-1", snapshot.Value(valueKey))
+		require.True(t, db.InTransaction(snapshot))
+		require.NotSame(t, outerEngine, db.GetEngine(snapshot))
+		return nil
+	}))
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	called := false
+	err = db.WithIndependentReadTx(canceled, func(context.Context) error { called = true; return nil })
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, called)
+}
+
+func TestIndependentTransactionRejectsBusinessTransaction(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	called := false
+	require.NoError(t, db.WithTx(t.Context(), func(ctx context.Context) error {
+		err := db.WithIndependentTx(ctx, func(context.Context) error { called = true; return nil })
+		require.ErrorIs(t, err, db.ErrIndependentTransactionInUse)
+		return nil
+	}))
+	require.False(t, called)
+}
 
 func TestInTransaction(t *testing.T) {
 	assert.NoError(t, unittest.PrepareTestDatabase())

@@ -18,6 +18,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/markup/markdown"
 	"gitea.dev/modules/optional"
@@ -25,6 +26,7 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/feed"
 	"gitea.dev/services/context"
 	"gitea.dev/services/context/upload"
@@ -199,6 +201,7 @@ func Releases(ctx *context.Context) {
 
 // TagsList render tags list page
 func TagsList(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	ctx.Data["PageIsTagList"] = true
 	ctx.Data["Title"] = ctx.Tr("repo.release.tags")
 	ctx.Data["CanCreateRelease"] = ctx.Repo.Permission.CanWrite(unit.TypeReleases) && !ctx.Repo.Repository.IsArchived

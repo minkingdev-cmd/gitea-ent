@@ -18,6 +18,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/indexer/code"
 	issue_indexer "gitea.dev/modules/indexer/issues"
@@ -31,10 +32,12 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/validation"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	repo_router "gitea.dev/routers/web/repo"
 	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	"gitea.dev/services/migrations"
 	mirror_service "gitea.dev/services/mirror"
@@ -62,6 +65,7 @@ type selectOption struct {
 func canManageRepoDangerZone(ctx *context.Context) bool {
 	if !access_model.CanDoerManageRepoDangerZone(ctx, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission) {
 		ctx.JSONErrorNotFound()
+		common.MarkNativeMutationDenied(ctx.Base)
 		return false
 	}
 	return true
@@ -164,7 +168,13 @@ func SettingsPost(ctx *context.Context) {
 	ctx.Data["SigningSettings"] = setting.Repository.Signing
 	ctx.Data["IsRepoIndexerEnabled"] = setting.Indexer.RepoIndexerEnabled
 
-	switch ctx.FormString("action") {
+	action := ctx.FormString("action")
+
+	if key := map[string]authz.Action{"archive": authz.Archive, "unarchive": authz.Archive, "transfer": authz.Transfer, "delete": authz.Delete}[action]; key != "" {
+		finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, key, "web")
+		defer finish(authz_service.NativeFailed)
+	}
+	switch action {
 	case "update":
 		handleSettingsPostUpdate(ctx)
 	case "mirror":
@@ -1003,12 +1013,13 @@ func handleSettingsPostArchive(ctx *context.Context) {
 
 	repo := ctx.Repo.Repository
 	if repo.IsMirror {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.Flash.Error(ctx.Tr("repo.settings.archive.error_ismirror"))
 		ctx.Redirect(ctx.Repo.RepoLink + "/settings")
 		return
 	}
 
-	if err := repo_model.SetArchiveRepoState(ctx, repo, true); err != nil {
+	if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, true); err != nil {
 		log.Error("Tried to archive a repo: %s", err)
 		ctx.Flash.Error(ctx.Tr("repo.settings.archive.error"))
 		ctx.Redirect(ctx.Repo.RepoLink + "/settings")
@@ -1036,7 +1047,7 @@ func handleSettingsPostUnarchive(ctx *context.Context) {
 	}
 
 	repo := ctx.Repo.Repository
-	if err := repo_model.SetArchiveRepoState(ctx, repo, false); err != nil {
+	if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, false); err != nil {
 		log.Error("Tried to unarchive a repo: %s", err)
 		ctx.Flash.Error(ctx.Tr("repo.settings.unarchive.error"))
 		ctx.Redirect(ctx.Repo.RepoLink + "/settings")

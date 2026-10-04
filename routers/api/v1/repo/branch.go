@@ -13,6 +13,7 @@ import (
 	"gitea.dev/models/organization"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/optional"
 	repo_module "gitea.dev/modules/repository"
@@ -20,8 +21,10 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	pull_service "gitea.dev/services/pull"
 	release_service "gitea.dev/services/release"
 	repo_service "gitea.dev/services/repository"
@@ -29,6 +32,7 @@ import (
 
 // GetBranch get a branch of a repository
 func GetBranch(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/branches/{branch} repository repoGetBranch
 	// ---
 	// summary: Retrieve a specific branch from a repository, including its effective branch protection
@@ -122,11 +126,13 @@ func DeleteBranch(ctx *context.APIContext) {
 	//     "$ref": "#/responses/repoArchivedError"
 	if ctx.Repo.Repository.IsEmpty {
 		ctx.APIError(http.StatusNotFound, "Git Repository is empty.")
+		common.ObserveMarkedRepoValidationFailure(ctx.Base, ctx.Doer, ctx.Repo)
 		return
 	}
 
 	if ctx.Repo.Repository.IsMirror {
 		ctx.APIError(http.StatusForbidden, "Git Repository is a mirror.")
+		common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 		return
 	}
 
@@ -139,12 +145,14 @@ func DeleteBranch(ctx *context.APIContext) {
 	})
 	if err != nil {
 		ctx.APIErrorInternal(err)
+		common.ObserveMarkedRepoValidationFailure(ctx.Base, ctx.Doer, ctx.Repo)
 		return
 	}
 	if totalNumOfBranches == 0 { // sync branches immediately because non-empty repository should have at least 1 branch
 		_, err = repo_module.SyncRepoBranches(ctx, ctx.Repo.Repository.ID, 0)
 		if err != nil {
 			ctx.APIErrorInternal(err)
+			common.ObserveMarkedRepoValidationFailure(ctx.Base, ctx.Doer, ctx.Repo)
 			return
 		}
 	}
@@ -202,6 +210,10 @@ func CreateBranch(ctx *context.APIContext) {
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
 
+	opt := web.GetForm[*api.CreateBranchRepoOption](ctx)
+	finish := common.ObserveRepoBranchMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.CreateBranch, "api", opt.BranchName)
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	if ctx.Repo.Repository.IsEmpty {
 		ctx.APIError(http.StatusNotFound, "Git Repository is empty.")
 		return
@@ -211,8 +223,6 @@ func CreateBranch(ctx *context.APIContext) {
 		ctx.APIError(http.StatusForbidden, "Git Repository is a mirror.")
 		return
 	}
-
-	opt := web.GetForm[*api.CreateBranchRepoOption](ctx)
 
 	var oldCommit *git.Commit
 	var err error
@@ -276,11 +286,13 @@ func CreateBranch(ctx *context.APIContext) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	ctx.JSON(http.StatusCreated, br)
 }
 
 // ListBranches list all the branches of a repository
 func ListBranches(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/branches repository repoListBranches
 	// ---
 	// summary: List a repository's branches
@@ -433,11 +445,13 @@ func UpdateBranch(ctx *context.APIContext) {
 
 	if repo.IsEmpty {
 		ctx.APIError(http.StatusNotFound, "Git Repository is empty.")
+		common.ObserveMarkedRepoValidationFailure(ctx.Base, ctx.Doer, ctx.Repo)
 		return
 	}
 
 	if repo.IsMirror {
 		ctx.APIError(http.StatusForbidden, "Git Repository is a mirror.")
+		common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 		return
 	}
 
@@ -506,11 +520,13 @@ func RenameBranch(ctx *context.APIContext) {
 
 	if repo.IsEmpty {
 		ctx.APIError(http.StatusNotFound, "Git Repository is empty.")
+		common.ObserveMarkedRepoValidationFailure(ctx.Base, ctx.Doer, ctx.Repo)
 		return
 	}
 
 	if repo.IsMirror {
 		ctx.APIError(http.StatusForbidden, "Git Repository is a mirror.")
+		common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 		return
 	}
 
@@ -620,6 +636,7 @@ func ListBranchProtections(ctx *context.APIContext) {
 
 // CreateBranchProtection creates a branch protection for a repo
 func CreateBranchProtection(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageBranchProtection, "api")()
 	// swagger:operation POST /repos/{owner}/{repo}/branch_protections repository repoCreateBranchProtection
 	// ---
 	// summary: Create a branch protections for a repository
@@ -655,6 +672,9 @@ func CreateBranchProtection(ctx *context.APIContext) {
 	//     "$ref": "#/responses/repoArchivedError"
 
 	form := web.GetForm[*api.CreateBranchProtectionOption](ctx)
+	if form.EnableStatusCheck || len(form.StatusCheckContexts) > 0 {
+		defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
+	}
 	repo := ctx.Repo.Repository
 
 	ruleName := form.RuleName
@@ -839,6 +859,7 @@ func CreateBranchProtection(ctx *context.APIContext) {
 
 // EditBranchProtection edits a branch protection for a repo
 func EditBranchProtection(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageBranchProtection, "api")()
 	// swagger:operation PATCH /repos/{owner}/{repo}/branch_protections/{name} repository repoEditBranchProtection
 	// ---
 	// summary: Edit a branch protections for a repository. Only fields that are set will be changed
@@ -876,6 +897,9 @@ func EditBranchProtection(ctx *context.APIContext) {
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
 	form := web.GetForm[*api.EditBranchProtectionOption](ctx)
+	if form.EnableStatusCheck != nil || form.StatusCheckContexts != nil {
+		defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
+	}
 	repo := ctx.Repo.Repository
 	bpName := ctx.PathParam("*")
 	protectBranch, err := git_model.GetProtectedBranchRuleByName(ctx, repo.ID, bpName)
@@ -1212,6 +1236,7 @@ func EditBranchProtection(ctx *context.APIContext) {
 
 // DeleteBranchProtection deletes a branch protection for a repo
 func DeleteBranchProtection(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageBranchProtection, "api")()
 	// swagger:operation DELETE /repos/{owner}/{repo}/branch_protections/{name} repository repoDeleteBranchProtection
 	// ---
 	// summary: Delete a specific branch protection for the repository
@@ -1251,6 +1276,10 @@ func DeleteBranchProtection(ctx *context.APIContext) {
 		return
 	}
 
+	if bp.EnableStatusCheck || len(bp.StatusCheckContexts) > 0 {
+		defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI, "api")()
+	}
+
 	if err := git_model.DeleteProtectedBranch(ctx, ctx.Repo.Repository, bp.ID); err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -1261,6 +1290,7 @@ func DeleteBranchProtection(ctx *context.APIContext) {
 
 // UpdateBranchProtectionPriories updates the priorities of branch protections for a repo
 func UpdateBranchProtectionPriories(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageBranchProtection, "api")()
 	// swagger:operation POST /repos/{owner}/{repo}/branch_protections/priority repository repoUpdateBranchProtectionPriories
 	// ---
 	// summary: Update the priorities of branch protections for a repository.

@@ -300,6 +300,13 @@ func ServCommand(ctx *context.PrivateContext) {
 		}
 	}
 
+	if !results.IsWiki && verb == git.CmdVerbUploadPack {
+		observeSSHCloneAuthorization(ctx, repo, user, key.ID)
+	}
+	if !results.IsWiki && verb == git.CmdVerbReceivePack {
+		results.AuthzOperation = sshReceiveOperationTicket(ctx, repo, user, key.ID)
+	}
+
 	gitRepo := util.Iif(results.IsWiki, repo.WikiStorageRepo(), repo.CodeStorageRepo())
 	results.RepoStoragePath = gitrepo.RepoLocalPath(gitRepo)
 	log.Debug("Serv Results: %+v", results)

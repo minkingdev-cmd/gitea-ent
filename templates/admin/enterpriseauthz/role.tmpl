@@ -1,0 +1,40 @@
+{{template "admin/enterpriseauthz/head" .}}
+{{$form := .AuthzRoleForm}}
+<div class="ui segment">
+ {{if $form.ReadOnly}}<div class="ui info message">{{ctx.Locale.Tr "admin.enterprise_authz.read_only"}}</div>{{end}}
+ <form class="ui form" method="post" action="{{.AuthzBase}}/roles/{{if $form.ID}}{{$form.ID}}{{else}}new{{end}}" data-authz-role-form>
+  <input type="hidden" name="authz_csrf" value="{{.AuthzCSRF}}">
+  <input type="hidden" name="expected_revision" value="{{$form.ExpectedRevision}}">
+  <input type="hidden" name="copy_from_role_id" value="{{$form.CopyFromRoleID}}">
+  <input type="hidden" name="permission_count" value="{{len $form.Permissions}}">
+  <fieldset {{if $form.ReadOnly}}disabled{{end}}>
+   <div class="field"><label for="authz-role-name">{{ctx.Locale.Tr "admin.enterprise_authz.name"}}</label><input id="authz-role-name" name="name" value="{{$form.Name}}" maxlength="256" required></div>
+   <div class="field"><label for="authz-role-description">{{ctx.Locale.Tr "admin.enterprise_authz.description"}}</label><textarea id="authz-role-description" name="description" rows="3" maxlength="4096">{{$form.Description}}</textarea></div>
+   <div class="field"><label for="authz-permissions-mode">{{ctx.Locale.Tr "admin.enterprise_authz.permissions_mode"}}</label><select id="authz-permissions-mode" name="permissions_mode"><option value="replace" {{if eq $form.Mode "replace"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.replace"}}</option><option value="unchanged" {{if eq $form.Mode "unchanged"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.unchanged"}}</option></select></div>
+   <p>{{ctx.Locale.Tr "admin.enterprise_authz.permission_help"}}</p><p>{{ctx.Locale.Tr "admin.enterprise_authz.condition_limits"}}</p>
+   <div data-authz-permissions>
+    {{range $index,$row := $form.Permissions}}{{template "admin/enterpriseauthz/permission-row" (dict "Index" $index "Row" $row "Actions" $.AuthzActions "Sources" $.AuthzSources)}}{{end}}
+   </div>
+   <button class="ui button" type="button" data-authz-add-permission>{{ctx.Locale.Tr "admin.enterprise_authz.add_permission"}}</button>
+   <div class="tw-mt-4"><button class="ui primary button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.save"}}</button> <a class="ui button" href="{{.AuthzBase}}/roles">{{ctx.Locale.Tr "admin.enterprise_authz.cancel"}}</a></div>
+  </fieldset>
+ </form>
+ {{if $form.ID}}
+  <div class="flex-text-inline tw-mt-4"><a class="ui button" href="{{.AuthzBase}}/roles/new?copy_from={{$form.ID}}">{{ctx.Locale.Tr "admin.enterprise_authz.copy"}}</a><a href="{{.AuthzBase}}/roles/{{$form.ID}}">{{ctx.Locale.Tr "admin.enterprise_authz.reload"}}</a></div>
+  {{if not $form.ReadOnly}}<form class="ui form tw-mt-4" method="post" action="{{.AuthzBase}}/roles/{{$form.ID}}/delete"><input type="hidden" name="authz_csrf" value="{{.AuthzCSRF}}"><input type="hidden" name="expected_revision" value="{{$form.ExpectedRevision}}"><div class="field"><label><input type="checkbox" name="confirm" value="yes" required> {{ctx.Locale.Tr "admin.enterprise_authz.confirm_delete"}}</label></div><button class="ui red button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.delete"}}</button></form>{{end}}
+ {{end}}
+</div>
+<details class="ui segment"><summary>{{ctx.Locale.Tr "admin.enterprise_authz.catalog"}}</summary><table class="ui table"><thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.unit"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.risk"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.observed"}}</th></tr></thead><tbody>{{range .AuthzActions}}<tr><td><code>{{.Key}}</code> — {{.Description}}</td><td>{{range .Units}}{{.}} {{else}}{{ctx.Locale.Tr "admin.enterprise_authz.no_unit"}}{{end}}{{if .Units}}{{if .UnitsAny}} ({{ctx.Locale.Tr "admin.enterprise_authz.units_any"}}){{else}} ({{ctx.Locale.Tr "admin.enterprise_authz.units_all"}}){{end}}{{end}}</td><td>{{call $.AuthzLabel .Risk}}</td><td>{{if .Observed}}{{call $.AuthzLabel "observed"}}{{else}}{{call $.AuthzLabel "not_observed"}}{{end}}</td></tr>{{end}}</tbody></table></details>
+<template data-authz-permission-template>{{template "admin/enterpriseauthz/permission-row" (dict "Index" 0 "Row" .AuthzEmptyPermission "Actions" .AuthzActions "Sources" .AuthzSources)}}</template>
+{{template "admin/enterpriseauthz/foot" .}}
+
+{{define "admin/enterpriseauthz/permission-row"}}
+{{$i := .Index}}{{$row := .Row}}
+<fieldset class="ui segment" data-authz-permission>
+ <div class="field"><label for="authz-permission-{{$i}}-action">{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</label><select id="authz-permission-{{$i}}-action" name="permission_{{$i}}_action" data-authz-field="action" required><option value="">—</option>{{range .Actions}}<option value="{{.Key}}" {{if eq $row.Action .Key}}selected{{end}}>{{.Key}} — {{.Description}}</option>{{end}}</select></div>
+ <div class="field"><label for="authz-permission-{{$i}}-branch">{{ctx.Locale.Tr "admin.enterprise_authz.branch_patterns"}}</label><textarea id="authz-permission-{{$i}}-branch" name="permission_{{$i}}_branch" data-authz-field="branch" rows="2" maxlength="8192">{{$row.Branch}}</textarea></div>
+ <div class="field"><label for="authz-permission-{{$i}}-paths">{{ctx.Locale.Tr "admin.enterprise_authz.path_patterns"}}</label><textarea id="authz-permission-{{$i}}-paths" name="permission_{{$i}}_paths" data-authz-field="paths" rows="2" maxlength="8192">{{$row.Paths}}</textarea></div>
+ <div class="field"><label for="authz-permission-{{$i}}-sources">{{ctx.Locale.Tr "admin.enterprise_authz.sources"}}</label><textarea id="authz-permission-{{$i}}-sources" name="permission_{{$i}}_sources" data-authz-field="sources" rows="2" maxlength="8192">{{$row.Sources}}</textarea><div class="flex-text-inline tw-flex-wrap">{{range .Sources}}<button type="button" class="ui mini button" data-authz-source="{{.}}">{{call ctx.RootData.AuthzLabel .}}</button>{{end}}</div></div>
+ <button class="ui button" type="button" data-authz-remove-permission>{{ctx.Locale.Tr "admin.enterprise_authz.remove_permission"}}</button>
+</fieldset>
+{{end}}

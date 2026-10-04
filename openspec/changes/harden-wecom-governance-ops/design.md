@@ -50,6 +50,8 @@
 
 2026-09-30 用户确认当前系统只部署 PostgreSQL：本 change 的迁移、lease/receipt、发布与 quota 验收只要求 PostgreSQL，不要求 MySQL/MSSQL 适配。保留 SQLite 既有测试以及 Gitea 通用数据库分支；数据库范围调整不豁免 callback 协议、认证或恢复演练。
 
+2026-09-30 用户进一步确认服务端永久仅部署 Linux，不考虑 Windows 服务端。Windows 原生 SSPI 执行不再是验收门槛，不等待 Windows runner；保留原生认证安全检查与无关的上游兼容代码，Windows 客户端仍可访问 Linux 服务端。当前采用登录管理员权限刷新 + 定时完整同步，callback 保持关闭；真实协议验证保留为独立启用 gate，不阻断后续 shadow 实施。
+
 备选：继续唯一组织推断或同时配置名称 → 容易错误目标或改名失效；只替换 quota 常量 → 并发可突破边界，不能满足配置限制。
 
 ### 2. 单一 callback 路由，不复用 OAuth callback

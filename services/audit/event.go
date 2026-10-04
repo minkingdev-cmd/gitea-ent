@@ -5,6 +5,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	audit_model "gitea.dev/models/audit"
@@ -23,6 +24,7 @@ type RecordParams struct {
 	ActorCredential string
 	Impersonator    *audit_model.EntityRef
 	Scope           audit_model.EntityRef
+	TimestampUnix   timeutil.TimeStamp
 	Metadata        map[string]any
 }
 
@@ -54,6 +56,18 @@ func SetRequestInfo(store reqctx.RequestDataStore, origin audit_model.Origin, ip
 	store.SetContextValue(requestInfoContextKey, &requestInfo{origin: origin, ipAddress: ipAddress})
 }
 
+func CopyAttribution(target, source context.Context) context.Context {
+	for _, key := range []any{requestInfoContextKey, originContextKey, impersonatorContextKey} {
+		if value := source.Value(key); value != nil {
+			target = context.WithValue(target, key, value)
+		}
+	}
+	if impersonator := ImpersonatorFromContext(source); impersonator != nil {
+		target = WithImpersonator(target, impersonator)
+	}
+	return target
+}
+
 func requestInfoFromContext(ctx context.Context) *requestInfo {
 	info, _ := ctx.Value(requestInfoContextKey).(*requestInfo)
 	return info
@@ -74,6 +88,9 @@ func buildEvent(ctx context.Context, params RecordParams) *audit_model.Event {
 		Origin:          getOrigin(ctx),
 		TimestampUnix:   timeutil.TimeStamp(time.Now().Unix()),
 	}
+	if params.TimestampUnix != 0 {
+		e.TimestampUnix = params.TimestampUnix
+	}
 	if params.Impersonator != nil {
 		e.ImpersonatorID = params.Impersonator.ID
 		e.ImpersonatorName = params.Impersonator.DisplayName()
@@ -86,6 +103,10 @@ func getIPAddress(ctx context.Context) string {
 		return info.ipAddress
 	}
 	return ""
+}
+
+func OriginFromContext(ctx context.Context) audit_model.Origin {
+	return getOrigin(ctx)
 }
 
 func getOrigin(ctx context.Context) audit_model.Origin {
@@ -125,6 +146,17 @@ func RecordAs(ctx context.Context, doer *user_model.User, action audit_model.Act
 		Scope:           scopeRef(scope),
 		Metadata:        metaPairs(metadata...),
 	})
+}
+
+func RecordEvent(ctx context.Context, params RecordParams) error {
+	if !setting.AuditRecordEnabled() {
+		return errors.New("audit_recording_disabled")
+	}
+	err := audit_model.InsertEvent(ctx, buildEvent(ctx, params))
+	if state, ok := ctx.Value(requiredPersistenceKey{}).(*requiredPersistenceState); ok && state.err == nil {
+		state.err = err
+	}
+	return err
 }
 
 type (
@@ -183,4 +215,27 @@ func metaPairs(pairs ...any) map[string]any {
 		m[key] = pairs[i+1]
 	}
 	return m
+}
+
+type Attribution struct {
+	Origin         audit_model.Origin `json:"origin"`
+	IPAddress      string             `json:"ip_address,omitempty"`
+	ImpersonatorID int64              `json:"impersonator_id,omitempty"`
+}
+
+func AttributionFromContext(ctx context.Context) Attribution {
+	result := Attribution{Origin: getOrigin(ctx), IPAddress: getIPAddress(ctx)}
+	if impersonator := ImpersonatorFromContext(ctx); impersonator != nil {
+		result.ImpersonatorID = impersonator.ID
+	}
+	return result
+}
+
+func WithAttribution(ctx context.Context, attribution Attribution) context.Context {
+	ctx = context.WithValue(ctx, requestInfoContextKey, &requestInfo{origin: attribution.Origin, ipAddress: attribution.IPAddress})
+	ctx = context.WithValue(ctx, originContextKey, attribution.Origin)
+	if attribution.ImpersonatorID != 0 {
+		ctx = WithImpersonator(ctx, &user_model.User{ID: attribution.ImpersonatorID})
+	}
+	return ctx
 }

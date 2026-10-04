@@ -4,6 +4,8 @@
 
 OpenSpec apply 当前为 **47/49**，剩余 2 项保留未勾选；不归档。
 
+2026-09-30 最新范围决定：服务端永久仅部署 Linux，Windows 服务端及其原生 SSPI 测试不属于支持或验收范围，不再等待 Windows runner，也不阻塞后续 shadow 实施。下文 Windows 缺口描述保留为历史证据，不代表当前验收要求，范围调整不代表补跑通过。用户同时确认采用登录管理员权限刷新 + 定时完整同步、callback 保持关闭；真实 callback 协议证据仅作为独立启用 gate。本次仅同步文档，不新增运行验证或勾选前置任务。
+
 2026-09-30 用户明确当前系统仅需 PostgreSQL；本次同步 proposal/design/tasks/runbook 的数据库范围，MySQL/MSSQL 不再是适配或验收要求。保留 Gitea 通用数据库分支与 SQLite 快速测试，不将范围调整描述为其他数据库已通过。
 
 已落地显式组织/quota、generated 来源迁移、统一原子发布与 DB lease/fencing、默认关闭的加密 callback、持久 receipt/worker、mapping GET/410 契约、证据脱敏和上线恢复 runbook。

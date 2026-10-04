@@ -20,10 +20,12 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	"gitea.dev/modules/base"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/glob"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/repo"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
@@ -111,6 +113,7 @@ func SettingsProtectedBranch(c *context.Context) {
 
 // SettingsProtectedBranchPost updates the protected branch settings
 func SettingsProtectedBranchPost(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageBranchProtection)()
 	f := web.GetForm[*forms.ProtectBranchForm](ctx)
 	var protectBranch *git_model.ProtectedBranch
 	if f.RuleName == "" {
@@ -159,6 +162,10 @@ func SettingsProtectedBranchPost(ctx *context.Context) {
 			RepoID:   ctx.Repo.Repository.ID,
 			RuleName: f.RuleName,
 		}
+	}
+
+	if f.EnableStatusCheck || f.StatusCheckContexts != "" || protectBranch.EnableStatusCheck || len(protectBranch.StatusCheckContexts) > 0 {
+		defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	}
 
 	var whitelistUsers, whitelistTeams, forcePushAllowlistUsers, forcePushAllowlistTeams, mergeWhitelistUsers, mergeWhitelistTeams, approvalsWhitelistUsers, approvalsWhitelistTeams, bypassAllowlistUsers, bypassAllowlistTeams []int64
@@ -301,12 +308,15 @@ func SettingsProtectedBranchPost(ctx *context.Context) {
 		audit.Record(ctx, audit_model.RepositoryBranchProtectionUpdate, ctx.Repo.Repository, "rule", protectBranch.RuleName)
 	}
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageBranchProtection)
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("repo.settings.update_protect_branch_success", protectBranch.RuleName))
 	ctx.Redirect(fmt.Sprintf("%s/settings/branches?rule_name=%s", ctx.Repo.RepoLink, protectBranch.RuleName))
 }
 
 // DeleteProtectedBranchRulePost delete protected branch rule by id
 func DeleteProtectedBranchRulePost(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageBranchProtection)()
 	ruleID := ctx.PathParamInt64("id")
 	if ruleID <= 0 {
 		ctx.Flash.Error(ctx.Tr("repo.settings.remove_protected_branch_failed", strconv.FormatInt(ruleID, 10)))
@@ -327,6 +337,10 @@ func DeleteProtectedBranchRulePost(ctx *context.Context) {
 		return
 	}
 
+	if rule.EnableStatusCheck || len(rule.StatusCheckContexts) > 0 {
+		defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
+	}
+
 	if err := git_model.DeleteProtectedBranch(ctx, ctx.Repo.Repository, ruleID); err != nil {
 		ctx.Flash.Error(ctx.Tr("repo.settings.remove_protected_branch_failed", rule.RuleName))
 		ctx.JSONRedirect(ctx.Repo.RepoLink + "/settings/branches")
@@ -335,11 +349,14 @@ func DeleteProtectedBranchRulePost(ctx *context.Context) {
 
 	audit.Record(ctx, audit_model.RepositoryBranchProtectionRemove, ctx.Repo.Repository, "rule", rule.RuleName)
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageBranchProtection)
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("repo.settings.remove_protected_branch_success", rule.RuleName))
 	ctx.JSONRedirect(ctx.Repo.RepoLink + "/settings/branches")
 }
 
 func UpdateBranchProtectionPriories(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageBranchProtection)()
 	var form struct {
 		IDs []int64 `json:"ids"`
 	}
@@ -351,6 +368,7 @@ func UpdateBranchProtectionPriories(ctx *context.Context) {
 		ctx.ServerError("UpdateProtectBranchPriorities", err)
 		return
 	}
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageBranchProtection)
 }
 
 // RenameBranchPost responses for rename a branch

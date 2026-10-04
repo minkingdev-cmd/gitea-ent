@@ -455,6 +455,119 @@
         },
         "description": "EmptyRepository"
       },
+      "EnterpriseAuthzActionCatalog": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseAuthzActionCatalog"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzActionCatalog"
+      },
+      "EnterpriseAuthzBindingList": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "items": {
+                "$ref": "#/components/schemas/EnterpriseAuthzBinding"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzBindingList",
+        "headers": {
+          "X-Total-Count": {
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "EnterpriseAuthzDecision": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseAuthzDecision"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzDecision"
+      },
+      "EnterpriseAuthzDecisionList": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "items": {
+                "$ref": "#/components/schemas/EnterpriseAuthzDecision"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzDecisionList",
+        "headers": {
+          "X-Total-Count": {
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "EnterpriseAuthzDiagnostic": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseAuthzDiagnostic"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzDiagnostic"
+      },
+      "EnterpriseAuthzEffectivePermissions": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseAuthzEffectivePermissions"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzEffectivePermissions"
+      },
+      "EnterpriseAuthzRole": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseAuthzRole"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzRole"
+      },
+      "EnterpriseAuthzRoleList": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "items": {
+                "$ref": "#/components/schemas/EnterpriseAuthzRole"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "description": "EnterpriseAuthzRoleList",
+        "headers": {
+          "X-Total-Count": {
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        }
+      },
       "EnterpriseWeComAuthzMapping": {
         "content": {
           "application/json": {
@@ -4031,6 +4144,36 @@
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
+      "CreateEnterpriseAuthzRoleOption": {
+        "properties": {
+          "copy_from_role_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "CopyFromRoleID"
+          },
+          "description": {
+            "type": "string",
+            "x-go-name": "Description"
+          },
+          "name": {
+            "type": "string",
+            "x-go-name": "Name"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzPermission"
+            },
+            "type": "array",
+            "x-go-name": "Permissions"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateEnterpriseAuthzRoleOption permissions 省略时复制源权限，否则使用显式集合。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
       "CreateFileOptions": {
         "description": "CreateFileOptions options for creating a file\nNote: `author` and `committer` are optional (if only one is given, it will be used for the other, otherwise the authenticated user will be used)",
         "properties": {
@@ -5533,6 +5676,33 @@
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
+      "EditEnterpriseAuthzRoleOption": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "x-go-name": "Description"
+          },
+          "expected_revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ExpectedRevision"
+          },
+          "name": {
+            "type": "string",
+            "x-go-name": "Name"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzPermission"
+            },
+            "type": "array",
+            "x-go-name": "Permissions"
+          }
+        },
+        "title": "EditEnterpriseAuthzRoleOption 省略 permissions 保持原集合，空数组清空。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
       "EditGitHookOption": {
         "description": "EditGitHookOption options when modifying one Git hook",
         "properties": {
@@ -6396,6 +6566,630 @@
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
+      "EnterpriseAuthzAction": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "x-go-name": "Description"
+          },
+          "key": {
+            "type": "string",
+            "x-go-name": "Key"
+          },
+          "mutating": {
+            "type": "boolean",
+            "x-go-name": "Mutating"
+          },
+          "observed": {
+            "type": "boolean",
+            "x-go-name": "Observed"
+          },
+          "risk": {
+            "type": "string",
+            "x-go-name": "Risk"
+          },
+          "units": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "Units"
+          },
+          "units_any": {
+            "type": "boolean",
+            "x-go-name": "UnitsAny"
+          }
+        },
+        "title": "EnterpriseAuthzAction 描述 action，不因此实现 feature grant 或安全守卫。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzActionCatalog": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzAction"
+            },
+            "type": "array",
+            "x-go-name": "Actions"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Version"
+          }
+        },
+        "title": "EnterpriseAuthzActionCatalog 是不可修改的 action 目录。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzBinding": {
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-name": "Created"
+          },
+          "created_by": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "CreatedBy"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          },
+          "role_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "RoleID"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/EnterpriseAuthzScope"
+          },
+          "scope_owner_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ScopeOwnerID"
+          },
+          "subject_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "SubjectID"
+          },
+          "subject_type": {
+            "type": "string",
+            "x-go-name": "SubjectType"
+          }
+        },
+        "title": "EnterpriseAuthzBinding 保留旧 owner 绑定以便显式解除，不代表其仍生效。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzBindingReference": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          }
+        },
+        "title": "EnterpriseAuthzBindingReference 不包含主体详情。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzCondition": {
+        "properties": {
+          "branch_pattern": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "BranchPattern"
+          },
+          "path_pattern": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "PathPattern"
+          },
+          "request_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "RequestSources"
+          }
+        },
+        "title": "EnterpriseAuthzCondition 有界 glob 条件，字段间 AND，候选间 OR，路径须全部匹配。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzConditionResult": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "x-go-name": "Action"
+          },
+          "binding_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "BindingID"
+          },
+          "condition_hash": {
+            "type": "string",
+            "x-go-name": "ConditionHash"
+          },
+          "effect": {
+            "type": "string",
+            "x-go-name": "Effect"
+          },
+          "result": {
+            "type": "string",
+            "x-go-name": "Result"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Revision"
+          },
+          "role_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "RoleID"
+          }
+        },
+        "title": "EnterpriseAuthzConditionResult 仅返回条件指纹和匹配结果，不返回路径或模式。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzCredentialCeiling": {
+        "properties": {
+          "native_only": {
+            "type": "boolean",
+            "x-go-name": "NativeOnly"
+          },
+          "read": {
+            "type": "boolean",
+            "x-go-name": "Read"
+          },
+          "write": {
+            "type": "boolean",
+            "x-go-name": "Write"
+          }
+        },
+        "title": "EnterpriseAuthzCredentialCeiling 不返回凭据引用或内容。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzDecision": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "x-go-name": "Action"
+          },
+          "actor_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ActorID"
+          },
+          "candidate_decision": {
+            "type": "string",
+            "x-go-name": "CandidateDecision"
+          },
+          "candidate_only": {
+            "type": "boolean",
+            "x-go-name": "CandidateOnly"
+          },
+          "created": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-name": "Created"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          },
+          "missing_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "MissingActions"
+          },
+          "native_outcome": {
+            "type": "string",
+            "x-go-name": "NativeOutcome"
+          },
+          "native_stage": {
+            "type": "string",
+            "x-go-name": "NativeStage"
+          },
+          "observation_id": {
+            "type": "string",
+            "x-go-name": "ObservationID"
+          },
+          "operation_id": {
+            "type": "string",
+            "x-go-name": "OperationID"
+          },
+          "owner_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "OwnerID"
+          },
+          "reason": {
+            "type": "string",
+            "x-go-name": "Reason"
+          },
+          "repo_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "RepoID"
+          },
+          "request_source": {
+            "type": "string",
+            "x-go-name": "RequestSource"
+          },
+          "safety_guards_evaluated": {
+            "type": "boolean",
+            "x-go-name": "SafetyGuardsEvaluated"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/EnterpriseAuthzDecisionSnapshot"
+          }
+        },
+        "title": "EnterpriseAuthzDecision 是真实操作 shadow 证据，candidate 不影响原生操作。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzDecisionSnapshot": {
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "x-go-name": "Archived"
+          },
+          "branch_known": {
+            "type": "boolean",
+            "x-go-name": "BranchKnown"
+          },
+          "catalog_version": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "CatalogVersion"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzConditionResult"
+            },
+            "type": "array",
+            "x-go-name": "Conditions"
+          },
+          "credential_ceiling": {
+            "$ref": "#/components/schemas/EnterpriseAuthzCredentialCeiling"
+          },
+          "native_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "NativeActions"
+          },
+          "native_mode": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "NativeMode"
+          },
+          "path_count": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "PathCount"
+          },
+          "paths_complete": {
+            "type": "boolean",
+            "x-go-name": "PathsComplete"
+          },
+          "role_eligible": {
+            "type": "boolean",
+            "x-go-name": "RoleEligible"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzRoleRevision"
+            },
+            "type": "array",
+            "x-go-name": "Roles"
+          },
+          "unit_modes": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzUnitMode"
+            },
+            "type": "array",
+            "x-go-name": "UnitModes"
+          }
+        },
+        "title": "EnterpriseAuthzDecisionSnapshot 是当时的安全权限摘要，不读取当前角色解释历史。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzDiagnostic": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "x-go-name": "Action"
+          },
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzBindingReference"
+            },
+            "type": "array",
+            "x-go-name": "Bindings"
+          },
+          "candidate_decision": {
+            "type": "string",
+            "x-go-name": "CandidateDecision"
+          },
+          "candidate_only": {
+            "type": "boolean",
+            "x-go-name": "CandidateOnly"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzConditionResult"
+            },
+            "type": "array",
+            "x-go-name": "Conditions"
+          },
+          "matched_binding_ids": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array",
+            "x-go-name": "MatchedBindingIDs"
+          },
+          "matched_role_ids": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array",
+            "x-go-name": "MatchedRoleIDs"
+          },
+          "missing_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "MissingActions"
+          },
+          "native_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "NativeActions"
+          },
+          "reason": {
+            "type": "string",
+            "x-go-name": "Reason"
+          },
+          "role_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "RoleActions"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzRoleRevision"
+            },
+            "type": "array",
+            "x-go-name": "Roles"
+          },
+          "safety_guards_evaluated": {
+            "type": "boolean",
+            "x-go-name": "SafetyGuardsEvaluated"
+          }
+        },
+        "title": "EnterpriseAuthzDiagnostic 只诊断 action，不是真实操作决策。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzEffectivePermissions": {
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzBindingReference"
+            },
+            "type": "array",
+            "x-go-name": "Bindings"
+          },
+          "candidate_only": {
+            "type": "boolean",
+            "x-go-name": "CandidateOnly"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzConditionResult"
+            },
+            "type": "array",
+            "x-go-name": "Conditions"
+          },
+          "native_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "NativeActions"
+          },
+          "reason": {
+            "type": "string",
+            "x-go-name": "Reason"
+          },
+          "role_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "RoleActions"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzRoleRevision"
+            },
+            "type": "array",
+            "x-go-name": "Roles"
+          },
+          "safety_guards_evaluated": {
+            "type": "boolean",
+            "x-go-name": "SafetyGuardsEvaluated"
+          },
+          "unresolved_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "UnresolvedActions"
+          }
+        },
+        "title": "EnterpriseAuthzEffectivePermissions 不执行操作，不计算完整 merge/branch gate。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzPermission": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "x-go-name": "Action"
+          },
+          "condition": {
+            "$ref": "#/components/schemas/EnterpriseAuthzCondition"
+          },
+          "effect": {
+            "type": "string",
+            "x-go-name": "Effect"
+          }
+        },
+        "required": [
+          "action",
+          "effect"
+        ],
+        "title": "EnterpriseAuthzPermission 仅支持 allow；condition 省略表示无条件。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzRole": {
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-name": "Created"
+          },
+          "created_by": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "CreatedBy"
+          },
+          "description": {
+            "type": "string",
+            "x-go-name": "Description"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          },
+          "is_builtin": {
+            "type": "boolean",
+            "x-go-name": "IsBuiltin"
+          },
+          "key": {
+            "type": "string",
+            "x-go-name": "Key"
+          },
+          "name": {
+            "type": "string",
+            "x-go-name": "Name"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAuthzPermission"
+            },
+            "type": "array",
+            "x-go-name": "Permissions"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Revision"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/EnterpriseAuthzScope"
+          },
+          "updated": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-name": "Updated"
+          }
+        },
+        "title": "EnterpriseAuthzRole 是有权管理者可见的角色定义。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzRoleRevision": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Revision"
+          }
+        },
+        "title": "EnterpriseAuthzRoleRevision 不包含角色名称、描述或其他主体。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzScope": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          },
+          "type": {
+            "type": "string",
+            "x-go-name": "Type"
+          }
+        },
+        "title": "EnterpriseAuthzScope 由服务器根据 URL 确定。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseAuthzUnitMode": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "x-go-name": "Key"
+          },
+          "mode": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Mode"
+          }
+        },
+        "title": "EnterpriseAuthzUnitMode 是原生 unit 权限快照。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
       "EnterpriseWeComAuthzMapping": {
         "properties": {
           "active": {
@@ -6450,6 +7244,33 @@
           }
         },
         "title": "EnterpriseWeComAuthzMapping represents an Enterprise WeCom authorization mapping.",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EvaluateEnterpriseAuthzOption": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "x-go-name": "Action"
+          },
+          "branch": {
+            "type": "string",
+            "x-go-name": "Branch"
+          },
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "Paths"
+          },
+          "user_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "UserID"
+          }
+        },
+        "title": "EvaluateEnterpriseAuthzOption source 固定 diagnostic；paths 需完整，省略表示未知。",
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
@@ -9340,6 +10161,27 @@
             "x-go-name": "SyncOnCommit"
           }
         },
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "PutEnterpriseAuthzBindingOption": {
+        "properties": {
+          "role_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "RoleID"
+          },
+          "subject_id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "SubjectID"
+          },
+          "subject_type": {
+            "type": "string",
+            "x-go-name": "SubjectType"
+          }
+        },
+        "title": "PutEnterpriseAuthzBindingOption repo 不是授权主体。",
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
@@ -12582,6 +13424,558 @@
         ]
       }
     },
+    "/enterprise/authz/actions": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemActions",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzActionCatalog"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization Actions",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/enterprise/authz/bindings": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemListBindings",
+        "parameters": [
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzBindingList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization ListBindings",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "put": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemPutBinding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutEnterpriseAuthzBindingOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization PutBinding",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/enterprise/authz/bindings/{id}": {
+      "delete": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemDeleteBinding",
+        "parameters": [
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization DeleteBinding",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/enterprise/authz/decisions": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemListDecisions",
+        "parameters": [
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Actor filter, including anonymous 0 and native synthetic actors",
+            "in": "query",
+            "name": "actor_id",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Repository filter cannot expand the authorized scope",
+            "in": "query",
+            "name": "repo_id",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Stable action key",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "allow, deny or error",
+            "in": "query",
+            "name": "decision",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive Unix timestamp in seconds",
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive Unix timestamp in seconds",
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzDecisionList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization ListDecisions",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/enterprise/authz/decisions/{id}": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemGetDecision",
+        "parameters": [
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzDecision"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization GetDecision",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/enterprise/authz/roles": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemListRoles",
+        "parameters": [
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRoleList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization ListRoles",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "post": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemCreateRole",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnterpriseAuthzRoleOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization CreateRole",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/enterprise/authz/roles/{id}": {
+      "delete": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemDeleteRole",
+        "parameters": [
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Current revision; missing or stale revision returns 409",
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization DeleteRole",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemGetRole",
+        "parameters": [
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization GetRole",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "patch": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzSystemUpdateRole",
+        "parameters": [
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditEnterpriseAuthzRoleOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "System enterprise authorization UpdateRole",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
     "/enterprise/wecom/mappings": {
       "get": {
         "operationId": "enterpriseWeComAuthzMappingList",
@@ -14374,6 +15768,622 @@
         "summary": "Block a user",
         "tags": [
           "organization"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/bindings": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgListBindings",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzBindingList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization ListBindings",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "put": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgPutBinding",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutEnterpriseAuthzBindingOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization PutBinding",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/bindings/{id}": {
+      "delete": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgDeleteBinding",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization DeleteBinding",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/decisions": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgListDecisions",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Actor filter, including anonymous 0 and native synthetic actors",
+            "in": "query",
+            "name": "actor_id",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Repository filter cannot expand the authorized scope",
+            "in": "query",
+            "name": "repo_id",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Stable action key",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "allow, deny or error",
+            "in": "query",
+            "name": "decision",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive Unix timestamp in seconds",
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive Unix timestamp in seconds",
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzDecisionList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization ListDecisions",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/decisions/{id}": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgGetDecision",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzDecision"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization GetDecision",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/roles": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgListRoles",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRoleList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization ListRoles",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "post": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgCreateRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnterpriseAuthzRoleOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization CreateRole",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/roles/{id}": {
+      "delete": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgDeleteRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Current revision; missing or stale revision returns 409",
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization DeleteRole",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgGetRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization GetRole",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "patch": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzOrgUpdateRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditEnterpriseAuthzRoleOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Org enterprise authorization UpdateRole",
+        "tags": [
+          "enterprise"
         ]
       }
     },
@@ -21742,6 +23752,833 @@
         "summary": "Get the EditorConfig definitions of a file in a repository",
         "tags": [
           "repository"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/bindings": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoListBindings",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzBindingList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization ListBindings",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "put": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoPutBinding",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutEnterpriseAuthzBindingOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization PutBinding",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/bindings/{id}": {
+      "delete": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoDeleteBinding",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization DeleteBinding",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/decisions": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoListDecisions",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Actor filter, including anonymous 0 and native synthetic actors",
+            "in": "query",
+            "name": "actor_id",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Repository filter cannot expand the authorized scope",
+            "in": "query",
+            "name": "repo_id",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Stable action key",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "allow, deny or error",
+            "in": "query",
+            "name": "decision",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive Unix timestamp in seconds",
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive Unix timestamp in seconds",
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzDecisionList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization ListDecisions",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/decisions/{id}": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoGetDecision",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzDecision"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization GetDecision",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/effective-permissions": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoEffectivePermissions",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to self; another user requires native repository management authority",
+            "in": "query",
+            "name": "user_id",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzEffectivePermissions"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization EffectivePermissions",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/evaluate": {
+      "post": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoEvaluate",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateEnterpriseAuthzOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzDiagnostic"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization Evaluate",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/roles": {
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoListRoles",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page number, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, maximum 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRoleList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization ListRoles",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "post": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoCreateRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnterpriseAuthzRoleOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization CreateRole",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/roles/{id}": {
+      "delete": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoDeleteRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Current revision; missing or stale revision returns 409",
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/empty"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization DeleteRole",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "get": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoGetRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization GetRole",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "patch": {
+        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "operationId": "enterpriseAuthzRepoUpdateRole",
+        "parameters": [
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource resolved by the server",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identifier within the authorized scope",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditEnterpriseAuthzRoleOption"
+              }
+            }
+          },
+          "description": "Strict JSON object, unknown/duplicate/null fields rejected; maximum 1 MiB. Conditions are bounded to 8 KiB, permissions to 128, and diagnostic paths to 1024.",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseAuthzRole"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "Revision conflict, immutable built-in, duplicate name or referenced role"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Repo enterprise authorization UpdateRole",
+        "tags": [
+          "enterprise"
         ]
       }
     },

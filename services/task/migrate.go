@@ -13,15 +13,18 @@ import (
 	"gitea.dev/models/db"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/migration"
 	"gitea.dev/modules/process"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/structs"
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/migrations"
 	notify_service "gitea.dev/services/notify"
 )
@@ -46,7 +49,26 @@ func handleCreateError(owner *user_model.User, err error) error {
 }
 
 func runMigrateTask(ctx context.Context, t *admin_model.Task) (err error) {
+	var operation *authz_service.HookOperation
+	observationCtx := ctx
+	var observation *authz_service.Observation
+	if setting.EnterpriseAuthz.Enabled {
+		var payload struct {
+			AuthzOperation authz.HookOperationTicket `json:"authz_operation"`
+		}
+		if len(t.PayloadContent) > authz.MaxSnapshotBytes || json.Unmarshal([]byte(t.PayloadContent), &payload) != nil {
+			authz_service.MigrationObservationPersistenceGap(t.RepoID)
+		} else if payload.AuthzOperation != "" {
+			observationCtx, operation = authz_service.RestoreHookOperation(ctx, payload.AuthzOperation, t.RepoID, t.DoerID, "")
+		}
+	}
+
 	defer func(ctx context.Context) {
+		defer func() {
+			outcome := authz_service.MigrationNativeOutcome(err)
+			observation.Finish(authz_service.DetachedObservationContext(ctx, observationCtx), outcome, authz_service.StageMigration)
+			authz_service.CompleteHookObservation(authz_service.DetachedObservationContext(ctx, observationCtx), operation, authz.Migrate, "", outcome, authz_service.StageMigration)
+		}()
 		if e := recover(); e != nil {
 			err = fmt.Errorf("PANIC whilst trying to do migrate task: %v", e)
 			log.Error("PANIC during runMigrateTask[%d] by DoerID[%d] to RepoID[%d] for OwnerID[%d]: %v\nStacktrace: %v", t.ID, t.DoerID, t.RepoID, t.OwnerID, e, log.Stack(2))
@@ -97,9 +119,14 @@ func runMigrateTask(ctx context.Context, t *admin_model.Task) (err error) {
 
 	opts.MigrateToRepoID = t.RepoID
 
+	if opts.AuthzOperation == "" {
+		observationCtx, observation = authz_service.WithMigrationTargetObservation(ctx, t.Doer, t.Repo)
+	}
+
 	pm := process.GetManager()
 	ctx, cancel, finished := pm.AddContext(graceful.GetManager().ShutdownContext(), fmt.Sprintf("MigrateTask: %s/%s", t.Owner.Name, opts.RepoName))
 	defer finished()
+	ctx = authz_service.WithManagedMigration(authz_service.DetachedObservationContext(ctx, observationCtx))
 
 	t.StartTime = timeutil.TimeStampNow()
 	t.Status = structs.TaskStatusRunning

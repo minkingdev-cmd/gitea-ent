@@ -12,11 +12,13 @@ import (
 
 	actions_model "gitea.dev/models/actions"
 	"gitea.dev/models/db"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	shared_user "gitea.dev/routers/web/shared/user"
 	"gitea.dev/services/context"
 	"gitea.dev/services/forms"
@@ -229,6 +231,7 @@ func RunnersEdit(ctx *context.Context) {
 }
 
 func RunnersEditPost(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	rCtx, err := getRunnersCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getRunnersCtx", err)
@@ -247,6 +250,7 @@ func RunnersEditPost(ctx *context.Context) {
 		return
 	}
 	if !runner.EditableInContext(ownerID, repoID) {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.NotFound(util.NewPermissionDeniedErrorf("no permission to edit this runner"))
 		return
 	}
@@ -264,11 +268,13 @@ func RunnersEditPost(ctx *context.Context) {
 
 	log.Debug("RunnerDetailsEditPost success: %s", ctx.Req.URL)
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("actions.runners.update_runner_success"))
 	ctx.Redirect(redirectTo)
 }
 
 func ResetRunnerRegistrationToken(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	rCtx, err := getRunnersCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getRunnersCtx", err)
@@ -283,12 +289,14 @@ func ResetRunnerRegistrationToken(ctx *context.Context) {
 		ctx.ServerError("ResetRunnerRegistrationToken", err)
 		return
 	}
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("actions.runners.reset_registration_token_success"))
 	ctx.JSONRedirect(redirectTo)
 }
 
 // RunnerDeletePost response for deleting runner
 func RunnerDeletePost(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	rCtx, err := getRunnersCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getRunnersCtx", err)
@@ -301,6 +309,7 @@ func RunnerDeletePost(ctx *context.Context) {
 	}
 
 	if !runner.EditableInContext(rCtx.OwnerID, rCtx.RepoID) {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.NotFound(util.NewPermissionDeniedErrorf("no permission to delete this runner"))
 		return
 	}
@@ -318,12 +327,14 @@ func RunnerDeletePost(ctx *context.Context) {
 
 	log.Info("DeleteRunnerPost success: %s", ctx.Req.URL)
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("actions.runners.delete_runner_success"))
 
 	ctx.JSONRedirect(successRedirectTo)
 }
 
 func RunnerUpdatePost(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	rCtx, err := getRunnersCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getRunnersCtx", err)
@@ -336,6 +347,7 @@ func RunnerUpdatePost(ctx *context.Context) {
 	}
 
 	if !runner.EditableInContext(rCtx.OwnerID, rCtx.RepoID) {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.NotFound(util.NewPermissionDeniedErrorf("no permission to edit this runner"))
 		return
 	}
@@ -360,6 +372,7 @@ func RunnerUpdatePost(ctx *context.Context) {
 		return
 	}
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr(successKey))
 	ctx.JSONRedirect("")
 }

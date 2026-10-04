@@ -17,6 +17,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/htmlutil"
 	"gitea.dev/modules/httplib"
@@ -25,6 +26,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/svg"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/feed"
 	"gitea.dev/services/context"
 	repo_service "gitea.dev/services/repository"
@@ -422,12 +424,16 @@ func Home(ctx *context.Context) {
 		return
 	}
 
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
+
 	// Check whether the repo is viewable: not in migration, and the code unit should be enabled
 	// Ideally the "feed" logic should be after this, but old code did so, so keep it as-is.
 	checkHomeCodeViewable(ctx)
 	if ctx.Written() {
 		return
 	}
+
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	title := ctx.Repo.Repository.Owner.Name + "/" + ctx.Repo.Repository.Name
 	if ctx.Repo.Repository.Description != "" {

@@ -8,9 +8,11 @@ import (
 	repo_model "gitea.dev/models/repo"
 	secret_model "gitea.dev/models/secret"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
 	"gitea.dev/services/forms"
@@ -40,6 +42,7 @@ func secretOwnerRepoIDs(owner *user_model.User, repo *repo_model.Repository) (ow
 }
 
 func PerformSecretsPost(ctx *context.Context, owner *user_model.User, repo *repo_model.Repository, redirectURL string) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, repo, &ctx.Repo.Permission, authz.ManageSecret)()
 	form := web.GetForm[*forms.AddSecretForm](ctx)
 	ownerID, repoID := secretOwnerRepoIDs(owner, repo)
 
@@ -55,11 +58,13 @@ func PerformSecretsPost(ctx *context.Context, owner *user_model.User, repo *repo
 	}
 	audit.RecordScoped(ctx, owner, repo, actions, "secret", s.Name)
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageSecret)
 	ctx.Flash.Success(ctx.Tr("secrets.save_success", s.Name))
 	ctx.JSONRedirect(redirectURL)
 }
 
 func PerformSecretsDelete(ctx *context.Context, owner *user_model.User, repo *repo_model.Repository, redirectURL string) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, repo, &ctx.Repo.Permission, authz.ManageSecret)()
 	id := ctx.FormInt64("id")
 	ownerID, repoID := secretOwnerRepoIDs(owner, repo)
 
@@ -72,6 +77,7 @@ func PerformSecretsDelete(ctx *context.Context, owner *user_model.User, repo *re
 
 	audit.RecordScoped(ctx, owner, repo, audit.SecretRemove, "secret", s.Name)
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageSecret)
 	ctx.Flash.Success(ctx.Tr("secrets.deletion.success"))
 	ctx.JSONRedirect(redirectURL)
 }

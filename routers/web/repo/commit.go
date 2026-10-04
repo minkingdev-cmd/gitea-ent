@@ -20,6 +20,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/container"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/fileicon"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/htmlutil"
@@ -28,6 +29,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	asymkey_service "gitea.dev/services/asymkey"
 	"gitea.dev/services/context"
 	git_service "gitea.dev/services/git"
@@ -57,6 +59,7 @@ func RefCommits(ctx *context.Context) {
 
 // Commits render branch's commits
 func Commits(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	ctx.Data["PageIsCommits"] = true
 	if ctx.Repo.Commit == nil {
 		ctx.NotFound(nil)
@@ -104,6 +107,7 @@ func Commits(ctx *context.Context) {
 
 // Graph render commit graph - show commits from all branches.
 func Graph(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	ctx.Data["Title"] = ctx.Tr("repo.commit_graph")
 	ctx.Data["PageIsCommits"] = true
 	ctx.Data["PageIsViewCode"] = true
@@ -185,6 +189,7 @@ func SearchCommits(ctx *context.Context) {
 		ctx.Redirect(ctx.Repo.RepoLink + "/commits/" + ctx.Repo.RefTypeNameSubURL())
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	all := ctx.FormBool("all")
 	opts := git.NewSearchCommitsOptions(query, all)
@@ -213,6 +218,7 @@ func FileHistory(ctx *context.Context) {
 		Commits(ctx)
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	followRename := ctx.FormBool("follow-rename")
 	ctx.Data["ShowFollowRename"] = true
@@ -265,6 +271,7 @@ func FileHistory(ctx *context.Context) {
 }
 
 func LoadBranchesAndTags(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	response, err := repo_service.LoadBranchesAndTags(ctx, ctx.Repo, ctx.PathParam("sha"))
 	if err == nil {
 		ctx.JSON(http.StatusOK, response)
@@ -275,6 +282,9 @@ func LoadBranchesAndTags(ctx *context.Context) {
 
 // Diff show different from current commit to previous commit
 func Diff(ctx *context.Context) {
+	if ctx.Data["PageIsWiki"] == nil {
+		defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
+	}
 	ctx.Data["PageIsDiff"] = true
 
 	userName := ctx.Repo.Owner.Name
@@ -428,6 +438,9 @@ func Diff(ctx *context.Context) {
 
 // RawDiff dumps diff results of repository in given commit ID to io.Writer
 func RawDiff(ctx *context.Context) {
+	if ctx.Data["PageIsWiki"] == nil {
+		defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
+	}
 	var gitRepo *git.Repository
 	if ctx.Data["PageIsWiki"] != nil {
 		wikiRepo, err := git.OpenRepository(ctx, ctx.Repo.Repository.WikiStorageRepo())

@@ -6,12 +6,15 @@ package repo
 import (
 	"net/http"
 
+	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	files_service "gitea.dev/services/repository/files"
 )
 
 // GetTree get the tree of a repository.
 func GetTree(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/trees/{sha} repository GetTree
 	// ---
 	// summary: Gets the tree of a repository.

@@ -9,6 +9,7 @@ import (
 
 	auth_model "gitea.dev/models/auth"
 	git_model "gitea.dev/models/git"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/httpcache"
 	"gitea.dev/modules/httplib"
@@ -97,6 +98,7 @@ func SingleDownload(ctx *context.Context) {
 	if !checkDownloadTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	blob, lastModified := getBlobForEntry(ctx)
 	if blob == nil {
@@ -113,6 +115,7 @@ func SingleDownloadOrLFS(ctx *context.Context) {
 	if !checkDownloadTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	blob, lastModified := getBlobForEntry(ctx)
 	if blob == nil {
@@ -129,6 +132,7 @@ func DownloadByID(ctx *context.Context) {
 	if !checkDownloadTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	blob, err := ctx.Repo.GitRepo.GetBlob(ctx.PathParam("sha"))
 	if err != nil {
@@ -149,6 +153,7 @@ func DownloadByIDOrLFS(ctx *context.Context) {
 	if !checkDownloadTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	blob, err := ctx.Repo.GitRepo.GetBlob(ctx.PathParam("sha"))
 	if err != nil {

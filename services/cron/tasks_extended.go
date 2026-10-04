@@ -8,7 +8,6 @@ import (
 	"time"
 
 	activities_model "gitea.dev/models/activities"
-	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/system"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/git/gitcmd"
@@ -151,7 +150,7 @@ func registerDeleteOldAuditEvents() {
 		},
 		OlderThan: setting.AuditRetentionPeriod(),
 	}, func(ctx context.Context, _ *user_model.User, config *OlderThanConfig) error {
-		return audit_model.DeleteOldEvents(ctx, config.OlderThan)
+		return audit.DeleteOldEvents(ctx, config.OlderThan)
 	})
 }
 

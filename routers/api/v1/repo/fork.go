@@ -13,11 +13,13 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/optional"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	repo_service "gitea.dev/services/repository"
@@ -25,6 +27,7 @@ import (
 
 // ListForks list a repository's forks
 func ListForks(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/forks repository listForks
 	// ---
 	// summary: List a repository's forks

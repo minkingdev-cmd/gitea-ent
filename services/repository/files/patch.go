@@ -162,7 +162,11 @@ func gitPatchPrepare(ctx context.Context, repo *repo_model.Repository, gitRepo *
 }
 
 // ApplyDiffPatch applies a patch to the given repository
-func ApplyDiffPatch(ctx reqctx.RequestContext, repo *repo_model.Repository, doer *user_model.User, opts *ApplyDiffPatchOptions) (*structs.FileResponse, error) {
+func ApplyDiffPatch(ctx reqctx.RequestContext, repo *repo_model.Repository, doer *user_model.User, opts *ApplyDiffPatchOptions) (_ *structs.FileResponse, errRet error) {
+	observationCtx, finishObservation := observeFileMutation(ctx, repo, doer, opts.OldBranch, opts.NewBranch, nil, false)
+	ctx = reqctx.FromContext(observationCtx)
+	defer func() { finishObservation(errRet) }()
+
 	gitRepo, err := git.RepositoryFromRequestContextOrOpen(ctx, repo)
 	if err != nil {
 		return nil, err

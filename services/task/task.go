@@ -11,6 +11,7 @@ import (
 	admin_model "gitea.dev/models/admin"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/log"
@@ -21,6 +22,7 @@ import (
 	"gitea.dev/modules/structs"
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	repo_service "gitea.dev/services/repository"
 )
 
@@ -67,7 +69,18 @@ func MigrateRepository(ctx context.Context, doer, u *user_model.User, opts base.
 }
 
 // CreateMigrateTask creates a migrate task
-func CreateMigrateTask(ctx context.Context, doer, u *user_model.User, opts base.MigrateOptions) (*admin_model.Task, error) {
+func CreateMigrateTask(ctx context.Context, doer, u *user_model.User, opts base.MigrateOptions) (_ *admin_model.Task, retErr error) {
+	ctx = authz_service.WithOperation(authz_service.WithMigrationSource(ctx, "system"))
+	stage, reason := "prepare_task", "task_preparation_failed"
+	targetCreated := false
+	defer func() {
+		if retErr != nil && !targetCreated {
+			if stage == "create_target" {
+				reason = authz_service.MigrationTargetFailureReason(retErr)
+			}
+			authz_service.RecordMigrationFailure(ctx, doer, u.ID, stage, reason)
+		}
+	}()
 	// encrypt credentials for persistence
 	var err error
 	opts.CloneAddrEncrypted, err = secret.EncryptSecret(setting.SecretKey, opts.CloneAddr)
@@ -103,10 +116,12 @@ func CreateMigrateTask(ctx context.Context, doer, u *user_model.User, opts base.
 		PayloadContent: string(bs),
 	}
 
+	reason = "task_creation_failed"
 	if err := admin_model.CreateTask(ctx, task); err != nil {
 		return nil, err
 	}
 
+	stage = "create_target"
 	repo, err := repo_service.CreateRepositoryDirectly(ctx, doer, u, repo_service.CreateRepoOptions{
 		Name:           opts.RepoName,
 		Description:    opts.Description,
@@ -126,11 +141,26 @@ func CreateMigrateTask(ctx context.Context, doer, u *user_model.User, opts base.
 		return nil, err
 	}
 
+	targetCreated = true
 	task.RepoID = repo.ID
 	if err = task.UpdateCols(ctx, "repo_id"); err != nil {
+		authz_service.ObserveQueuedMigration(ctx, doer, repo, authz_service.NativeFailed, nil)
 		return nil, err
 	}
-
+	authz_service.ObserveQueuedMigration(ctx, doer, repo, authz_service.NativeUnknown, func(bounded context.Context, ticket authz.HookOperationTicket) error {
+		opts.AuthzOperation = ticket
+		payload, err := json.Marshal(&opts)
+		if err != nil {
+			return err
+		}
+		previous := task.PayloadContent
+		task.PayloadContent = string(payload)
+		if err := task.UpdateCols(bounded, "payload_content"); err != nil {
+			task.PayloadContent = previous
+			return err
+		}
+		return nil
+	})
 	return task, nil
 }
 
@@ -155,5 +185,26 @@ func RetryMigrateTask(ctx context.Context, repoID int64) error {
 		return err
 	}
 
+	authz_service.ObserveQueuedMigration(authz_service.WithMigrationSource(ctx, "system"), &user_model.User{ID: migratingTask.DoerID}, &repo_model.Repository{ID: migratingTask.RepoID}, authz_service.NativeUnknown, func(bounded context.Context, ticket authz.HookOperationTicket) error {
+		if len(migratingTask.PayloadContent) > authz.MaxSnapshotBytes {
+			return errors.New("migration_payload_limit")
+		}
+		var opts base.MigrateOptions
+		if err := json.Unmarshal([]byte(migratingTask.PayloadContent), &opts); err != nil {
+			return err
+		}
+		opts.AuthzOperation = ticket
+		payload, err := json.Marshal(&opts)
+		if err != nil {
+			return err
+		}
+		previous := migratingTask.PayloadContent
+		migratingTask.PayloadContent = string(payload)
+		if err := migratingTask.UpdateCols(bounded, "payload_content"); err != nil {
+			migratingTask.PayloadContent = previous
+			return err
+		}
+		return nil
+	})
 	return taskQueue.Push(migratingTask)
 }

@@ -9,8 +9,10 @@ import (
 
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
+	"gitea.dev/routers/common"
 	shared "gitea.dev/routers/web/shared/secrets"
 	shared_user "gitea.dev/routers/web/shared/user"
 	"gitea.dev/services/context"
@@ -96,6 +98,7 @@ func Secrets(ctx *context.Context) {
 }
 
 func SecretsPost(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageSecret)()
 	sCtx, err := getSecretsCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getSecretsCtx", err)

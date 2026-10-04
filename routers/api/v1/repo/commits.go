@@ -12,16 +12,19 @@ import (
 
 	issues_model "gitea.dev/models/issues"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
 
 // GetSingleCommit get a commit via sha
 func GetSingleCommit(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/commits/{sha} repository repoGetSingleCommit
 	// ---
 	// summary: Get a single commit from a repository, it has a GitHub-compatible alias "/repos/{owner}/{repo}/commits/{ref}"
@@ -93,6 +96,7 @@ func getCommit(ctx *context.APIContext, identifier string, toCommitOpts convert.
 
 // GetAllCommits get all commits via
 func GetAllCommits(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/commits repository repoGetAllCommits
 	// ---
 	// summary: Get a list of all commits from a repository
@@ -324,6 +328,7 @@ func GetAllCommits(ctx *context.APIContext) {
 
 // DownloadCommitDiffOrPatch render a commit's raw diff or patch
 func DownloadCommitDiffOrPatch(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/commits/{sha}.{diffType} repository repoDownloadCommitDiffOrPatch
 	// ---
 	// summary: Get a commit's diff or patch

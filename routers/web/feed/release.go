@@ -8,6 +8,8 @@ import (
 
 	"gitea.dev/models/db"
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 
 	"github.com/gorilla/feeds"
@@ -17,6 +19,9 @@ import (
 func ShowReleaseFeed(ctx *context.Context, repo *repo_model.Repository, isReleasesOnly bool, formatType string) {
 	if !checkRepoFeedTokenScope(ctx) {
 		return
+	}
+	if !isReleasesOnly {
+		defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	}
 	releases, err := db.Find[repo_model.Release](ctx, repo_model.FindReleasesOptions{
 		IncludeTags: !isReleasesOnly,

@@ -1,0 +1,57 @@
+{{template "admin/enterpriseauthz/head" .}}
+<h4 class="ui top attached header">{{ctx.Locale.Tr "admin.enterprise_authz.diagnostic_title"}}</h4>
+<div class="ui attached segment">
+ <p>{{ctx.Locale.Tr "admin.enterprise_authz.current_names_notice"}}</p>
+ <div class="ui warning message" data-candidate-only="true">{{ctx.Locale.Tr "admin.enterprise_authz.candidate_notice"}}</div>
+ {{if .AuthzNeedsRepo}}
+  <p>{{ctx.Locale.Tr "admin.enterprise_authz.select_repo"}}</p>
+ {{else}}
+  <form class="ui form" method="get" action="{{.AuthzBase}}/effective-permissions">
+   {{template "admin/enterpriseauthz/picker" .AuthzEffectiveUserPicker}}
+   <p id="authz-local-user-help">{{ctx.Locale.Tr "admin.enterprise_authz.local_user_help"}}</p>
+   <button class="ui button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.effective_permissions"}}</button>
+  </form>
+  {{with .AuthzEffective}}
+   <h5>{{ctx.Locale.Tr "admin.enterprise_authz.effective_permissions"}}</h5>
+   {{template "admin/enterpriseauthz/diagnostic-explanation" dict "Explanation" .EnterpriseAuthzExplanation "AuthzLabel" $.AuthzLabel "RoleNames" $.AuthzDiagnosticRoleNames}}
+   <p>{{ctx.Locale.Tr "admin.enterprise_authz.unresolved_actions"}}: {{range .UnresolvedActions}}<code>{{.}}</code> {{else}}—{{end}}</p>
+  {{end}}
+  <h5>{{ctx.Locale.Tr "admin.enterprise_authz.evaluate"}}</h5>
+  <form class="ui form" method="post" action="{{.AuthzBase}}/evaluate">
+   <input type="hidden" name="authz_csrf" value="{{.AuthzCSRF}}">
+   {{template "admin/enterpriseauthz/picker" .AuthzEvaluateUserPicker}}
+   <div class="field"><label for="authz-evaluate-action">{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</label><select id="authz-evaluate-action" name="action" required>{{range .AuthzActions}}<option value="{{.Key}}" {{if eq $.AuthzDiagnosticAction .Key}}selected{{end}}>{{.Key}} — {{.Description}}</option>{{end}}</select></div>
+   <div class="field"><label for="authz-evaluate-branch">{{ctx.Locale.Tr "admin.enterprise_authz.branch"}}</label><input id="authz-evaluate-branch" name="branch" value="{{.AuthzDiagnosticBranch}}" maxlength="65536"></div>
+   <div class="field"><label for="authz-evaluate-paths">{{ctx.Locale.Tr "admin.enterprise_authz.paths"}}</label><textarea id="authz-evaluate-paths" name="paths" rows="4" maxlength="65536" aria-describedby="authz-paths-help"></textarea><p id="authz-paths-help">{{ctx.Locale.Tr "admin.enterprise_authz.paths_help"}}</p></div>
+   <button class="ui primary button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.evaluate"}}</button>
+  </form>
+  {{with .AuthzDiagnostic}}
+   <section class="ui segment" aria-label="{{ctx.Locale.Tr "admin.enterprise_authz.diagnostic_result"}}" data-candidate-decision="{{.CandidateDecision}}" data-reason="{{.Reason}}">
+    <h5>{{ctx.Locale.Tr "admin.enterprise_authz.diagnostic_result"}}</h5>
+    <p><code>{{.Action}}</code>: {{call $.AuthzLabel .CandidateDecision}}</p>
+    {{template "admin/enterpriseauthz/diagnostic-explanation" dict "Explanation" .EnterpriseAuthzExplanation "AuthzLabel" $.AuthzLabel "RoleNames" $.AuthzDiagnosticRoleNames}}
+    <p>{{ctx.Locale.Tr "admin.enterprise_authz.missing_actions"}}: {{range .MissingActions}}<code>{{.}}</code> {{else}}—{{end}}</p>
+    <details><summary>{{ctx.Locale.Tr "admin.enterprise_authz.technical_identifiers"}}</summary>    <p>{{ctx.Locale.Tr "admin.enterprise_authz.matched_roles"}}: {{range .MatchedRoleIDs}}{{.}} {{else}}—{{end}}</p>
+    <p>{{ctx.Locale.Tr "admin.enterprise_authz.matched_bindings"}}: {{range .MatchedBindingIDs}}{{.}} {{else}}—{{end}}</p></details>
+   </section>
+  {{end}}
+ {{end}}
+</div>
+{{template "admin/enterpriseauthz/foot" .}}
+
+{{define "admin/enterpriseauthz/diagnostic-explanation"}}
+ {{with .Explanation}}
+  <p>{{ctx.Locale.Tr "admin.enterprise_authz.reason"}}: {{call $.AuthzLabel .Reason}}</p>
+  <p>{{ctx.Locale.Tr "admin.enterprise_authz.native_actions"}}: {{range .NativeActions}}<code>{{.}}</code> {{else}}—{{end}}</p>
+  <p>{{ctx.Locale.Tr "admin.enterprise_authz.role_actions"}}: {{range .RoleActions}}<code>{{.}}</code> {{else}}—{{end}}</p>
+  <details><summary>{{ctx.Locale.Tr "admin.enterprise_authz.technical_identifiers"}}</summary>
+  <p>{{ctx.Locale.Tr "admin.enterprise_authz.recorded_roles"}}: {{range .Roles}}{{.ID}} ({{ctx.Locale.Tr "admin.enterprise_authz.revision"}} {{.Revision}}) {{else}}—{{end}}</p>
+  <p>{{ctx.Locale.Tr "admin.enterprise_authz.recorded_bindings"}}: {{range .Bindings}}{{.ID}} {{else}}—{{end}}</p>
+  </details>
+  {{if .Conditions}}
+   <div class="tw-overflow-x-auto"><table class="ui striped table"><thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_authz.role"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.revision"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.action"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.technical_identifiers"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.condition_result"}}</th></tr></thead><tbody>
+    {{range .Conditions}}<tr data-condition-result="{{.Result}}"><td>{{index $.RoleNames .RoleID}}</td><td>{{.Revision}}</td><td><code>{{.Action}}</code></td><td><details><summary>{{ctx.Locale.Tr "admin.enterprise_authz.view_details"}}</summary><p>{{ctx.Locale.Tr "admin.enterprise_authz.role"}}: {{.RoleID}} · {{ctx.Locale.Tr "admin.enterprise_authz.binding"}}: {{.BindingID}}</p><code class="tw-break-all">{{.ConditionHash}}</code></details></td><td>{{call $.AuthzLabel .Result}}</td></tr>{{end}}
+   </tbody></table></div>
+  {{end}}
+ {{end}}
+{{end}}

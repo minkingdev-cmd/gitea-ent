@@ -11,15 +11,17 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
 
 // getStarredRepos returns the repos that the user with the specified userID has
 // starred
-func getStarredRepos(ctx *context.APIContext, user *user_model.User, private bool) ([]*api.Repository, error) {
+func getStarredRepos(ctx *context.APIContext, user *user_model.User, private bool, observe func(*repo_model.Repository, *access_model.Permission)) ([]*api.Repository, error) {
 	opts := &repo_model.StarredReposOptions{
 		ListOptions:    utils.GetListOptions(ctx),
 		StarrerID:      user.ID,
@@ -42,6 +44,7 @@ func getStarredRepos(ctx *context.APIContext, user *user_model.User, private boo
 		if !permission.HasAnyUnitAccessOrPublicAccess() {
 			continue
 		}
+		observe(starred, nil)
 		repos = append(repos, convert.ToRepo(ctx, starred, permission))
 	}
 	return repos, nil
@@ -76,8 +79,11 @@ func GetStarredRepos(ctx *context.APIContext) {
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
 
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
+
 	private := ctx.ContextUser.ID == ctx.Doer.ID
-	repos, err := getStarredRepos(ctx, ctx.ContextUser, private)
+	repos, err := getStarredRepos(ctx, ctx.ContextUser, private, observe)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -110,7 +116,10 @@ func GetMyStarredRepos(ctx *context.APIContext) {
 	//   "403":
 	//     "$ref": "#/responses/forbidden"
 
-	repos, err := getStarredRepos(ctx, ctx.Doer, true)
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
+
+	repos, err := getStarredRepos(ctx, ctx.Doer, true, observe)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 	}

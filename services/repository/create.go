@@ -31,6 +31,7 @@ import (
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/templates/vars"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // CreateRepoOptions contains the create repository options
@@ -256,7 +257,11 @@ func CreateRepositoryDirectly(ctx context.Context, doer, owner *user_model.User,
 
 	// 1 - create the repository database operations first
 	err := withRepositoryCreationTx(ctx, doer, owner, func(ctx context.Context) error {
-		return createRepositoryInDB(ctx, doer, owner, repo, false)
+		if err := createRepositoryInDB(ctx, doer, owner, repo, false); err != nil {
+			return err
+		}
+		authz_service.MarkMigrationTargetCreated(ctx, repo.ID)
+		return nil
 	})
 	if err != nil {
 		return nil, err

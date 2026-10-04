@@ -16,12 +16,14 @@ import (
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/user"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	wecom_service "gitea.dev/services/enterprisewecom"
@@ -577,6 +579,9 @@ func GetTeamRepos(ctx *context.APIContext) {
 		ctx.APIErrorInternal(err)
 		return
 	}
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
+
 	repos := make([]*api.Repository, 0, len(teamRepos))
 	for _, repo := range teamRepos {
 		permission, err := access_model.GetDoerRepoPermission(ctx, repo, ctx.Doer)
@@ -592,6 +597,7 @@ func GetTeamRepos(ctx *context.APIContext) {
 		if !permission.HasAnyUnitAccessOrPublicAccess() {
 			continue
 		}
+		observe(repo, &permission)
 		repos = append(repos, convert.ToRepo(ctx, repo, permission))
 	}
 	ctx.SetLinkHeader(count, listOptions.PageSize)
@@ -652,6 +658,9 @@ func GetTeamRepo(ctx *context.APIContext) {
 		return
 	}
 
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
+	observe(repo, permission)
 	ctx.JSON(http.StatusOK, convert.ToRepo(ctx, repo, *permission))
 }
 

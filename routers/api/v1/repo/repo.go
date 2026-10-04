@@ -22,6 +22,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/label"
 	"gitea.dev/modules/log"
@@ -34,10 +35,12 @@ import (
 	"gitea.dev/modules/validation"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	feed_service "gitea.dev/services/feed"
 	"gitea.dev/services/issue"
 	"gitea.dev/services/migrations"
@@ -217,6 +220,9 @@ func Search(ctx *context.APIContext) {
 				OK:    false,
 				Error: err.Error(),
 			})
+		}
+		if err == nil {
+			defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, repo, &permission, authz.ViewMetadata, "api")()
 		}
 		results[i] = convert.ToRepo(ctx, repo, permission)
 	}
@@ -520,6 +526,8 @@ func Get(ctx *context.APIContext) {
 	//   "404":
 	//     "$ref": "#/responses/notFound"
 
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
+
 	if err := ctx.Repo.Repository.LoadAttributes(ctx); err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -570,6 +578,7 @@ func GetByID(ctx *context.APIContext) {
 		ctx.APIErrorNotFound()
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, repo, &permission, authz.ViewMetadata, "api")()
 	ctx.JSON(http.StatusOK, convert.ToRepo(ctx, repo, permission))
 }
 
@@ -607,6 +616,14 @@ func Edit(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 
 	opts := *web.GetForm[*api.EditRepoOption](ctx)
+	if opts.HasActions != nil {
+		finish := common.ObserveAPIRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)
+		defer finish()
+	}
+	if opts.Archived != nil {
+		finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.Archive, "api")
+		defer finish(authz_service.NativeFailed)
+	}
 
 	if err := updateBasicProperties(ctx, opts); err != nil {
 		return
@@ -975,6 +992,9 @@ func updateRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) error {
 		if err := repo_service.UpdateRepositoryUnits(ctx, repo, units, deleteUnitTypes); err != nil {
 			return err
 		}
+		if opts.HasActions != nil && !unit_model.TypeActions.UnitGlobalDisabled() {
+			common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
+		}
 	}
 	return nil
 }
@@ -987,10 +1007,11 @@ func updateRepoArchivedState(ctx *context.APIContext, opts api.EditRepoOption) e
 		if repo.IsMirror {
 			err := errors.New("repo is a mirror, cannot archive/un-archive")
 			ctx.APIError(http.StatusUnprocessableEntity, err.Error())
+			common.MarkNativeMutationDenied(ctx.Base)
 			return err
 		}
 		if *opts.Archived {
-			if err := repo_model.SetArchiveRepoState(ctx, repo, *opts.Archived); err != nil {
+			if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, *opts.Archived); err != nil {
 				log.Error("Tried to archive a repo: %s", err)
 				ctx.APIErrorInternal(err)
 				return err
@@ -1000,7 +1021,7 @@ func updateRepoArchivedState(ctx *context.APIContext, opts api.EditRepoOption) e
 			}
 			log.Trace("Repository was archived: %s/%s", ctx.Repo.Owner.Name, repo.Name)
 		} else {
-			if err := repo_model.SetArchiveRepoState(ctx, repo, *opts.Archived); err != nil {
+			if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, *opts.Archived); err != nil {
 				log.Error("Tried to un-archive a repo: %s", err)
 				ctx.APIErrorInternal(err)
 				return err
@@ -1168,6 +1189,7 @@ func Delete(ctx *context.APIContext) {
 
 // GetIssueTemplates returns the issue templates for a repository
 func GetIssueTemplates(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/issue_templates repository repoGetIssueTemplates
 	// ---
 	// summary: Get available issue templates for a repository
@@ -1198,6 +1220,7 @@ func GetIssueTemplates(ctx *context.APIContext) {
 
 // GetIssueConfig returns the issue config for a repo
 func GetIssueConfig(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/issue_config repository repoGetIssueConfig
 	// ---
 	// summary: Returns the issue config for a repo
@@ -1225,6 +1248,7 @@ func GetIssueConfig(ctx *context.APIContext) {
 
 // ValidateIssueConfig returns validation errors for the issue config
 func ValidateIssueConfig(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/issue_config/validate repository repoValidateIssueConfig
 	// ---
 	// summary: Returns the validation information for a issue config
@@ -1256,6 +1280,7 @@ func ValidateIssueConfig(ctx *context.APIContext) {
 }
 
 func ListRepoActivityFeeds(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/activities/feeds repository repoListActivityFeeds
 	// ---
 	// summary: List a repository's activity feeds

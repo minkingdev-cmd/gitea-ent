@@ -68,8 +68,9 @@
 
 ## 9. 端到端兼容与最终验收
 
-- [ ] 9.1 运行并按缺口扩展 `TestEnterpriseWeComLoginOnlyIntegration` / `TestEnterpriseWeComLoginOnlySmoke`：本地密码、注册、OpenID、Passkey、其他 OAuth、反代、SSPI Web 登录拒绝，合法企微 MFA 续接，callback 不生成会话。
+- [ ] 9.1 运行并按缺口扩展 `TestEnterpriseWeComLoginOnlyIntegration` / `TestEnterpriseWeComLoginOnlySmoke`：Linux 服务端的本地密码、注册、OpenID、Passkey、其他 OAuth、反代 Web 登录拒绝及跨平台 SSPI verifier 前置拒绝，合法企微 MFA 续接，callback 不生成会话；不要求 Windows 服务端原生执行。
   - 2026-09-30：补齐 SSPI verifier 初始化前拒绝、active source/Negotiate HTTP 与 Cookie 续用测试，PostgreSQL 集成通过；Windows 原生执行仍待可用 runner，不以跨平台静态检查替代。
+  - 范围更新：用户明确服务端永久仅部署 Linux，上述 Windows runner 缺口已移出验收范围，不再构成阻塞。本次只同步范围，不将历史 macOS 测试改称 Linux 原生执行，也不自动勾选任务。
 - [x] 9.2 验证正常/禁用/受限用户的 SSH key、PAT/API token、Git HTTP token 创建/认证/scope/吊销仍遵循原生规则，合法 callback 和失败 run 不额外撤销凭据；仓库访问继续使用 Gitea subjects。
 - [x] 9.3 运行现有 admin UI visibility/组织审批/受管 team guard 回归测试，确认普通 site admin 拒绝、企微管理超管正例、只读入口无人工操作；本 change 不新增自定义企业角色或 UI prototype。
 - [x] 9.4 在真实 PostgreSQL 测试环境验证迁移、lease/receipt 唯一性、发布事务和 quota 并发；保留 SQLite 快速测试，不要求 MySQL/MSSQL 适配或验收（2026-09-30 用户确认）。

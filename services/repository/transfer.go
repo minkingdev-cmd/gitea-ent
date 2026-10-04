@@ -5,6 +5,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -24,6 +25,7 @@ import (
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/util"
 	"gitea.dev/services/audit"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 )
 
@@ -43,7 +45,19 @@ func getRepoWorkingLockKey(repoID int64) string {
 }
 
 // AcceptTransferOwnership transfers all corresponding setting from old user to new one.
-func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, doer *user_model.User) error {
+func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, doer *user_model.User) (err error) {
+	ctx, observation := authz_service.WithRepoTransferObservation(ctx, doer, repo, 0)
+	var targetOwnerID int64
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+			if errors.Is(err, util.ErrPermissionDenied) || IsRepositoryLimitReached(err) {
+				outcome = authz_service.NativeDenied
+			}
+		}
+		observation.FinishTransfer(ctx, outcome, targetOwnerID)
+	}()
 	releaser, err := globallock.Lock(ctx, getRepoWorkingLockKey(repo.ID))
 	if err != nil {
 		log.Error("lock.Lock(): %v", err)
@@ -56,6 +70,7 @@ func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, d
 		return err
 	}
 
+	targetOwnerID = repoTransfer.RecipientID
 	oldOwnerName := repo.OwnerName
 
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
@@ -435,7 +450,20 @@ func ChangeRepositoryName(ctx context.Context, doer *user_model.User, repo *repo
 
 // StartRepositoryTransfer transfer a repo from one owner to a new one.
 // it make repository into pending transfer state, if doer can not create repo for new owner.
-func StartRepositoryTransfer(ctx context.Context, doer, newOwner *user_model.User, repo *repo_model.Repository, teams []*organization.Team) error {
+func StartRepositoryTransfer(ctx context.Context, doer, newOwner *user_model.User, repo *repo_model.Repository, teams []*organization.Team) (err error) {
+	ctx, observation := authz_service.WithRepoTransferObservation(ctx, doer, repo, newOwner.ID)
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+			if errors.Is(err, util.ErrPermissionDenied) || errors.Is(err, user_model.ErrBlockedUser) || IsRepositoryLimitReached(err) {
+				outcome = authz_service.NativeDenied
+			}
+		} else if repo.Status == repo_model.RepositoryPendingTransfer {
+			outcome = authz_service.NativeUnknown
+		}
+		observation.FinishTransfer(ctx, outcome, newOwner.ID)
+	}()
 	releaser, err := globallock.Lock(ctx, getRepoWorkingLockKey(repo.ID))
 	if err != nil {
 		return fmt.Errorf("lock.Lock: %w", err)

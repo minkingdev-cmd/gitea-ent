@@ -6,12 +6,15 @@ package repo
 import (
 	"net/http"
 
+	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	files_service "gitea.dev/services/repository/files"
 )
 
 // GetBlob get the blob of a repository file.
 func GetBlob(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/blobs/{sha} repository GetBlob
 	// ---
 	// summary: Gets the blob of a repository.

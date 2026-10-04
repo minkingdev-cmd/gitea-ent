@@ -13,9 +13,11 @@ import (
 	"gitea.dev/models/organization"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	release_service "gitea.dev/services/release"
@@ -23,6 +25,7 @@ import (
 
 // ListTags list all the tags of a repository
 func ListTags(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/tags repository repoListTags
 	// ---
 	// summary: List a repository's tags
@@ -72,6 +75,7 @@ func ListTags(ctx *context.APIContext) {
 
 // GetAnnotatedTag get the tag of a repository.
 func GetAnnotatedTag(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/tags/{sha} repository GetAnnotatedTag
 	// ---
 	// summary: Gets the tag object of an annotated tag (not lightweight tags)
@@ -123,6 +127,7 @@ func GetAnnotatedTag(ctx *context.APIContext) {
 
 // GetTag get the tag of a repository
 func GetTag(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/tags/{tag} repository repoGetTag
 	// ---
 	// summary: Get the tag of a repository by tag name

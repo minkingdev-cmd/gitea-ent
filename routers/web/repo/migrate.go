@@ -24,6 +24,7 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	"gitea.dev/services/migrations"
 	repo_service "gitea.dev/services/repository"
@@ -148,12 +149,15 @@ func handleMigrateRemoteAddrError(ctx *context.Context, err error, tpl templates
 // MigratePost response for migrating from external git repository
 func MigratePost(ctx *context.Context) {
 	form := web.GetForm[*forms.MigrateRepoForm](ctx)
+	auditCtx := authz_service.WithMigrationSource(ctx, "web")
 	if setting.Repository.DisableMigrations {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, 0, "site_policy", "migration_disabled")
 		ctx.HTTPError(http.StatusForbidden, "MigratePost: the site administrator has disabled migrations")
 		return
 	}
 
 	if form.Mirror && setting.Mirror.DisableNewPull {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, 0, "site_policy", "mirror_creation_disabled")
 		ctx.HTTPError(http.StatusBadRequest, "MigratePost: the site administrator has disabled creation of new mirrors")
 		return
 	}
@@ -162,6 +166,11 @@ func MigratePost(ctx *context.Context) {
 
 	ctxUser := checkContextUser(ctx, form.UID)
 	if ctx.Written() {
+		reason := "owner_resolution_failed"
+		if ctx.Resp.WrittenStatus() == http.StatusForbidden {
+			reason = "owner_permission_denied"
+		}
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, 0, "authorize_owner", reason)
 		return
 	}
 	ctx.Data["ContextUser"] = ctxUser
@@ -169,6 +178,7 @@ func MigratePost(ctx *context.Context) {
 	tpl := templates.TplName("repo/migrate/" + form.Service.Name())
 
 	if ctx.HasError() {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, ctxUser.ID, "validate_request", "invalid_request")
 		ctx.HTML(http.StatusOK, tpl)
 		return
 	}
@@ -179,6 +189,7 @@ func MigratePost(ctx *context.Context) {
 	}
 	if err != nil {
 		ctx.Data["Err_CloneAddr"] = true
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, ctxUser.ID, "validate_source", authz_service.MigrationSourceFailureReason(err))
 		handleMigrateRemoteAddrError(ctx, err, tpl, form)
 		return
 	}
@@ -189,12 +200,14 @@ func MigratePost(ctx *context.Context) {
 		ep := lfs.DetermineEndpoint("", form.LFSEndpoint)
 		if ep == nil {
 			ctx.Data["Err_LFSEndpoint"] = true
+			authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, ctxUser.ID, "validate_source", "source_invalid")
 			ctx.RenderWithErrDeprecated(ctx.Tr("repo.migrate.invalid_lfs_endpoint"), tpl, &form)
 			return
 		}
 		err = migrations.IsMigrateURLAllowed(ep.String(), ctx.Doer)
 		if err != nil {
 			ctx.Data["Err_LFSEndpoint"] = true
+			authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, ctxUser.ID, "validate_source", authz_service.MigrationSourceFailureReason(err))
 			handleMigrateRemoteAddrError(ctx, err, tpl, form)
 			return
 		}
@@ -236,11 +249,12 @@ func MigratePost(ctx *context.Context) {
 
 	err = repo_service.CheckCreateRepository(ctx, ctx.Doer, ctxUser, opts.RepoName, false)
 	if err != nil {
+		authz_service.RecordMigrationFailure(auditCtx, ctx.Doer, ctxUser.ID, "create_target", authz_service.MigrationTargetFailureReason(err))
 		handleMigrateError(ctx, ctxUser, err, "MigratePost", tpl, form)
 		return
 	}
 
-	err = task.MigrateRepository(ctx, ctx.Doer, ctxUser, opts)
+	err = task.MigrateRepository(auditCtx, ctx.Doer, ctxUser, opts)
 	if err == nil {
 		ctx.Redirect(ctxUser.HomeLink() + "/" + url.PathEscape(opts.RepoName))
 		return
@@ -262,7 +276,7 @@ func setMigrationContextData(ctx *context.Context, serviceType structs.GitServic
 }
 
 func MigrateRetryPost(ctx *context.Context) {
-	if err := task.RetryMigrateTask(ctx, ctx.Repo.Repository.ID); err != nil {
+	if err := task.RetryMigrateTask(authz_service.WithMigrationSource(ctx, "web"), ctx.Repo.Repository.ID); err != nil {
 		log.Error("Retry task failed: %v", err)
 		ctx.ServerError("task.RetryMigrateTask", err)
 		return

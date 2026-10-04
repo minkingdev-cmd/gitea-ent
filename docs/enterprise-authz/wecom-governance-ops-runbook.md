@@ -2,6 +2,8 @@
 
 本手册对应 `harden-wecom-governance-ops`，替代旧说明中的人工 mapping CRUD、dry-run/apply 和 post-sync apply 上线流程。适用于本仓库版本及 PostgreSQL 部署（2026-09-30 用户确认，不要求 MySQL/MSSQL）；命令、迁移版本及部署服务名须在批准的变更单中填写并复核。本文提供操作步骤，不表示已完成真实 provider 联调或生产恢复演练。
 
+服务端永久仅部署 Linux，不包含 Windows 服务端支持或原生 SSPI 验收；Windows 客户端访问不受限制。当前部署采用登录管理员权限刷新 + 定时完整同步，`ADMIN_CALLBACK_ENABLED=false`；登录刷新不替代目录/团队同步，刷新或计划任务失败时不能保证缓存已是最新状态。真实 callback 协议验证只在将来启用该功能时作为独立门槛。
+
 ## 1. 上线门槛与盘点
 
 1. 记录部署二进制版本、数据库类型/schema 版本、配置路径、所有实例与任务运行节点、应用类型、`CORP_ID` / `AGENT_ID`、变更负责人和恢复负责人。禁止旧版本 writer 与新版本 cron、callback worker、登录 authority refresh 混跑；滚动升级不得让旧 writer 绕过新协调。

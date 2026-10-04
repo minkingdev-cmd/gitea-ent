@@ -10,7 +10,9 @@ import (
 	activities_model "gitea.dev/models/activities"
 	git_model "gitea.dev/models/git"
 	"gitea.dev/models/unit"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/templates"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 )
 
@@ -20,6 +22,7 @@ const (
 
 // Activity render the page to show repository latest changes
 func Activity(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	ctx.Data["Title"] = ctx.Tr("repo.activity")
 	ctx.Data["PageIsActivity"] = true
 
@@ -82,6 +85,7 @@ func Activity(ctx *context.Context) {
 
 // ActivityAuthors renders JSON with top commit authors for given time period over all branches
 func ActivityAuthors(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	timeUntil := time.Now()
 	var timeFrom time.Time
 

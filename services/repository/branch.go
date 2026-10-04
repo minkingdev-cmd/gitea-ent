@@ -18,6 +18,7 @@ import (
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/cache"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/json"
@@ -30,6 +31,7 @@ import (
 	"gitea.dev/modules/util"
 	webhook_module "gitea.dev/modules/webhook"
 	actions_service "gitea.dev/services/actions"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 	release_service "gitea.dev/services/release"
 
@@ -374,6 +376,17 @@ func SyncBranchesToDB(ctx context.Context, repoID, pusherID int64, gitRepo *git.
 
 // CreateNewBranchFromCommit creates a new repository branch
 func CreateNewBranchFromCommit(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, gitRepo *git.Repository, commitID, branchName string) (err error) {
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+			if errors.Is(err, util.ErrPermissionDenied) || git.IsErrPushRejected(err) {
+				outcome = authz_service.NativeDenied
+			}
+		}
+		authz_service.FinishOperationObservation(ctx, doer.ID, repo.ID, authz.CreateBranch, outcome, authz_service.StageOperation)
+	}()
+
 	err = repo.MustNotBeArchived()
 	if err != nil {
 		return err
@@ -386,7 +399,7 @@ func CreateNewBranchFromCommit(ctx context.Context, doer *user_model.User, repo 
 
 	if err := git.PushManaged(ctx, repo, repo, git.PushOptions{
 		Branch: fmt.Sprintf("%s:%s%s", commitID, git.BranchPrefix, branchName),
-		Env:    repo_module.PushingEnvironment(doer, repo),
+		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo), string(authz_service.ManagedHookOperationTicket(ctx, doer, repo, branchName, authz.CreateBranch))),
 	}); err != nil {
 		if git.IsErrPushOutOfDate(err) || git.IsErrPushRejected(err) {
 			return err
@@ -397,8 +410,18 @@ func CreateNewBranchFromCommit(ctx context.Context, doer *user_model.User, repo 
 }
 
 // RenameBranch rename a branch
-func RenameBranch(ctx context.Context, repo *repo_model.Repository, doer *user_model.User, from, to string) (string, error) {
-	err := repo.MustNotBeArchived()
+func RenameBranch(ctx context.Context, repo *repo_model.Repository, doer *user_model.User, from, to string) (message string, err error) {
+	ctx, removed := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, from)
+	ctx, created := authz_service.WithRepoCreateBranchObservation(ctx, doer, repo.ID, to)
+	defer func() {
+		outcome := branchMutationOutcome(err)
+		if err == nil && message != "" {
+			outcome = authz_service.NativeFailed
+		}
+		removed.Finish(ctx, outcome, authz_service.StageOperation)
+		created.Finish(ctx, outcome, authz_service.StageOperation)
+	}()
+	err = repo.MustNotBeArchived()
 	if err != nil {
 		return "", err
 	}
@@ -491,7 +514,16 @@ func RenameBranch(ctx context.Context, repo *repo_model.Repository, doer *user_m
 }
 
 // UpdateBranch moves a branch reference to the provided commit. permission check should be done before calling this function.
-func UpdateBranch(ctx context.Context, repo *repo_model.Repository, gitRepo *git.Repository, doer *user_model.User, branchName, newCommitID, expectedOldCommitID string, force bool) error {
+func UpdateBranch(ctx context.Context, repo *repo_model.Repository, gitRepo *git.Repository, doer *user_model.User, branchName, newCommitID, expectedOldCommitID string, force bool) (err error) {
+	ctx, observation := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, branchName)
+	pushed := false
+	defer func() {
+		outcome := branchMutationOutcome(err)
+		if err == nil && !pushed {
+			outcome = authz_service.NativeUnknown
+		}
+		observation.Finish(ctx, outcome, authz_service.StageOperation)
+	}()
 	branch, err := git_model.GetBranchExisting(ctx, repo.ID, branchName)
 	if err != nil {
 		return err
@@ -530,7 +562,7 @@ func UpdateBranch(ctx context.Context, repo *repo_model.Repository, gitRepo *git
 
 	pushOpts := git.PushOptions{
 		Branch: fmt.Sprintf("%s:%s%s", newCommit.ID.String(), git.BranchPrefix, branchName),
-		Env:    repo_module.PushingEnvironment(doer, repo),
+		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo), string(authz_service.ManagedHookOperationTicket(ctx, doer, repo, branchName, authz.PushBranch))),
 		Force:  isForcePush || force,
 	}
 
@@ -539,7 +571,9 @@ func UpdateBranch(ctx context.Context, repo *repo_model.Repository, gitRepo *git
 	}
 
 	// branch protection will be checked in the pre received hook, so that we don't need any check here
-	return git.PushManaged(ctx, repo, repo, pushOpts)
+	err = git.PushManaged(ctx, repo, repo, pushOpts)
+	pushed = err == nil
+	return err
 }
 
 var ErrBranchIsDefault = util.ErrorWrap(util.ErrPermissionDenied, "branch is default or pull request target")
@@ -599,8 +633,10 @@ func deleteBranchInternal(ctx context.Context, doer *user_model.User, repo *repo
 }
 
 // DeleteBranch delete branch
-func DeleteBranch(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, gitRepo *git.Repository, branchName string) error {
-	err := repo.MustNotBeArchived()
+func DeleteBranch(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, gitRepo *git.Repository, branchName string) (err error) {
+	ctx, observation := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, branchName)
+	defer func() { observation.Finish(ctx, branchMutationOutcome(err), authz_service.StageOperation) }()
+	err = repo.MustNotBeArchived()
 	if err != nil {
 		return err
 	}

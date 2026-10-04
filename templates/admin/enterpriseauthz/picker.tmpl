@@ -1,0 +1,11 @@
+<div class="field" data-authz-picker {{if .Unavailable}}data-authz-unavailable{{end}}>
+ <label for="{{.ID}}-search">{{.Title}}</label>
+ <input id="{{.ID}}" name="{{.Name}}" type="hidden" value="{{.Value}}">
+ <input id="{{.ID}}-search" type="search" value="{{.Label}}" maxlength="128" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="{{.ID}}-results" aria-expanded="false" data-authz-selector="{{.Kind}}" data-authz-target="{{.ID}}" {{if .Required}}required{{end}}>
+ <div class="flex-text-inline tw-mt-2">
+  <span id="{{.ID}}-selected" data-authz-selected aria-live="polite">{{.Label}}</span>
+  <small data-authz-selected-context class="tw-text-text-light">{{.Context}}</small>
+  <button class="ui small basic button" type="button" data-authz-clear aria-label="{{ctx.Locale.Tr "admin.enterprise_authz.picker_clear" .Title}}" {{if not .Value}}disabled{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.clear_selection"}}</button>
+ </div>
+ <div id="{{.ID}}-results" data-authz-results role="listbox" aria-label="{{.Title}}" aria-live="polite"></div>
+</div>

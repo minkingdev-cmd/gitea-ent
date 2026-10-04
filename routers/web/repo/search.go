@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"gitea.dev/models/db"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	code_indexer "gitea.dev/modules/indexer/code"
 	"gitea.dev/modules/indexer/code/gitgrep"
@@ -26,6 +27,7 @@ func Search(ctx *context.Context) {
 		ctx.HTML(http.StatusOK, tplSearch)
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	page := ctx.FormInt("page")
 	if page <= 0 {

@@ -27,7 +27,8 @@ func HookProcReceive(ctx *gitea_context.PrivateContext) {
 		return
 	}
 
-	results, err := agit.ProcReceive(ctx, ctx.Repo.Repository, ctx.Repo.GitRepo, &agit.ProcReceiveOptions{
+	operationCtx, _ := receiveOperation(ctx, opts)
+	results, err := agit.ProcReceive(operationCtx, ctx.Repo.Repository, ctx.Repo.GitRepo, &agit.ProcReceiveOptions{
 		OldCommitIDs:   opts.OldCommitIDs,
 		NewCommitIDs:   opts.NewCommitIDs,
 		RefFullNames:   opts.RefFullNames,

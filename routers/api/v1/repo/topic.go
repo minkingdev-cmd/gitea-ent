@@ -9,16 +9,19 @@ import (
 
 	"gitea.dev/models/db"
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
 
 // ListTopics returns list of current topics for repo
 func ListTopics(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/topics repository repoListTopics
 	// ---
 	// summary: Get list of topics that a repository has

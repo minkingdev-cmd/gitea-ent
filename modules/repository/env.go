@@ -21,6 +21,8 @@ const (
 	EnvRepoID       = "GITEA_REPO_ID"
 	EnvRepoIsWiki   = "GITEA_REPO_IS_WIKI"
 
+	EnvAuthzOperation = "GITEA_AUTHZ_OPERATION"
+
 	EnvKeyID = "GITEA_KEY_ID" // public key ID
 
 	EnvPusherName        = "GITEA_PUSHER_NAME"
@@ -91,5 +93,15 @@ func FullPushingEnvironment(author, committer *user_model.User, repo *repo_model
 		"SSH_ORIGINAL_COMMAND=gitea-internal",
 	)
 	environ = append(environ, DoerPushingEnvironment(committer, repo, isWiki)...)
-	return environ
+	return WithAuthzOperation(environ, "")
+}
+
+func WithAuthzOperation(env []string, ticket string) []string {
+	result := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, EnvAuthzOperation+"=") {
+			result = append(result, entry)
+		}
+	}
+	return append(result, EnvAuthzOperation+"="+ticket)
 }

@@ -8,14 +8,17 @@ import (
 	"path"
 
 	"gitea.dev/models/renderhelper"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/markup"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 )
 
 // RenderFile renders a file by repos path
 func RenderFile(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	var blob *git.Blob
 	var err error
 	if ctx.Repo.TreePath != "" {

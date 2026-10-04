@@ -4,6 +4,8 @@
 
 本文档把 [`requirements.md`](requirements.md) 中的企业授权需求收敛成可执行的实施方案。方案目标是在保持浅 fork、降低上游合并冲突的前提下，复用 Gitea 现有权限、分支保护、required checks、Actions 和审计日志能力，补齐企业微信唯一 Web 登录、企业微信用户标识、企业级 repo 授权、功能授权、默认治理模板和合并门禁。
 
+后续 OpenSpec proposal 拆分与实施顺序见 [`proposal-roadmap.md`](proposal-roadmap.md)。
+
 ## 设计原则
 
 1. **兼容优先**：未启用企业授权增强时，行为尽量保持上游 Gitea 语义。
@@ -1009,3 +1011,11 @@ secret、token、私钥和外部系统凭据不得写入 metadata 明文。
 8. AI review 的 status context 命名规范，例如 `review/ai` 是否固定。
 9. Woodpecker 历史只读展示是新增聚合页，还是先使用外链。
 10. 管理界面是否第一阶段必须交付，还是先提供 API 和 migration。
+
+## 2026-10-01：Proposal 2 shadow 基础实施边界
+
+`add-enterprise-authz-foundation-shadow` 已接入角色/绑定、19-action evaluator、受原生 authority 保护的 API 与真实入口旁观。system/org/repo 为作用域，user/team/org 为主体，只支持 additive allow；八个内置角色不可变，迁移不回填绑定。当前角色授权只产生候选判断，不让尚无原生写权限的用户写仓库，也不会绕过 unit、凭据 scope、分支保护或企微安全守卫。
+
+上文第三阶段的 action enforce/403 和第五阶段的 merge gate 验收仍属于后续独立提案，不因本次 shadow 实施完成而自动完成。feature grant、策略模板、offboarding 和授权 UI 同样未实现。本次无 Windows 服务端验收，callback 持续关闭，采用合法登录刷新与定时完整同步。
+
+配置/管理/查询/容量/关闭与成套恢复见 [shadow 运维手册](authz-shadow-runbook.md)。当前验证结果及未通过项统一记在本 change 的 `verification.md`，不以本文替代测试或生产上线 gate；没有提交、推送或归档。

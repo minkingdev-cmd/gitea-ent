@@ -6,6 +6,7 @@ package repo
 
 import (
 	"compress/gzip"
+	stdcontext "context"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/git/gitrepo"
@@ -31,7 +33,9 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	repo_service "gitea.dev/services/repository"
 
 	"github.com/go-chi/cors"
@@ -372,6 +376,17 @@ func serviceRPC(ctx *context.Context, service string) {
 		return
 	}
 
+	var cloneObservation *authz_service.Observation
+	observationCtx := stdcontext.Context(ctx)
+	if setting.EnterpriseAuthz.Enabled && !h.isWiki && service == ServiceTypeUploadPack {
+		observationCtx, cloneObservation = authz_service.BeginResolvedObservation(ctx, authz_service.EvaluateInput{Actor: ctx.Doer, Repo: h.repo, Credential: common.RepoCredentialCeiling(ctx.Base, ctx.Doer), Action: authz.Clone, ConditionContext: authz.ConditionContext{Source: "git_http"}}, func(resolvedCtx stdcontext.Context) (*access_model.Permission, error) {
+			permission, err := access_model.GetDoerRepoPermission(resolvedCtx, h.repo, ctx.Doer)
+			return &permission, err
+		})
+	}
+	cloneOutcome := authz_service.NativeFailed
+	defer func() { cloneObservation.Finish(observationCtx, cloneOutcome, authz_service.StageTransport) }()
+
 	expectedContentType := fmt.Sprintf("application/x-git-%s-request", service)
 	if ctx.Req.Header.Get("Content-Type") != expectedContentType {
 		log.Debug("Content-Type (%q) doesn't match expected: %q", ctx.Req.Header.Get("Content-Type"), expectedContentType)
@@ -405,11 +420,19 @@ func serviceRPC(ctx *context.Context, service string) {
 
 	// set SSH_ORIGINAL_COMMAND to allow pre-receive and post-receive hooks
 	gitCmdEnvs := prepareGitCmdEnvs(ctx, h, "SSH_ORIGINAL_COMMAND="+service)
+	var receiveTicket authz.HookOperationTicket
+	if !h.isWiki && service == ServiceTypeReceivePack {
+		receiveTicket = authz_service.NewHookOperationTicket(ctx, authz_service.EvaluateInput{Actor: ctx.Doer, Repo: h.repo, Credential: common.RepoCredentialCeiling(ctx.Base, ctx.Doer), Action: authz.PushBranch, ConditionContext: authz.ConditionContext{Source: "git_http"}}, nil)
+	}
+	gitCmdEnvs = repo_module.WithAuthzOperation(gitCmdEnvs, string(receiveTicket))
 	err := cmd.AddArguments(".").
 		WithRepo(h.getStorageRepo()).WithEnv(gitCmdEnvs).
 		WithStdinCopy(reqBody).
 		WithStdoutCopy(ctx.Resp).
 		RunWithStderr(ctx)
+	if err == nil {
+		cloneOutcome = authz_service.NativeSuccess
+	}
 	if err != nil && !gitcmd.IsErrorCanceledOrKilled(err) && !httplib.IsClientOrNetworkError(ctx, err) {
 		log.Error("Fail to serve RPC(%s) for repo %s: %v", service, h.getStorageRepo().LogString(), err)
 	}

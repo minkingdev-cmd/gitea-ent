@@ -13,11 +13,15 @@ import (
 
 	auth_model "gitea.dev/models/auth"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
+	"gitea.dev/modules/test"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,6 +29,8 @@ import (
 
 func TestRepoMergeUpstream(t *testing.T) {
 	onGiteaRun(t, func(*testing.T, *url.URL) {
+		defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, false)()
+		defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
 		forkUser := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 4})
 
 		baseRepo := unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: 1})
@@ -97,7 +103,12 @@ func TestRepoMergeUpstream(t *testing.T) {
 
 			// click the "sync fork" button
 			req = NewRequest(t, "POST", mergeUpstreamLink)
+			before := unittest.GetCount(t, &authz_model.DecisionRecord{})
+			setting.EnterpriseAuthz.Enabled = true
 			session.MakeRequest(t, req, http.StatusOK)
+			setting.EnterpriseAuthz.Enabled = false
+			require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+			unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: forkUser.ID, RepoID: forkRepo.ID, Action: authz.PushBranch, RequestSource: "web", NativeOutcome: "success"})
 			checkFileContent("fork-branch", "test-content-1")
 
 			// delete the "fork-branch" from the base repo
@@ -128,7 +139,12 @@ func TestRepoMergeUpstream(t *testing.T) {
 			req = NewRequestWithJSON(t, "POST", fmt.Sprintf("/api/v1/repos/%s/test-repo-fork/merge-upstream", forkUser.Name), &api.MergeUpstreamRequest{
 				Branch: "fork-branch",
 			}).AddTokenAuth(token)
+			before := unittest.GetCount(t, &authz_model.DecisionRecord{})
+			setting.EnterpriseAuthz.Enabled = true
 			resp := MakeRequest(t, req, http.StatusOK)
+			setting.EnterpriseAuthz.Enabled = false
+			require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+			unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: forkUser.ID, RepoID: forkRepo.ID, Action: authz.PushBranch, RequestSource: "api", NativeOutcome: "success"})
 			checkFileContent("fork-branch", "test-content-2")
 
 			mergeResp := DecodeJSON(t, resp, &api.MergeUpstreamResponse{})
@@ -157,7 +173,12 @@ func TestRepoMergeUpstream(t *testing.T) {
 				Branch: "ff-test-branch",
 				FfOnly: true,
 			}).AddTokenAuth(token)
+			before := unittest.GetCount(t, &authz_model.DecisionRecord{})
+			setting.EnterpriseAuthz.Enabled = true
 			resp := MakeRequest(t, req, http.StatusOK)
+			setting.EnterpriseAuthz.Enabled = false
+			require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+			unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: forkUser.ID, RepoID: forkRepo.ID, Action: authz.PushBranch, RequestSource: "api", NativeOutcome: "success"}, unittest.Cond("id = (SELECT MAX(id) FROM enterprise_authz_decision)"))
 
 			mergeResp := DecodeJSON(t, resp, &api.MergeUpstreamResponse{})
 			assert.Equal(t, "fast-forward", mergeResp.MergeStyle)
@@ -172,6 +193,22 @@ func TestRepoMergeUpstream(t *testing.T) {
 			MakeRequest(t, req, http.StatusBadRequest)
 		})
 
+		t.Run("ProtectedFastForwardDenied", func(t *testing.T) {
+			setting.EnterpriseAuthz.Enabled = false
+			MakeRequest(t, NewRequestWithJSON(t, "POST", fmt.Sprintf("/api/v1/repos/%s/test-repo-fork/branch_protections", forkUser.Name), api.CreateBranchProtectionOption{RuleName: "ff-test-branch", EnablePush: false}).AddTokenAuth(token), http.StatusCreated)
+			for _, enabled := range []bool{false, true} {
+				setting.EnterpriseAuthz.Enabled = enabled
+				before := unittest.GetCount(t, &authz_model.DecisionRecord{})
+				MakeRequest(t, NewRequestWithJSON(t, "POST", fmt.Sprintf("/api/v1/repos/%s/test-repo-fork/merge-upstream", forkUser.Name), api.MergeUpstreamRequest{Branch: "ff-test-branch", FfOnly: true}).AddTokenAuth(token), http.StatusBadRequest)
+				if enabled {
+					require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+					unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: forkUser.ID, RepoID: forkRepo.ID, Action: authz.PushProtectedBranch, NativeOutcome: "denied"}, unittest.Cond("id = (SELECT MAX(id) FROM enterprise_authz_decision)"))
+				} else {
+					require.Equal(t, before, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+				}
+			}
+		})
+
 		t.Run("BasePrivateBlocksSync", func(t *testing.T) {
 			// add a new commit to the base repo, then make the base repo private
 			require.NoError(t, createOrReplaceFileInBranch(baseUser, baseRepo, "secret.txt", "master", "private-content"))
@@ -182,7 +219,18 @@ func TestRepoMergeUpstream(t *testing.T) {
 			req = NewRequestWithJSON(t, "POST", fmt.Sprintf("/api/v1/repos/%s/test-repo-fork/merge-upstream", forkUser.Name), &api.MergeUpstreamRequest{
 				Branch: "fork-branch",
 			}).AddTokenAuth(token)
-			MakeRequest(t, req, http.StatusForbidden)
+			for _, enabled := range []bool{false, true} {
+				setting.EnterpriseAuthz.Enabled = enabled
+				before := unittest.GetCount(t, &authz_model.DecisionRecord{})
+				request := NewRequestWithJSON(t, "POST", fmt.Sprintf("/api/v1/repos/%s/test-repo-fork/merge-upstream", forkUser.Name), &api.MergeUpstreamRequest{Branch: "fork-branch"}).AddTokenAuth(token)
+				MakeRequest(t, request, http.StatusForbidden)
+				if enabled {
+					require.Equal(t, before+1, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+					unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ActorID: forkUser.ID, RepoID: forkRepo.ID, Action: authz.PushBranch, RequestSource: "api", NativeOutcome: "denied"}, unittest.Cond("id = (SELECT MAX(id) FROM enterprise_authz_decision)"))
+				} else {
+					require.Equal(t, before, unittest.GetCount(t, &authz_model.DecisionRecord{}))
+				}
+			}
 		})
 	})
 }

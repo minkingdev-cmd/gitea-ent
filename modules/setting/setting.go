@@ -225,6 +225,7 @@ func LoadSettings() {
 	loadServiceFrom(CfgProvider)
 	loadOAuth2ClientFrom(CfgProvider)
 	loadEnterpriseWeComFrom(CfgProvider)
+	loadEnterpriseAuthzFrom(CfgProvider)
 	loadCacheFrom(CfgProvider)
 	loadWebsocketFrom(CfgProvider)
 	loadSessionFrom(CfgProvider)

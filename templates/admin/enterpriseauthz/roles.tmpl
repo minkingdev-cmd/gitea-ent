@@ -1,0 +1,7 @@
+{{template "admin/enterpriseauthz/head" .}}
+<a class="ui primary button" href="{{.AuthzBase}}/roles/new">{{ctx.Locale.Tr "admin.enterprise_authz.new_role"}}</a>
+<table class="ui striped table" data-total="{{.AuthzTotal}}"><thead><tr><th>{{ctx.Locale.Tr "admin.enterprise_authz.name"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.scope_type"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.revision"}}</th><th>{{ctx.Locale.Tr "admin.enterprise_authz.permissions"}}</th></tr></thead><tbody>
+{{range .AuthzRoles}}<tr><td><a href="{{$.AuthzBase}}/roles/{{.ID}}">{{.Name}}</a> · {{.OriginLabel}}</td><td>{{.ScopeLabel}}</td><td>{{.Revision}}</td><td>{{len .Permissions}}</td></tr>{{else}}<tr><td colspan="4">{{ctx.Locale.Tr "admin.enterprise_authz.empty"}}</td></tr>{{end}}
+</tbody></table>
+{{template "base/paginate" .}}
+{{template "admin/enterpriseauthz/foot" .}}

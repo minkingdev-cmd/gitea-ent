@@ -23,6 +23,7 @@ import (
 	base "gitea.dev/modules/migration"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // MigrateOptions is equal to base.MigrateOptions
@@ -107,7 +108,21 @@ func checkByAllowBlockList(hostName string, addrList []net.IP) error {
 }
 
 // MigrateRepository migrate repository according MigrateOptions
-func MigrateRepository(ctx context.Context, doer *user_model.User, ownerName string, opts base.MigrateOptions, messenger base.Messenger) (*repo_model.Repository, error) {
+func MigrateRepository(ctx context.Context, doer *user_model.User, ownerName string, opts base.MigrateOptions, messenger base.Messenger) (_ *repo_model.Repository, retErr error) {
+	uploader := NewGiteaLocalUploader(ctx, doer, ownerName, opts.RepoName)
+	if opts.MigrateToRepoID > 0 {
+		ctx, uploader.observation = authz_service.WithMigrationTargetObservation(ctx, doer, &repo_model.Repository{ID: opts.MigrateToRepoID})
+	}
+	completed := false
+	defer func() {
+		outcome := authz_service.NativeFailed
+		if completed {
+			outcome = authz_service.NativeSuccess
+		} else if authz_service.MigrationSourceFailureReason(retErr) == "source_policy_denied" {
+			outcome = authz_service.NativeDenied
+		}
+		uploader.observation.Finish(ctx, outcome, authz_service.StageMigration)
+	}()
 	err := IsMigrateURLAllowed(opts.CloneAddr, doer)
 	if err != nil {
 		return nil, err
@@ -123,7 +138,6 @@ func MigrateRepository(ctx context.Context, doer *user_model.User, ownerName str
 		return nil, err
 	}
 
-	uploader := NewGiteaLocalUploader(ctx, doer, ownerName, opts.RepoName)
 	uploader.gitServiceType = opts.GitServiceType
 
 	if err := migrateRepository(ctx, doer, downloader, uploader, opts, messenger); err != nil {
@@ -136,6 +150,7 @@ func MigrateRepository(ctx context.Context, doer *user_model.User, ownerName str
 		}
 		return nil, err
 	}
+	completed = true
 	return uploader.repo, nil
 }
 

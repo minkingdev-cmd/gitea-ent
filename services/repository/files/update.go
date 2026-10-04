@@ -79,6 +79,10 @@ type LazyReadSeeker interface {
 
 // ChangeRepoFiles adds, updates or removes multiple files in the given repository
 func ChangeRepoFiles(ctx context.Context, repo *repo_model.Repository, doer *user_model.User, opts *ChangeRepoFilesOptions) (_ *structs.FilesResponse, errRet error) {
+	paths, complete := fileMutationPaths(opts.Files)
+	ctx, finishObservation := observeFileMutation(ctx, repo, doer, opts.OldBranch, opts.NewBranch, paths, complete)
+	defer func() { finishObservation(errRet) }()
+
 	var addedLfsPointers []lfs.Pointer
 	defer func() {
 		if errRet != nil {

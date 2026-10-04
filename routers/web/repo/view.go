@@ -26,6 +26,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/charset"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/fileicon"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/htmlutil"
@@ -37,6 +38,7 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/typesniffer"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	asymkey_service "gitea.dev/services/asymkey"
 	"gitea.dev/services/context"
 	repo_service "gitea.dev/services/repository"
@@ -238,6 +240,7 @@ func LastCommit(ctx *context.Context) {
 	if ctx.Written() {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	// The "/lastcommit/" endpoint is used to render the embedded HTML content for the directory file listing with latest commit info
 	// It needs to construct correct links to the file items, but the route only accepts a commit ID, not a full ref name (branch or tag).
@@ -360,6 +363,7 @@ func RenderUserCards(ctx *context.Context, total int, getter func(opts db.ListOp
 
 // Watchers render repository's watch users
 func Watchers(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	ctx.Data["Title"] = ctx.Tr("repo.watchers")
 	ctx.Data["CardsTitle"] = ctx.Tr("repo.watchers")
 	RenderUserCards(ctx, ctx.Repo.Repository.NumWatches, func(opts db.ListOptions) ([]*user_model.User, error) {
@@ -369,6 +373,7 @@ func Watchers(ctx *context.Context) {
 
 // Stars render repository's starred users
 func Stars(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	ctx.Data["Title"] = ctx.Tr("repo.stargazers")
 	ctx.Data["CardsTitle"] = ctx.Tr("repo.stargazers")
 	RenderUserCards(ctx, ctx.Repo.Repository.NumStars, func(opts db.ListOptions) ([]*user_model.User, error) {
@@ -378,6 +383,7 @@ func Stars(ctx *context.Context) {
 
 // Forks render repository's forked users
 func Forks(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	ctx.Data["Title"] = ctx.Tr("repo.forks")
 
 	page := ctx.FormInt("page")

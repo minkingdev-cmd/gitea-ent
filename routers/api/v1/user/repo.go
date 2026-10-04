@@ -9,14 +9,18 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
 
 // listUserRepos - List the repositories owned by the given user.
 func listUserRepos(ctx *context.APIContext, u *user_model.User, private bool) {
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
 	opts := utils.GetListOptions(ctx)
 
 	searchOpts := repo_model.SearchRepoOptions{
@@ -46,6 +50,7 @@ func listUserRepos(ctx *context.APIContext, u *user_model.User, private bool) {
 			return
 		}
 		if ctx.IsSigned && ctx.Doer.IsAdmin || permission.HasAnyUnitAccess() {
+			observe(repos[i], &permission)
 			apiRepos = append(apiRepos, convert.ToRepo(ctx, repos[i], permission))
 		}
 	}
@@ -105,6 +110,9 @@ func ListMyRepos(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/RepositoryList"
 
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
+
 	opts := repo_model.SearchRepoOptions{
 		ListOptions:        utils.GetListOptions(ctx),
 		Actor:              ctx.Doer,
@@ -129,6 +137,9 @@ func ListMyRepos(ctx *context.APIContext) {
 		permission, err := access_model.GetDoerRepoPermission(ctx, repo, ctx.Doer)
 		if err != nil {
 			ctx.APIErrorInternal(err)
+		}
+		if err == nil {
+			observe(repo, &permission)
 		}
 		results[i] = convert.ToRepo(ctx, repo, permission)
 	}

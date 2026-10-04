@@ -8,10 +8,12 @@ import (
 
 	"gitea.dev/models/db"
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/sitemap"
 	"gitea.dev/modules/templates"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 )
 
@@ -34,6 +36,8 @@ type RepoSearchOptions struct {
 // RenderRepoSearch render repositories search page
 // This function is also used to render the Admin Repository Management page.
 func RenderRepoSearch(ctx *context.Context, opts *RepoSearchOptions) {
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "web")
+	defer finish()
 	// Sitemap index for sitemap paths
 	page := ctx.PathParamInt("idx")
 	isSitemap := ctx.PathParam("idx") != ""
@@ -119,6 +123,9 @@ func RenderRepoSearch(ctx *context.Context, opts *RepoSearchOptions) {
 	if err != nil {
 		ctx.ServerError("SearchRepository", err)
 		return
+	}
+	for _, repo := range repos {
+		observe(repo, nil)
 	}
 	if isSitemap {
 		m := sitemap.NewSitemap()

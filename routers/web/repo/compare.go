@@ -24,6 +24,7 @@ import (
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/charset"
 	csv_module "gitea.dev/modules/csv"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/fileicon"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
@@ -184,6 +185,7 @@ func (cpi *comparePageInfoType) parseCompareInfo(ctx *context.Context, comparePa
 			return err
 		}
 		if !permHead.CanRead(unit.TypeCode) {
+			common.MarkNativeMutationDenied(ctx.Base)
 			return util.NewNotExistErrorf("") // permission: no error message for end users
 		}
 		ctx.Data["CanWriteToHeadRepo"] = permHead.CanWrite(unit.TypeCode)
@@ -502,6 +504,7 @@ func getBranchesAndTagsForRepo(ctx gocontext.Context, repo *repo_model.Repositor
 
 // CompareDiff show different from one commit to another commit
 func CompareDiff(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	comparePageInfo := newComparePageInfo()
 	err := comparePageInfo.parseCompareInfo(ctx, ctx.PathParam("*"))
 	if errors.Is(err, util.ErrNotExist) || errors.Is(err, util.ErrInvalidArgument) {
@@ -574,6 +577,7 @@ func DownloadComparePatch(ctx *context.Context) {
 }
 
 func downloadCompareDiffOrPatch(ctx *context.Context, patch bool) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	// The route captures `basehead` separately so the `.diff`/`.patch` suffix is
 	// stripped from the catch-all `*` param parseCompareInfo would otherwise read.
 	cpi := newComparePageInfo()
@@ -699,6 +703,9 @@ func attachHiddenCommentIDs(section *gitdiff.DiffSection, lineComments map[int64
 
 // ExcerptBlob render blob excerpt contents
 func ExcerptBlob(ctx *context.Context) {
+	if ctx.Data["PageIsWiki"] == nil {
+		defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
+	}
 	commitID := ctx.PathParam("sha")
 	opts := gitdiff.BlobExcerptOptions{
 		LastLeft:      ctx.FormInt("last_left"),

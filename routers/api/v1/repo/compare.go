@@ -7,8 +7,10 @@ import (
 	"net/http"
 
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	api "gitea.dev/modules/structs"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	git_service "gitea.dev/services/git"
@@ -16,6 +18,7 @@ import (
 
 // CompareDiff compare two branches or commits
 func CompareDiff(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/compare/{basehead} repository repoCompareDiff
 	// ---
 	// summary: Get commit comparison information

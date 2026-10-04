@@ -11,6 +11,7 @@ import (
 
 	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/organization"
@@ -190,6 +191,9 @@ func UpdateTeam(ctx context.Context, t *organization.Team, authChanged, includeA
 // It's caller's responsibility to assign organization ID.
 func DeleteTeam(ctx context.Context, t *organization.Team) error {
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
+		if err := authz_model.DeleteSubject(ctx, authz_model.SubjectTeam, t.ID); err != nil {
+			return err
+		}
 		if err := t.LoadMembers(ctx); err != nil {
 			return err
 		}

@@ -8,6 +8,8 @@ import (
 
 	activities_model "gitea.dev/models/activities"
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	feed_service "gitea.dev/services/feed"
 
@@ -19,6 +21,7 @@ func ShowRepoFeed(ctx *context.Context, repo *repo_model.Repository, formatType 
 	if !checkRepoFeedTokenScope(ctx) {
 		return
 	}
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ViewMetadata, "web")()
 	actions, _, err := feed_service.GetFeeds(ctx, activities_model.GetFeedsOptions{
 		RequestedRepo:  repo,
 		Actor:          ctx.Doer,

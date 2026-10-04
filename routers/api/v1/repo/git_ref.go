@@ -8,14 +8,17 @@ import (
 	"net/http"
 	"net/url"
 
+	authz "gitea.dev/modules/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 )
 
 // GetGitAllRefs get ref or a list of all the refs of a repository
 func GetGitAllRefs(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/refs repository repoListAllGitRefs
 	// ---
 	// summary: Get specified ref or filtered repository's refs
@@ -44,6 +47,7 @@ func GetGitAllRefs(ctx *context.APIContext) {
 
 // GetGitRefs get ref or an filteresd list of refs of a repository
 func GetGitRefs(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/refs/{ref} repository repoListGitRefs
 	// ---
 	// summary: Get specified ref or filtered repository's refs

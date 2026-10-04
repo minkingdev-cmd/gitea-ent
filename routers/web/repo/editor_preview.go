@@ -6,12 +6,16 @@ package repo
 import (
 	"net/http"
 
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/setting"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	files_service "gitea.dev/services/repository/files"
 )
 
 func DiffPreviewPost(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
+
 	newContent := ctx.FormString("content")
 	treePath := files_service.CleanGitTreePath(ctx.Repo.TreePath)
 	if treePath == "" {

@@ -138,7 +138,8 @@ const (
 //   - merge: both the head commits must be verified and Gitea must sign the merge commit.
 //   - rebase, rebase-merge, squash: Gitea rewrites the commits and signs each, so only Gitea's
 //     signing ability is checked.
-func CheckPullMergeable(stdCtx context.Context, doer *user_model.User, perm *access_model.Permission, pr *issues_model.PullRequest, mergeCheckType MergeCheckType, mergeStyle repo_model.MergeStyle, forceMerge bool) error {
+func CheckPullMergeable(stdCtx context.Context, doer *user_model.User, perm *access_model.Permission, pr *issues_model.PullRequest, mergeCheckType MergeCheckType, mergeStyle repo_model.MergeStyle, forceMerge bool) (err error) {
+	defer func() { observeMergeCheckFailure(stdCtx, doer, pr, err) }()
 	return db.WithTx(stdCtx, func(ctx context.Context) error {
 		if pr.HasMerged {
 			return ErrHasMerged

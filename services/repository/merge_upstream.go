@@ -12,15 +12,33 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	repo_module "gitea.dev/modules/repository"
 	"gitea.dev/modules/reqctx"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/pull"
 )
 
 // MergeUpstream merges the base repository's default branch into the fork repository's current branch.
 func MergeUpstream(ctx reqctx.RequestContext, doer *user_model.User, repo *repo_model.Repository, branch string, ffOnly bool) (mergeStyle string, err error) {
+	pushDenied := false
+	operationCtx, observation := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, branch)
+	defer func() {
+		outcome := authz_service.NativeUnknown
+		if mergeStyle == "fast-forward" || mergeStyle == "merge" {
+			outcome = authz_service.NativeSuccess
+		}
+		if err != nil {
+			outcome = authz_service.NativeFailed
+			if pushDenied || errors.Is(err, util.ErrPermissionDenied) || git.IsErrPushRejected(err) {
+				outcome = authz_service.NativeDenied
+			}
+		}
+		observation.Finish(operationCtx, outcome, authz_service.StageOperation)
+	}()
+
 	if err = repo.MustNotBeArchived(); err != nil {
 		return "", err
 	}
@@ -46,9 +64,10 @@ func MergeUpstream(ctx reqctx.RequestContext, doer *user_model.User, repo *repo_
 		return "up-to-date", nil
 	}
 
-	err = git.PushManaged(ctx, repo.BaseRepo, repo, git.PushOptions{
+	err = git.PushManaged(operationCtx, repo.BaseRepo, repo, git.PushOptions{
 		Branch: fmt.Sprintf("%s:%s", divergingInfo.BaseBranchName, branch),
-		Env:    repo_module.PushingEnvironment(doer, repo),
+		Env: repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo),
+			string(authz_service.ManagedHookOperationTicket(operationCtx, doer, repo, branch, authz.PushBranch))),
 	})
 	if err == nil {
 		return "fast-forward", nil
@@ -59,6 +78,7 @@ func MergeUpstream(ctx reqctx.RequestContext, doer *user_model.User, repo *repo_
 
 	// If ff_only is requested and fast-forward failed, return error
 	if ffOnly {
+		pushDenied = git.IsErrPushRejected(err)
 		return "", util.NewInvalidArgumentErrorf("fast-forward merge not possible: branch has diverged")
 	}
 
@@ -87,7 +107,7 @@ func MergeUpstream(ctx reqctx.RequestContext, doer *user_model.User, repo *repo_
 		BaseBranch: divergingInfo.BaseBranchName,
 	}
 	fakeIssue.PullRequest = fakePR
-	err = pull.Update(fakePR, doer, "merge upstream", false)
+	err = pull.Update(operationCtx, fakePR, doer, "merge upstream", false)
 	if err != nil {
 		return "", err
 	}

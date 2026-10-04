@@ -33,7 +33,11 @@ func (err ErrCommitIDDoesNotMatch) Error() string {
 }
 
 // CherryPick cherry-picks or reverts a commit to the given repository
-func CherryPick(ctx reqctx.RequestContext, repo *repo_model.Repository, doer *user_model.User, revert bool, opts *ApplyDiffPatchOptions) (*structs.FileResponse, error) {
+func CherryPick(ctx reqctx.RequestContext, repo *repo_model.Repository, doer *user_model.User, revert bool, opts *ApplyDiffPatchOptions) (_ *structs.FileResponse, errRet error) {
+	observationCtx, finishObservation := observeFileMutation(ctx, repo, doer, opts.OldBranch, opts.NewBranch, nil, false)
+	ctx = reqctx.FromContext(observationCtx)
+	defer func() { finishObservation(errRet) }()
+
 	gitRepo, err := git.RepositoryFromRequestContextOrOpen(ctx, repo)
 	if err != nil {
 		return nil, err

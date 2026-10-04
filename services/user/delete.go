@@ -13,6 +13,7 @@ import (
 	asymkey_model "gitea.dev/models/asymkey"
 	auth_model "gitea.dev/models/auth"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/organization"
@@ -29,6 +30,9 @@ import (
 
 // deleteUser deletes models associated to a user.
 func deleteUser(ctx context.Context, u *user_model.User, purge bool) (err error) {
+	if err := authz_model.DeleteSubject(ctx, authz_model.SubjectUser, u.ID); err != nil {
+		return err
+	}
 	e := db.GetEngine(ctx)
 
 	// ***** START: Watch *****

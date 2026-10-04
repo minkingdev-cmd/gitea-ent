@@ -10,8 +10,8 @@ import (
 	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
-	"gitea.dev/models/organization"
 	"gitea.dev/models/perm"
+	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/setting"
@@ -339,26 +339,11 @@ func CheckEnterpriseRepoAuthorizationChange(ctx context.Context, actor *user_mod
 	if actor == nil || repo == nil {
 		return ErrEnterpriseRepoAuthorizationDenied
 	}
-	superAdmin, err := isEnterpriseWeComSuperAdmin(ctx, actor)
+	allowed, err := access_model.HasEnterpriseRepoAuthorization(ctx, actor, repo)
 	if err != nil {
 		return err
 	}
-	if superAdmin {
-		return nil
-	}
-	governance := &wecom_model.RepositoryGovernance{RepoID: repo.ID}
-	has, err := db.GetEngine(ctx).Get(governance)
-	if err != nil {
-		return err
-	}
-	if has && governance.CreatorID == actor.ID {
-		return nil
-	}
-	ownerLevel, err := hasRepositoryOwnerLevelPermission(ctx, actor, repo)
-	if err != nil {
-		return err
-	}
-	if ownerLevel {
+	if allowed {
 		return nil
 	}
 	audit.RecordAs(ctx, actor, audit_model.EnterpriseWeComRepoAuthorizationDeny, repo,
@@ -366,25 +351,6 @@ func CheckEnterpriseRepoAuthorizationChange(ctx context.Context, actor *user_mod
 		"outcome", "denied",
 	)
 	return ErrEnterpriseRepoAuthorizationDenied
-}
-
-func hasRepositoryOwnerLevelPermission(ctx context.Context, actor *user_model.User, repo *repo_model.Repository) (bool, error) {
-	if err := repo.LoadOwner(ctx); err != nil {
-		return false, err
-	}
-	if !repo.Owner.IsOrganization() {
-		return actor.ID == repo.OwnerID, nil
-	}
-	teams, err := organization.GetUserRepoTeams(ctx, repo.OwnerID, actor.ID, repo.ID)
-	if err != nil {
-		return false, err
-	}
-	for _, team := range teams {
-		if team.IsOwnerTeam() || team.AccessMode == perm.AccessModeOwner {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func recordEnterpriseRepoVisibilityEnforced(ctx context.Context, doer, owner *user_model.User) {

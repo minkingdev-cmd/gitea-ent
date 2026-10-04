@@ -10,14 +10,16 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
 
 // getWatchedRepos returns the repos that the user with the specified userID is watching
-func getWatchedRepos(ctx *context.APIContext, user *user_model.User, private bool) ([]*api.Repository, int64, error) {
+func getWatchedRepos(ctx *context.APIContext, user *user_model.User, private bool, observe func(*repo_model.Repository, *access_model.Permission)) ([]*api.Repository, int64, error) {
 	opts := &repo_model.WatchedReposOptions{
 		ListOptions:    utils.GetListOptions(ctx),
 		WatcherID:      user.ID,
@@ -37,6 +39,7 @@ func getWatchedRepos(ctx *context.APIContext, user *user_model.User, private boo
 		if err != nil {
 			return nil, 0, err
 		}
+		observe(watched, nil)
 		repos[i] = convert.ToRepo(ctx, watched, permission)
 	}
 	return repos, total, nil
@@ -69,8 +72,11 @@ func GetWatchedRepos(ctx *context.APIContext) {
 	//   "404":
 	//     "$ref": "#/responses/notFound"
 
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
+
 	private := ctx.ContextUser.ID == ctx.Doer.ID
-	repos, total, err := getWatchedRepos(ctx, ctx.ContextUser, private)
+	repos, total, err := getWatchedRepos(ctx, ctx.ContextUser, private, observe)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 	}
@@ -100,7 +106,10 @@ func GetMyWatchedRepos(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/RepositoryList"
 
-	repos, total, err := getWatchedRepos(ctx, ctx.Doer, true)
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ViewMetadata, "api")
+	defer finish()
+
+	repos, total, err := getWatchedRepos(ctx, ctx.Doer, true, observe)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 	}

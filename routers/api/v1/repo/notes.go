@@ -6,14 +6,17 @@ package repo
 import (
 	"net/http"
 
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	api "gitea.dev/modules/structs"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
 
 // GetNote Get a note corresponding to a single commit from a repository
 func GetNote(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/git/notes/{sha} repository repoGetNote
 	// ---
 	// summary: Get a note corresponding to a single commit from a repository

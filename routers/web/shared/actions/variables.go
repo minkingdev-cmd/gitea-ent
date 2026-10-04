@@ -9,10 +9,12 @@ import (
 
 	actions_model "gitea.dev/models/actions"
 	"gitea.dev/models/db"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	shared_user "gitea.dev/routers/web/shared/user"
 	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/context"
@@ -111,6 +113,7 @@ func Variables(ctx *context.Context) {
 }
 
 func VariableCreate(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	vCtx, err := getVariablesCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getVariablesCtx", err)
@@ -130,11 +133,13 @@ func VariableCreate(ctx *context.Context) {
 		return
 	}
 
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("actions.variables.creation.success", v.Name))
 	ctx.JSONRedirect(vCtx.RedirectLink)
 }
 
 func VariableUpdate(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	vCtx, err := getVariablesCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getVariablesCtx", err)
@@ -162,6 +167,7 @@ func VariableUpdate(ctx *context.Context) {
 		ctx.JSONErrorAuto(err)
 		return
 	}
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("actions.variables.update.success"))
 	ctx.JSONRedirect(vCtx.RedirectLink)
 }
@@ -199,6 +205,7 @@ func findActionsVariable(ctx *context.Context, id int64, vCtx *variablesCtx) *ac
 }
 
 func VariableDelete(ctx *context.Context) {
+	defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	vCtx, err := getVariablesCtx(ctx)
 	if err != nil {
 		ctx.ServerError("getVariablesCtx", err)
@@ -217,6 +224,7 @@ func VariableDelete(ctx *context.Context) {
 		ctx.JSONError(ctx.Tr("actions.variables.deletion.failed"))
 		return
 	}
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
 	ctx.Flash.Success(ctx.Tr("actions.variables.deletion.success"))
 	ctx.JSONRedirect(vCtx.RedirectLink)
 }

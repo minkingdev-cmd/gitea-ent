@@ -9,6 +9,7 @@ import (
 
 	"gitea.dev/models/db"
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	code_indexer "gitea.dev/modules/indexer/code"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
@@ -23,6 +24,8 @@ const (
 
 // Code render explore code page
 func Code(ctx *context.Context) {
+	observe, finish := common.RepoCollectionObserver(ctx.Base, ctx.Doer, authz.ReadCode, "web")
+	defer finish()
 	if !setting.Indexer.RepoIndexerEnabled || setting.Service.Explore.DisableCodePage {
 		ctx.Redirect(setting.AppSubURL + "/explore")
 		return
@@ -105,6 +108,9 @@ func Code(ctx *context.Context) {
 			return
 		}
 
+		for _, repo := range repoMaps {
+			observe(repo, nil)
+		}
 		ctx.Data["RepoMaps"] = repoMaps
 
 		if len(loadRepoIDs) != len(repoMaps) {

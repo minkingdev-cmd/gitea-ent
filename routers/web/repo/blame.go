@@ -14,6 +14,7 @@ import (
 
 	"gitea.dev/models/gituser"
 	"gitea.dev/modules/charset"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/languagestats"
 	"gitea.dev/modules/highlight"
@@ -21,6 +22,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 )
 
@@ -41,6 +43,7 @@ type blameRow struct {
 
 // RefBlame render blame page
 func RefBlame(ctx *context.Context) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 	ctx.Data["IsBlame"] = true
 	prepareRepoViewContent(ctx, ctx.Repo.RefTypeNameSubURL())
 

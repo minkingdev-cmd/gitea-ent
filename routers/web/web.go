@@ -11,6 +11,7 @@ import (
 	auth_model "gitea.dev/models/auth"
 	"gitea.dev/models/perm"
 	"gitea.dev/models/unit"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/log"
@@ -46,6 +47,7 @@ import (
 	gitea_websocket "gitea.dev/routers/web/websocket"
 	auth_service "gitea.dev/services/auth"
 	"gitea.dev/services/context"
+	"gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 
 	_ "gitea.dev/modules/session" // to register all internal adapters
@@ -263,6 +265,7 @@ func verifyAuthWithOptions(options *common.VerifyOptions) func(ctx *context.Cont
 				return
 			}
 			ctx.Data["PageIsAdmin"] = true
+			ctx.Data["ShowEnterpriseAuthz"] = enterpriseauthz.CheckUIAuthority(ctx, ctx.Doer) == nil
 		}
 	}
 }
@@ -476,47 +479,47 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 
 	addWebhookAddRoutes := func() {
 		m.Get("/{type}/new", repo_setting.WebhooksNew)
-		m.Post("/gitea/new", web.Bind[*forms.NewWebhookForm](), repo_setting.GiteaHooksNewPost)
-		m.Post("/gogs/new", web.Bind[*forms.NewGogshookForm](), repo_setting.GogsHooksNewPost)
-		m.Post("/slack/new", web.Bind[*forms.NewSlackHookForm](), repo_setting.SlackHooksNewPost)
-		m.Post("/discord/new", web.Bind[*forms.NewDiscordHookForm](), repo_setting.DiscordHooksNewPost)
-		m.Post("/dingtalk/new", web.Bind[*forms.NewDingtalkHookForm](), repo_setting.DingtalkHooksNewPost)
-		m.Post("/telegram/new", web.Bind[*forms.NewTelegramHookForm](), repo_setting.TelegramHooksNewPost)
-		m.Post("/matrix/new", web.Bind[*forms.NewMatrixHookForm](), repo_setting.MatrixHooksNewPost)
-		m.Post("/msteams/new", web.Bind[*forms.NewMSTeamsHookForm](), repo_setting.MSTeamsHooksNewPost)
-		m.Post("/feishu/new", web.Bind[*forms.NewFeishuHookForm](), repo_setting.FeishuHooksNewPost)
-		m.Post("/wechatwork/new", web.Bind[*forms.NewWechatWorkHookForm](), repo_setting.WechatworkHooksNewPost)
-		m.Post("/packagist/new", web.Bind[*forms.NewPackagistHookForm](), repo_setting.PackagistHooksNewPost)
+		m.Post("/gitea/new", web.Bind[*forms.NewWebhookForm](), repo_setting.GiteaHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/gogs/new", web.Bind[*forms.NewGogshookForm](), repo_setting.GogsHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/slack/new", web.Bind[*forms.NewSlackHookForm](), repo_setting.SlackHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/discord/new", web.Bind[*forms.NewDiscordHookForm](), repo_setting.DiscordHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/dingtalk/new", web.Bind[*forms.NewDingtalkHookForm](), repo_setting.DingtalkHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/telegram/new", web.Bind[*forms.NewTelegramHookForm](), repo_setting.TelegramHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/matrix/new", web.Bind[*forms.NewMatrixHookForm](), repo_setting.MatrixHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/msteams/new", web.Bind[*forms.NewMSTeamsHookForm](), repo_setting.MSTeamsHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/feishu/new", web.Bind[*forms.NewFeishuHookForm](), repo_setting.FeishuHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/wechatwork/new", web.Bind[*forms.NewWechatWorkHookForm](), repo_setting.WechatworkHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/packagist/new", web.Bind[*forms.NewPackagistHookForm](), repo_setting.PackagistHooksNewPost, common.RepoMutationRoute(authz.ManageWebhook))
 	}
 
 	addWebhookEditRoutes := func() {
-		m.Post("/gitea/{id}", web.Bind[*forms.NewWebhookForm](), repo_setting.GiteaHooksEditPost)
-		m.Post("/gogs/{id}", web.Bind[*forms.NewGogshookForm](), repo_setting.GogsHooksEditPost)
-		m.Post("/slack/{id}", web.Bind[*forms.NewSlackHookForm](), repo_setting.SlackHooksEditPost)
-		m.Post("/discord/{id}", web.Bind[*forms.NewDiscordHookForm](), repo_setting.DiscordHooksEditPost)
-		m.Post("/dingtalk/{id}", web.Bind[*forms.NewDingtalkHookForm](), repo_setting.DingtalkHooksEditPost)
-		m.Post("/telegram/{id}", web.Bind[*forms.NewTelegramHookForm](), repo_setting.TelegramHooksEditPost)
-		m.Post("/matrix/{id}", web.Bind[*forms.NewMatrixHookForm](), repo_setting.MatrixHooksEditPost)
-		m.Post("/msteams/{id}", web.Bind[*forms.NewMSTeamsHookForm](), repo_setting.MSTeamsHooksEditPost)
-		m.Post("/feishu/{id}", web.Bind[*forms.NewFeishuHookForm](), repo_setting.FeishuHooksEditPost)
-		m.Post("/wechatwork/{id}", web.Bind[*forms.NewWechatWorkHookForm](), repo_setting.WechatworkHooksEditPost)
-		m.Post("/packagist/{id}", web.Bind[*forms.NewPackagistHookForm](), repo_setting.PackagistHooksEditPost)
+		m.Post("/gitea/{id}", web.Bind[*forms.NewWebhookForm](), repo_setting.GiteaHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/gogs/{id}", web.Bind[*forms.NewGogshookForm](), repo_setting.GogsHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/slack/{id}", web.Bind[*forms.NewSlackHookForm](), repo_setting.SlackHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/discord/{id}", web.Bind[*forms.NewDiscordHookForm](), repo_setting.DiscordHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/dingtalk/{id}", web.Bind[*forms.NewDingtalkHookForm](), repo_setting.DingtalkHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/telegram/{id}", web.Bind[*forms.NewTelegramHookForm](), repo_setting.TelegramHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/matrix/{id}", web.Bind[*forms.NewMatrixHookForm](), repo_setting.MatrixHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/msteams/{id}", web.Bind[*forms.NewMSTeamsHookForm](), repo_setting.MSTeamsHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/feishu/{id}", web.Bind[*forms.NewFeishuHookForm](), repo_setting.FeishuHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/wechatwork/{id}", web.Bind[*forms.NewWechatWorkHookForm](), repo_setting.WechatworkHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
+		m.Post("/packagist/{id}", web.Bind[*forms.NewPackagistHookForm](), repo_setting.PackagistHooksEditPost, common.RepoMutationRoute(authz.ManageWebhook))
 	}
 
 	addSettingsVariablesRoutes := func() {
 		m.Group("/variables", func() {
 			m.Get("", shared_actions.Variables)
-			m.Post("/new", web.Bind[*forms.EditVariableForm](), shared_actions.VariableCreate)
-			m.Post("/{variable_id}/edit", web.Bind[*forms.EditVariableForm](), shared_actions.VariableUpdate)
-			m.Post("/{variable_id}/delete", shared_actions.VariableDelete)
+			m.Post("/new", web.Bind[*forms.EditVariableForm](), shared_actions.VariableCreate, common.RepoMutationRoute(authz.ManageCI))
+			m.Post("/{variable_id}/edit", web.Bind[*forms.EditVariableForm](), shared_actions.VariableUpdate, common.RepoMutationRoute(authz.ManageCI))
+			m.Post("/{variable_id}/delete", shared_actions.VariableDelete, common.RepoMutationRoute(authz.ManageCI))
 		})
 	}
 
 	addSettingsSecretsRoutes := func() {
 		m.Group("/secrets", func() {
 			m.Get("", repo_setting.Secrets)
-			m.Post("", web.Bind[*forms.AddSecretForm](), repo_setting.SecretsPost)
-			m.Post("/delete", repo_setting.SecretsDelete)
+			m.Post("", web.Bind[*forms.AddSecretForm](), repo_setting.SecretsPost, common.RepoMutationRoute(authz.ManageSecret))
+			m.Post("/delete", repo_setting.SecretsDelete, common.RepoMutationRoute(authz.ManageSecret))
 		})
 	}
 
@@ -524,10 +527,10 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Group("/runners", func() {
 			m.Get("", shared_actions.Runners)
 			m.Combo("/{runnerid}").Get(shared_actions.RunnersEdit).
-				Post(web.Bind[*forms.EditRunnerForm](), shared_actions.RunnersEditPost)
-			m.Post("/{runnerid}/update-runner", shared_actions.RunnerUpdatePost)
-			m.Post("/{runnerid}/delete", shared_actions.RunnerDeletePost)
-			m.Post("/reset_registration_token", shared_actions.ResetRunnerRegistrationToken)
+				Post(web.Bind[*forms.EditRunnerForm](), shared_actions.RunnersEditPost, common.RepoMutationRoute(authz.ManageCI))
+			m.Post("/{runnerid}/update-runner", shared_actions.RunnerUpdatePost, common.RepoMutationRoute(authz.ManageCI))
+			m.Post("/{runnerid}/delete", shared_actions.RunnerDeletePost, common.RepoMutationRoute(authz.ManageCI))
+			m.Post("/reset_registration_token", shared_actions.ResetRunnerRegistrationToken, common.RepoMutationRoute(authz.ManageCI))
 		})
 	}
 
@@ -794,6 +797,28 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 
 	// ***** START: Admin *****
 	m.Group("/-/admin", func() {
+		m.Group("/enterprise/authz", func() {
+			m.Get("", admin.EnterpriseAuthzHome)
+			m.Get("/scope", admin.EnterpriseAuthzScopeSelect)
+			m.Get("/selectors/{kind}", admin.EnterpriseAuthzSelector)
+			addScope := func() {
+				m.Get("/roles", admin.EnterpriseAuthzRoles)
+				m.Get("/bindings", admin.EnterpriseAuthzBindings)
+				m.Post("/bindings", admin.EnterpriseAuthzBindingPut)
+				m.Post("/bindings/{id}/delete", admin.EnterpriseAuthzBindingDelete)
+				m.Get("/roles/new", admin.EnterpriseAuthzRoleNew)
+				m.Post("/roles/new", admin.EnterpriseAuthzRoleSave)
+				m.Get("/roles/{id}", admin.EnterpriseAuthzRole)
+				m.Post("/roles/{id}", admin.EnterpriseAuthzRoleSave)
+				m.Post("/roles/{id}/delete", admin.EnterpriseAuthzRoleDelete)
+				m.Get("/effective-permissions", admin.EnterpriseAuthzDiagnostic)
+				m.Post("/evaluate", admin.EnterpriseAuthzEvaluate)
+				m.Get("/decisions", admin.EnterpriseAuthzDecisions)
+				m.Get("/decisions/{id}", admin.EnterpriseAuthzDecision)
+			}
+			m.Group("/scopes/{scope:system}", addScope)
+			m.Group("/scopes/{scope:org|repo}/{scopeid}", addScope)
+		}, admin.EnterpriseAuthzRequired)
 		m.Get("", admin.Dashboard)
 		m.Get("/system_status", admin.SystemStatus)
 		m.Post("", web.Bind[*forms.AdminDashboardForm](), admin.DashboardPost)
@@ -940,7 +965,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 
 	m.Post("/{username}", reqSignIn, context.UserAssignmentWeb(), user.ActionUserFollow)
 
-	reqRepoAdmin := context.RequireRepoAdmin()
+	reqRepoAdmin := repo.ObserveRepoMutationGuard(context.RequireRepoAdmin())
 	reqRepoCodeWriter := context.RequireUnitWriter(unit.TypeCode)
 	reqRepoReleaseWriter := context.RequireUnitWriter(unit.TypeReleases)
 	reqRepoReleaseReader := context.RequireUnitReader(unit.TypeReleases)
@@ -1206,7 +1231,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	m.Group("/{username}/{reponame}/settings", func() {
 		m.Group("", func() {
 			m.Combo("").Get(repo_setting.Settings).
-				Post(web.Bind[*forms.RepoSettingForm](), repo_setting.SettingsPost)
+				Post(web.Bind[*forms.RepoSettingForm](), repo_setting.SettingsPost, common.RepoLifecycleMutationRoute(false))
 		}, repo_setting.SettingsCtxData)
 		m.Post("/avatar", web.Bind[*forms.AvatarForm](), repo_setting.SettingsAvatar)
 		m.Post("/avatar/delete", repo_setting.SettingsDeleteAvatar)
@@ -1230,17 +1255,17 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		m.Group("/branches", func() {
 			m.Get("/", repo_setting.ProtectedBranchRules)
 			m.Combo("/edit").Get(repo_setting.SettingsProtectedBranch).
-				Post(web.Bind[*forms.ProtectBranchForm](), context.RepoMustNotBeArchived(), repo_setting.SettingsProtectedBranchPost)
-			m.Post("/{id}/delete", repo_setting.DeleteProtectedBranchRulePost)
-			m.Post("/priority", context.RepoMustNotBeArchived(), repo_setting.UpdateBranchProtectionPriories)
+				Post(web.Bind[*forms.ProtectBranchForm](), repo.ObserveRepoMutationGuard(context.RepoMustNotBeArchived()), repo_setting.SettingsProtectedBranchPost, common.RepoMutationRoute(authz.ManageBranchProtection))
+			m.Post("/{id}/delete", repo_setting.DeleteProtectedBranchRulePost, common.RepoMutationRoute(authz.ManageBranchProtection))
+			m.Post("/priority", repo.ObserveRepoMutationGuard(context.RepoMustNotBeArchived()), repo_setting.UpdateBranchProtectionPriories, common.RepoMutationRoute(authz.ManageBranchProtection))
 		})
 
 		m.Group("/tags", func() {
 			m.Get("", repo_setting.ProtectedTags)
-			m.Post("", web.Bind[*forms.ProtectTagForm](), context.RepoMustNotBeArchived(), repo_setting.NewProtectedTagPost)
-			m.Post("/delete", context.RepoMustNotBeArchived(), repo_setting.DeleteProtectedTagPost)
+			m.Post("", web.Bind[*forms.ProtectTagForm](), repo.ObserveRepoMutationGuard(context.RepoMustNotBeArchived()), repo_setting.NewProtectedTagPost)
+			m.Post("/delete", repo.ObserveRepoMutationGuard(context.RepoMustNotBeArchived()), repo_setting.DeleteProtectedTagPost)
 			m.Get("/{id}", repo_setting.EditProtectedTag)
-			m.Post("/{id}", web.Bind[*forms.ProtectTagForm](), context.RepoMustNotBeArchived(), repo_setting.EditProtectedTagPost)
+			m.Post("/{id}", web.Bind[*forms.ProtectTagForm](), repo.ObserveRepoMutationGuard(context.RepoMustNotBeArchived()), repo_setting.EditProtectedTagPost)
 		})
 
 		m.Group("/hooks/git", func() {
@@ -1251,7 +1276,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 
 		m.Group("/hooks", func() {
 			m.Get("", repo_setting.Webhooks)
-			m.Post("/delete", repo_setting.DeleteWebhook)
+			m.Post("/delete", repo_setting.DeleteWebhook, common.RepoMutationRoute(authz.ManageWebhook))
 			addWebhookAddRoutes()
 			m.Group("/{id}", func() {
 				m.Get("", repo_setting.WebHooksEdit)
@@ -1259,7 +1284,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 				m.Post("/replay/{uuid}", repo_setting.ReplayWebhook)
 			})
 			addWebhookEditRoutes()
-		}, webhooksEnabled)
+		}, repo.ObserveRepoMutationGuard(webhooksEnabled))
 
 		m.Group("/keys", func() {
 			m.Combo("").Get(repo_setting.DeployKeys).
@@ -1284,7 +1309,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		})
 		m.Group("/actions/general", func() {
 			m.Get("", repo_setting.ActionsGeneralSettings)
-			m.Post("/actions_unit", repo_setting.ActionsUnitPost)
+			m.Post("/actions_unit", repo_setting.ActionsUnitPost, common.RepoMutationRoute(authz.ManageCI))
 		}) // doesn't require actions enabled
 		m.Group("/actions", func() {
 			m.Get("", misc.LocationRedirect("./actions/general"))
@@ -1293,12 +1318,12 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			addSettingsVariablesRoutes()
 			m.Group("/general", func() {
 				m.Group("/collaborative_owner", func() {
-					m.Post("/add", repo_setting.AddCollaborativeOwner)
-					m.Post("/delete", repo_setting.DeleteCollaborativeOwner)
+					m.Post("/add", repo_setting.AddCollaborativeOwner, common.RepoMutationRoute(authz.ManageCI))
+					m.Post("/delete", repo_setting.DeleteCollaborativeOwner, common.RepoMutationRoute(authz.ManageCI))
 				})
-				m.Post("/token_permissions", repo_setting.UpdateTokenPermissions)
+				m.Post("/token_permissions", repo_setting.UpdateTokenPermissions, common.RepoMutationRoute(authz.ManageCI))
 			})
-		}, actions.MustEnableActions)
+		}, repo.ObserveRepoMutationGuard(actions.MustEnableActions))
 		m.Get("/audit_logs", repo_setting.ViewAuditLogs)
 		// the follow handler must be under "settings", otherwise this incomplete repo can't be accessed
 		m.Group("/migrate", func() {
@@ -1332,7 +1357,12 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			g.MatchPath("GET", "/<basehead:*>.diff", repo.MustBeNotEmpty, repo.DownloadCompareDiff)
 			g.MatchPath("GET", "/<basehead:*>.patch", repo.MustBeNotEmpty, repo.DownloadComparePatch)
 			g.MatchPath("GET", "/<*:*>", repo.MustBeNotEmpty, repo.SetEditorconfigIfExists, repo.SetDiffViewStyle, repo.SetWhitespaceBehavior, repo.CompareDiff)
-			g.MatchPath("POST", "/<*:*>", repo.MustBeNotEmpty, repo.SetEditorconfigIfExists, reqSignIn, context.RepoMustNotBeArchived(), reqUnitPullsReader, repo.MustAllowPulls, web.Bind[*forms.CreateIssueForm](), repo.SetWhitespaceBehavior, repo.CompareAndPullRequestPost)
+			g.MatchPath("POST", "/<*:*>", repo.MustBeNotEmpty, repo.SetEditorconfigIfExists, reqSignIn, func(ctx *context.Context) {
+				context.RepoMustNotBeArchived()(ctx)
+				if ctx.Written() {
+					common.ObservePullDenial(ctx.Base, ctx.Doer, ctx.Repo, authz.CreatePullRequest, common.PullTargetRepository, "web")
+				}
+			}, reqUnitPullsReader, repo.MustAllowPulls, web.Bind[*forms.CreateIssueForm](), repo.SetWhitespaceBehavior, repo.CompareAndPullRequestPost)
 		})
 		m.Get("/pulls/new/*", repo.PullsNewRedirect)
 	}, optSignIn, context.RepoAssignment, reqUnitCodeReader)
@@ -1456,11 +1486,11 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 		// FIXME: many "pulls" requests are sent to "issues" endpoints incorrectly, need to move these routes to the proper place
 		m.Group("/issues", func() {
 			m.Post("/request_review", repo.UpdatePullReviewRequest)
-			m.Post("/dismiss_review", reqRepoAdmin, web.Bind[*forms.DismissReviewForm](), repo.DismissReview)
-			m.Post("/resolve_conversation", repo.SetShowOutdatedComments, repo.UpdateResolveConversation)
+			m.Post("/dismiss_review", common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetWebReview), repo.ObservePullMutationGuard(reqRepoAdmin), web.Bind[*forms.DismissReviewForm](), repo.DismissReview)
+			m.Post("/resolve_conversation", common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetWebComment), repo.SetShowOutdatedComments, repo.UpdateResolveConversation)
 		}, reqUnitPullsReader)
 		m.Post("/pull/{index}/target_branch", reqUnitPullsReader, repo.UpdatePullRequestTarget)
-	}, reqSignIn, context.RepoAssignment, context.RepoMustNotBeArchived())
+	}, reqSignIn, context.RepoAssignment, repo.ObservePullMutationGuard(context.RepoMustNotBeArchived()))
 	// end "/{username}/{reponame}": create or edit issues, pulls, labels, milestones
 
 	m.Group("/{username}/{reponame}", func() { // repo code (at least "code reader")
@@ -1500,15 +1530,15 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 
 		m.Group("/branches", func() {
 			m.Group("/_new", func() {
-				m.Post("/branch/*", context.RepoRefByType(git.RefTypeBranch), repo.CreateBranch)
-				m.Post("/tag/*", context.RepoRefByType(git.RefTypeTag), repo.CreateBranch)
-				m.Post("/commit/*", context.RepoRefByType(git.RefTypeCommit), repo.CreateBranch)
+				m.Post("/branch/*", common.RepoMutationRoute(authz.CreateBranch), context.RepoRefByType(git.RefTypeBranch), repo.CreateBranch)
+				m.Post("/tag/*", common.RepoMutationRoute(authz.CreateBranch), context.RepoRefByType(git.RefTypeTag), repo.CreateBranch)
+				m.Post("/commit/*", common.RepoMutationRoute(authz.CreateBranch), context.RepoRefByType(git.RefTypeCommit), repo.CreateBranch)
 			}, web.Bind[*forms.NewBranchForm]())
-			m.Post("/delete", repo.DeleteBranchPost)
-			m.Post("/restore", repo.RestoreBranchPost)
-			m.Post("/rename", web.Bind[*forms.RenameBranchForm](), repo_setting.RenameBranchPost)
-			m.Post("/merge-upstream", repo.MergeUpstream)
-		}, context.RepoMustNotBeArchived(), reqRepoCodeWriter, repo.MustBeNotEmpty)
+			m.Post("/delete", common.RepoMutationRoute(authz.PushBranch), repo.DeleteBranchPost)
+			m.Post("/restore", common.RepoMutationRoute(authz.CreateBranch), repo.RestoreBranchPost)
+			m.Post("/rename", common.RepoMutationRoute(authz.PushBranch), web.Bind[*forms.RenameBranchForm](), repo_setting.RenameBranchPost)
+			m.Post("/merge-upstream", common.RepoMutationRoute(authz.PushBranch), repo.MergeUpstream)
+		}, repo.ObserveRepoMutationGuard(context.RepoMustNotBeArchived()), repo.ObserveRepoMutationGuard(reqRepoCodeWriter), repo.ObserveRepoMutationGuard(repo.MustBeNotEmpty))
 
 		m.Combo("/fork").Get(repo.Fork).Post(web.Bind[*forms.CreateRepoForm](), repo.ForkPost)
 	}, reqSignIn, context.RepoAssignment, reqUnitCodeReader)
@@ -1584,8 +1614,8 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 
 	m.Group("/{username}/{reponame}/actions", func() {
 		m.Get("", actions.List)
-		m.Post("/disable", reqRepoAdmin, actions.DisableWorkflowFile)
-		m.Post("/enable", reqRepoAdmin, actions.EnableWorkflowFile)
+		m.Post("/disable", reqRepoAdmin, actions.DisableWorkflowFile, common.RepoMutationRoute(authz.ManageCI))
+		m.Post("/enable", reqRepoAdmin, actions.EnableWorkflowFile, common.RepoMutationRoute(authz.ManageCI))
 		m.Post("/run", reqRepoActionsWriter, actions.Run)
 		m.Get("/workflow-dispatch-inputs", reqRepoActionsWriter, actions.WorkflowDispatchInputs)
 		m.Post("/approve-all-checks", reqRepoActionsWriter, actions.ApproveAllChecks)
@@ -1675,7 +1705,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 				m.Get("/list", repo.GetPullCommits)
 				m.Get("/{sha:[a-f0-9]{7,64}}", repo.SetEditorconfigIfExists, repo.SetDiffViewStyle, repo.SetWhitespaceBehavior, repo.SetShowOutdatedComments, repo.ViewPullFilesForSingleCommit)
 			})
-			m.Post("/merge", context.RepoMustNotBeArchived(), web.Bind[*forms.MergePullRequestForm](), repo.MergePullRequest)
+			m.Post("/merge", repo.ObservePullMutationGuard(context.RepoMustNotBeArchived()), web.Bind[*forms.MergePullRequestForm](), common.PullMutationRoute(authz.MergePullRequest, common.PullTargetIndex), repo.MergePullRequest)
 			m.Post("/cancel_auto_merge", context.RepoMustNotBeArchived(), repo.CancelAutoMergePullRequest)
 			m.Post("/update", repo.UpdatePullRequest)
 			m.Post("/set_allow_maintainer_edit", web.Bind[*forms.UpdateAllowEditsForm](), repo.SetAllowEdits)
@@ -1685,12 +1715,12 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 				m.Get("/{shaFrom:[a-f0-9]{7,64}}..{shaTo:[a-f0-9]{7,64}}", repo.SetEditorconfigIfExists, repo.SetDiffViewStyle, repo.SetWhitespaceBehavior, repo.SetShowOutdatedComments, repo.ViewPullFilesForRange)
 				m.Group("/reviews", func() {
 					m.Get("/new_comment", repo.RenderNewCodeCommentForm)
-					m.Post("/comments", web.Bind[*forms.CodeCommentForm](), repo.SetShowOutdatedComments, repo.CreateCodeComment)
-					m.Post("/submit", web.Bind[*forms.SubmitReviewForm](), repo.SubmitReview)
+					m.Post("/comments", common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetIndex), web.Bind[*forms.CodeCommentForm](), repo.SetShowOutdatedComments, repo.CreateCodeComment)
+					m.Post("/submit", common.PullMutationRoute(authz.ReviewPullRequest, common.PullTargetIndex), web.Bind[*forms.SubmitReviewForm](), repo.SubmitReview)
 				}, context.RepoMustNotBeArchived())
 			})
 		})
-	}, optSignIn, context.RepoAssignment, repo.MustAllowPulls, reqUnitPullsReader)
+	}, optSignIn, context.RepoAssignment, repo.ObservePullMutationGuard(repo.MustAllowPulls), reqUnitPullsReader)
 	// end "/{username}/{reponame}/pulls/{index}": repo pull request
 
 	m.Group("/{username}/{reponame}", func() {

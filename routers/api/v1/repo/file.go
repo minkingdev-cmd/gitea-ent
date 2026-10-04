@@ -15,6 +15,7 @@ import (
 	"time"
 
 	git_model "gitea.dev/models/git"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/httpcache"
 	"gitea.dev/modules/httplib"
@@ -28,6 +29,7 @@ import (
 	"gitea.dev/routers/api/v1/utils"
 	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	pull_service "gitea.dev/services/pull"
 	files_service "gitea.dev/services/repository/files"
 )
@@ -36,6 +38,7 @@ const giteaObjectTypeHeader = "X-Gitea-Object-Type"
 
 // GetRawFile get a file by path on a repository
 func GetRawFile(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/raw/{filepath} repository repoGetRawFile
 	// ---
 	// summary: Get a file from a repository
@@ -89,6 +92,7 @@ func GetRawFile(ctx *context.APIContext) {
 
 // GetRawFileOrLFS get a file by repo's path, redirecting to LFS if necessary.
 func GetRawFileOrLFS(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/media/{filepath} repository repoGetRawFileOrLFS
 	// ---
 	// summary: Get a file or it's LFS object from a repository
@@ -267,6 +271,7 @@ func GetArchive(ctx *context.APIContext) {
 
 // GetEditorconfig get editor config of a repository
 func GetEditorconfig(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/editorconfig/{filepath} repository repoGetEditorConfig
 	// ---
 	// summary: Get the EditorConfig definitions of a file in a repository
@@ -328,6 +333,7 @@ func ReqChangeRepoFileOptionsAndCheck(ctx *context.APIContext) {
 	commonOpts.NewBranchName = util.IfZero(commonOpts.NewBranchName, commonOpts.BranchName)
 	if !ctx.Repo.CanWriteToBranch(ctx, ctx.Doer, commonOpts.NewBranchName) && !ctx.IsUserSiteAdmin() {
 		ctx.APIError(http.StatusForbidden, "user should have a permission to write to the target branch")
+		files_service.ObserveFileMutationRejection(ctx, ctx.Repo.Repository, ctx.Doer, commonOpts.BranchName, commonOpts.NewBranchName, authz_service.NativeDenied)
 	}
 }
 
@@ -702,6 +708,7 @@ func resolveRefCommit(ctx *context.APIContext, ref string, minCommitIDLen ...int
 }
 
 func GetContentsExt(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/contents-ext/{filepath} repository repoGetContentsExt
 	// ---
 	// summary: The extended "contents" API, to get file metadata and/or content, or list a directory.
@@ -772,6 +779,7 @@ func GetContentsExt(ctx *context.APIContext) {
 }
 
 func GetContents(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/contents/{filepath} repository repoGetContents
 	// ---
 	// summary: Gets the metadata and contents (if a file) of an entry in a repository, or a list of entries if a dir.
@@ -949,6 +957,7 @@ func GetFileContentsPost(ctx *context.APIContext) {
 }
 
 func handleGetFileContents(ctx *context.APIContext, opts *api.GetFilesOptions) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	refCommit := resolveRefCommit(ctx, ctx.FormTrim("ref"))
 	if ctx.Written() {
 		return

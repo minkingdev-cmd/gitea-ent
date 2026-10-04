@@ -198,6 +198,7 @@ func FinishMigrateTask(ctx context.Context, task *Task) error {
 	if err != nil {
 		return err
 	}
+	conf.AuthzOperation = ""
 	conf.AuthPassword = ""
 	conf.AuthToken = ""
 	conf.CloneAddr = util.SanitizeCredentialURLs(conf.CloneAddr)

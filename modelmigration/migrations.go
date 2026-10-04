@@ -434,6 +434,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(358, "Add Enterprise WeCom directory leadership metadata", v28.AddEnterpriseWeComDirectoryLeadershipMetadata),
 		newMigration(359, "Add Enterprise WeCom repository governance tables", v28.AddEnterpriseWeComRepositoryGovernanceTables),
 		newMigration(360, "Harden Enterprise WeCom governance publication and callback state", v28.HardenEnterpriseWeComGovernance),
+		newMigration(361, "Add enterprise repository authorization shadow foundation", v28.AddEnterpriseAuthzFoundation),
 	}
 	return preparedMigrations
 }

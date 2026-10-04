@@ -85,6 +85,10 @@ func (r *Response) Flush() {
 	}
 }
 
+func (r *Response) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
 // WrittenStatus returned status code written
 func (r *Response) WrittenStatus() int {
 	return r.status

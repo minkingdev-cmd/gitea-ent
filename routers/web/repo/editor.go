@@ -15,6 +15,7 @@ import (
 	"gitea.dev/models/issues"
 	"gitea.dev/models/unit"
 	"gitea.dev/modules/charset"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/log"
@@ -22,8 +23,10 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/context/upload"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	files_service "gitea.dev/services/repository/files"
 )
@@ -127,6 +130,7 @@ func prepareEditorCommitSubmittedForm[T forms.CommitCommonFormInterface](ctx *co
 		return nil
 	}
 	if commitFormOptions.NeedFork {
+		files_service.ObserveFileMutationRejection(ctx, ctx.Repo.Repository, ctx.Doer, ctx.Repo.BranchName, ctx.Repo.BranchName, authz_service.NativeDenied)
 		// It shouldn't happen, because we should have done the checks in the "GET" request. But just in case.
 		ctx.JSONError(ctx.Locale.TrString("error.not_found"))
 		return nil
@@ -137,11 +141,13 @@ func prepareEditorCommitSubmittedForm[T forms.CommitCommonFormInterface](ctx *co
 	commitToNewBranch := commonForm.CommitChoice == editorCommitChoiceNewBranch || fromBaseBranch != ""
 	targetBranchName := util.Iif(commitToNewBranch, commonForm.NewBranchName, ctx.Repo.BranchName)
 	if targetBranchName == ctx.Repo.BranchName && !commitFormOptions.CanCommitToBranch {
+		files_service.ObserveFileMutationRejection(ctx, commitFormOptions.TargetRepo, ctx.Doer, ctx.Repo.BranchName, targetBranchName, authz_service.NativeDenied)
 		ctx.JSONError(ctx.Tr("repo.editor.cannot_commit_to_protected_branch", targetBranchName))
 		return nil
 	}
 
 	if !issues.CanMaintainerWriteToBranch(ctx, ctx.Repo.Permission, targetBranchName, ctx.Doer) {
+		files_service.ObserveFileMutationRejection(ctx, ctx.Repo.Repository, ctx.Doer, ctx.Repo.BranchName, targetBranchName, authz_service.NativeDenied)
 		ctx.NotFound(nil)
 		return nil
 	}
@@ -290,6 +296,8 @@ func EditFile(ctx *context.Context) {
 	if ctx.Written() {
 		return
 	}
+
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "web")()
 
 	if !isNewFile {
 		prefetch, dataRc, fInfo := editFileOpenExisting(ctx)

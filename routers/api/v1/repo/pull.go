@@ -20,6 +20,7 @@ import (
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/base"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/log"
@@ -35,6 +36,7 @@ import (
 	"gitea.dev/services/automerge"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	git_service "gitea.dev/services/git"
 	"gitea.dev/services/gitdiff"
@@ -304,6 +306,7 @@ func GetPullRequestByBaseHead(ctx *context.APIContext) {
 
 // DownloadPullDiffOrPatch render a pull's raw diff or patch
 func DownloadPullDiffOrPatch(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/pulls/{index}.{diffType} repository repoDownloadPullDiffOrPatch
 	// ---
 	// summary: Get a pull request diff or patch
@@ -403,6 +406,9 @@ func CreatePullRequest(ctx *context.APIContext) {
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
 
+	finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.CreatePullRequest, "api")
+	outcome := authz_service.NativeFailed
+	defer func() { finish(outcome) }()
 	form := *web.GetForm[*api.CreatePullRequestOption](ctx)
 	if form.Head == form.Base {
 		ctx.APIError(http.StatusUnprocessableEntity, "Invalid PullRequest: There are no changes between the head and the base")
@@ -570,8 +576,10 @@ func CreatePullRequest(ctx *context.APIContext) {
 		if repo_model.IsErrUserDoesNotHaveAccessToRepo(err) {
 			ctx.APIError(http.StatusBadRequest, err.Error())
 		} else if errors.Is(err, user_model.ErrBlockedUser) {
+			outcome = authz_service.NativeDenied
 			ctx.APIError(http.StatusForbidden, err.Error())
 		} else if errors.Is(err, issues_model.ErrMustCollaborator) {
+			outcome = authz_service.NativeDenied
 			ctx.APIError(http.StatusForbidden, err.Error())
 		} else {
 			ctx.APIErrorInternal(err)
@@ -579,6 +587,7 @@ func CreatePullRequest(ctx *context.APIContext) {
 		return
 	}
 
+	outcome = authz_service.NativeSuccess
 	log.Trace("Pull request created: %d/%d", repo.ID, prIssue.ID)
 	ctx.JSON(http.StatusCreated, convert.ToAPIPullRequest(ctx, pr, ctx.Doer))
 }
@@ -948,6 +957,10 @@ func MergePullRequest(ctx *context.APIContext) {
 		}
 	}
 
+	nativeOutcome := authz_service.NativeFailed
+	finishObservation := common.ObserveRepoBranchMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.MergePullRequest, "api", pr.BaseBranch)
+	defer func() { finishObservation(nativeOutcome) }()
+
 	manuallyMerged := repo_model.MergeStyle(form.Do) == repo_model.MergeStyleManuallyMerged
 
 	mergeCheckType := pull_service.MergeCheckTypeGeneral
@@ -996,6 +1009,7 @@ func MergePullRequest(ctx *context.APIContext) {
 			ctx.APIErrorInternal(err)
 			return
 		}
+		nativeOutcome = authz_service.NativeSuccess
 		ctx.Status(http.StatusOK)
 		return
 	}
@@ -1034,13 +1048,14 @@ func MergePullRequest(ctx *context.APIContext) {
 			ctx.APIErrorInternal(err)
 			return
 		} else if scheduled {
+			nativeOutcome = authz_service.NativeUnknown
 			// nothing more to do ...
 			ctx.Status(http.StatusCreated)
 			return
 		}
 	}
 
-	if err := pull_service.Merge(pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false); err != nil {
+	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false); err != nil {
 		if pull_service.IsErrInvalidMergeStyle(err) {
 			ctx.APIError(http.StatusMethodNotAllowed, fmt.Sprintf("%s is not allowed an allowed merge style for this repository", repo_model.MergeStyle(form.Do)))
 		} else if conflictError, ok := err.(pull_service.ErrMergeConflicts); ok {
@@ -1064,6 +1079,7 @@ func MergePullRequest(ctx *context.APIContext) {
 		}
 		return
 	}
+	nativeOutcome = authz_service.NativeSuccess
 	log.Trace("Pull request merged: %d", pr.ID)
 
 	if deleteBranchAfterMerge {
@@ -1094,6 +1110,7 @@ func parseCompareInfo(ctx *context.APIContext, compareParam string) (result *git
 		return nil, nil
 	}
 	if !ctx.TokenCanAccessRepo(headRepo) {
+		common.MarkNativeMutationDenied(ctx.Base)
 		ctx.APIErrorNotFound()
 		return nil, nil
 	}
@@ -1126,6 +1143,7 @@ func parseCompareInfo(ctx *context.APIContext, compareParam string) (result *git
 	}
 
 	if !permBase.CanRead(unit.TypeCode) {
+		common.MarkNativeMutationDenied(ctx.Base)
 		log.Trace("Permission Denied: User %-v cannot read code in Repo %-v\nUser in baseRepo has Permissions: %-+v", ctx.Doer, baseRepo, permBase)
 		ctx.APIErrorNotFound("can't read baseRepo UnitTypeCode")
 		return nil, nil
@@ -1139,6 +1157,7 @@ func parseCompareInfo(ctx *context.APIContext, compareParam string) (result *git
 		return nil, nil
 	}
 	if !permHead.CanRead(unit.TypeCode) {
+		common.MarkNativeMutationDenied(ctx.Base)
 		log.Trace("Permission Denied: User: %-v cannot read code in Repo: %-v\nUser in headRepo has Permissions: %-+v", ctx.Doer, headRepo, permHead)
 		ctx.APIErrorNotFound("Can't read headRepo UnitTypeCode")
 		return nil, nil
@@ -1274,7 +1293,7 @@ func UpdatePullRequest(ctx *context.APIContext) {
 	// default merge commit message
 	message := fmt.Sprintf("Merge branch '%s' into %s", pr.BaseBranch, pr.HeadBranch)
 
-	if err = pull_service.Update(pr, ctx.Doer, message, rebase); err != nil {
+	if err = pull_service.Update(ctx, pr, ctx.Doer, message, rebase); err != nil {
 		if pull_service.IsErrMergeConflicts(err) {
 			ctx.APIError(http.StatusConflict, "merge failed because of conflict")
 			return
@@ -1365,6 +1384,7 @@ func CancelScheduledAutoMerge(ctx *context.APIContext) {
 
 // GetPullRequestCommits gets all commits associated with a given PR
 func GetPullRequestCommits(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/pulls/{index}/commits repository repoGetPullRequestCommits
 	// ---
 	// summary: Get commits for a pull request
@@ -1490,6 +1510,7 @@ func GetPullRequestCommits(ctx *context.APIContext) {
 
 // GetPullRequestFiles gets all changed files associated with a given PR
 func GetPullRequestFiles(ctx *context.APIContext) {
+	defer common.ObserveRepoRequest(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ReadCode, "api")()
 	// swagger:operation GET /repos/{owner}/{repo}/pulls/{index}/files repository repoGetPullRequestFiles
 	// ---
 	// summary: Get changed files for a pull request

@@ -1,0 +1,53 @@
+{{template "admin/enterpriseauthz/head" .}}
+<h3 class="ui header">{{ctx.Locale.Tr "admin.enterprise_authz.bindings"}}</h3>
+<p>{{ctx.Locale.Tr "admin.enterprise_authz.binding.help"}}</p>
+<form class="ui form tw-mb-4" method="post" action="{{.AuthzBase}}/bindings" data-authz-binding-form>
+ <input type="hidden" name="authz_csrf" value="{{.AuthzCSRF}}">
+ <div class="three fields">
+  <div class="field">
+   <label for="authz-binding-subject-type">{{ctx.Locale.Tr "admin.enterprise_authz.binding.subject_type"}}</label>
+   <select id="authz-binding-subject-type" name="subject_type" data-authz-subject-type>
+    <option value="user" {{if eq .AuthzBindingDraft.SubjectType "user"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.binding.subject.user"}}</option>
+    <option value="team" {{if eq .AuthzBindingDraft.SubjectType "team"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.binding.subject.team"}}</option>
+    <option value="org" {{if eq .AuthzBindingDraft.SubjectType "org"}}selected{{end}}>{{ctx.Locale.Tr "admin.enterprise_authz.binding.subject.org"}}</option>
+   </select>
+  </div>
+  {{template "admin/enterpriseauthz/picker" .AuthzBindingSubjectPicker}}
+  {{template "admin/enterpriseauthz/picker" .AuthzBindingRolePicker}}
+ </div>
+ <button class="ui primary button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.binding.add"}}</button>
+</form>
+<p>{{ctx.Locale.Tr "admin.enterprise_authz.binding.total" .AuthzTotal}}</p>
+{{if .AuthzBindings}}
+<div class="tw-overflow-x-auto">
+<table class="ui striped table">
+ <thead><tr>
+  <th>{{ctx.Locale.Tr "admin.enterprise_authz.binding.subject"}}</th>
+  <th>{{ctx.Locale.Tr "admin.enterprise_authz.binding.role"}}</th>
+  <th>{{ctx.Locale.Tr "admin.enterprise_authz.binding.source"}}</th>
+  <th>{{ctx.Locale.Tr "admin.enterprise_authz.binding.status"}}</th>
+  <th>{{ctx.Locale.Tr "admin.enterprise_authz.binding.remove"}}</th>
+ </tr></thead>
+ <tbody>
+ {{range .AuthzBindings}}
+ <tr data-binding-id="{{.Binding.ID}}" data-binding-status="{{.Status}}">
+  <td>{{ctx.Locale.Tr (printf "admin.enterprise_authz.binding.subject.%s" .Binding.SubjectType)}} · {{.SubjectName}}</td>
+  <td>{{.RoleName}}</td>
+  <td>{{.RoleScope}}<br>{{ctx.Locale.Tr "admin.enterprise_authz.binding.applies_to"}}: {{$.AuthzScopeLabel}}<br>{{ctx.Locale.Tr "admin.enterprise_authz.binding.recorded_owner"}}: {{.OwnerName}}</td>
+  <td>{{ctx.Locale.Tr (printf "admin.enterprise_authz.binding.status.%s" .Status)}}</td>
+  <td>
+   <form method="post" action="{{$.AuthzBase}}/bindings/{{.Binding.ID}}/delete" data-authz-confirm="{{ctx.Locale.Tr "admin.enterprise_authz.binding.confirm_remove" .SubjectName .RoleName}}">
+    <input type="hidden" name="authz_csrf" value="{{$.AuthzCSRF}}">
+    <button class="ui small red button" type="submit">{{ctx.Locale.Tr "admin.enterprise_authz.binding.remove"}}</button>
+   </form>
+  </td>
+ </tr>
+ {{end}}
+ </tbody>
+</table>
+</div>
+{{else}}
+<div class="ui info message">{{ctx.Locale.Tr "admin.enterprise_authz.binding.empty"}}</div>
+{{end}}
+{{template "base/paginate" .}}
+{{template "admin/enterpriseauthz/foot" .}}

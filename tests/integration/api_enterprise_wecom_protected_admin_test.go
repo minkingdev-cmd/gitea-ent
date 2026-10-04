@@ -86,6 +86,7 @@ func TestAPIProtectedWeComAdminSelfUpdateBoundaries(t *testing.T) {
 func TestWebProtectedWeComAdminMutationDeniedForOtherSiteAdmin(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 	protected := protectEnterpriseWeComAdminForIntegration(t, "user2")
+	protectEnterpriseWeComAdminForIntegration(t, "user1")
 	session := loginUser(t, "user1")
 
 	fullName := "blocked web protected admin edit"

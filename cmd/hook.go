@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/log"
@@ -192,7 +193,8 @@ Gitea or set your environment appropriately.`, "")
 	prID, _ := strconv.ParseInt(os.Getenv(repo_module.EnvPRID), 10, 64)
 
 	hookOptions := private.HookOptions{
-		IsWiki: isWiki,
+		AuthzOperation: authz.HookOperationTicket(os.Getenv(repo_module.EnvAuthzOperation)),
+		IsWiki:         isWiki,
 
 		GitAlternativeObjectDirectories: os.Getenv(private.GitAlternativeObjectDirectories),
 		GitObjectDirectory:              os.Getenv(private.GitObjectDirectory),
@@ -356,7 +358,8 @@ Gitea or set your environment appropriately.`, "")
 	prID, _ := strconv.ParseInt(os.Getenv(repo_module.EnvPRID), 10, 64)
 
 	hookOptions := private.HookOptions{
-		IsWiki: isWiki,
+		AuthzOperation: authz.HookOperationTicket(os.Getenv(repo_module.EnvAuthzOperation)),
+		IsWiki:         isWiki,
 
 		GitAlternativeObjectDirectories: os.Getenv(private.GitAlternativeObjectDirectories),
 		GitObjectDirectory:              os.Getenv(private.GitObjectDirectory),
@@ -556,7 +559,8 @@ Gitea or set your environment appropriately.`, "")
 	// S: ... ...
 	// S: flush-pkt
 	hookOptions := private.HookOptions{
-		IsWiki: isWiki,
+		AuthzOperation: authz.HookOperationTicket(os.Getenv(repo_module.EnvAuthzOperation)),
+		IsWiki:         isWiki,
 
 		GitPushOptions: make(map[string]string),
 

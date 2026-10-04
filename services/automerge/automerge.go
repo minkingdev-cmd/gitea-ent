@@ -18,6 +18,7 @@ import (
 	pull_model "gitea.dev/models/pull"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/log"
@@ -25,6 +26,7 @@ import (
 	"gitea.dev/modules/queue"
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/services/automergequeue"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 	pull_service "gitea.dev/services/pull"
 	repo_service "gitea.dev/services/repository"
@@ -217,13 +219,19 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		return fmt.Errorf("failed to get doer repo permission: %w", err)
 	}
 
+	ctx, _ = authz_service.WithObservationContext(ctx, authz_service.EvaluateInput{
+		Actor: doer, Repo: pr.BaseRepo, Permission: &perm,
+		Credential: authz_service.CredentialCeiling{Read: true, Write: true},
+		Action:     authz.MergePullRequest, ConditionContext: authz.ConditionContext{Source: "auto_merge", Branch: pr.BaseBranch, BranchKnown: true},
+	})
+
 	if err := pull_service.CheckPullMergeable(ctx, doer, &perm, pr, pull_service.MergeCheckTypeGeneral, scheduledPRM.MergeStyle, false); err != nil {
 		return errors.Join(errSkipAutoMerge, errors.New("pull request is not mergeable"))
 	}
 
 	// although expectedHeadCommitID is checked before, we should pass it to the Merge function to
 	// make it be checked again in case the head commit id changed after the previous check.
-	if err := pull_service.Merge(pr, doer, scheduledPRM.MergeStyle, expectedHeadCommitID, scheduledPRM.Message, true); err != nil {
+	if err := pull_service.Merge(ctx, pr, doer, scheduledPRM.MergeStyle, expectedHeadCommitID, scheduledPRM.Message, true); err != nil {
 		if pull_service.IsErrSHADoesNotMatch(err) {
 			return errors.Join(errSkipAutoMerge, err)
 		}

@@ -22,6 +22,7 @@ const (
 	EnvRepoIsWiki   = "GITEA_REPO_IS_WIKI"
 
 	EnvAuthzOperation = "GITEA_AUTHZ_OPERATION"
+	EnvAuthzEnforce   = "GITEA_AUTHZ_ENFORCE"
 
 	EnvKeyID = "GITEA_KEY_ID" // public key ID
 
@@ -99,9 +100,9 @@ func FullPushingEnvironment(author, committer *user_model.User, repo *repo_model
 func WithAuthzOperation(env []string, ticket string) []string {
 	result := make([]string, 0, len(env)+1)
 	for _, entry := range env {
-		if !strings.HasPrefix(entry, EnvAuthzOperation+"=") {
+		if !strings.HasPrefix(entry, EnvAuthzOperation+"=") && !strings.HasPrefix(entry, EnvAuthzEnforce+"=") {
 			result = append(result, entry)
 		}
 	}
-	return append(result, EnvAuthzOperation+"="+ticket)
+	return append(result, EnvAuthzOperation+"="+ticket, EnvAuthzEnforce+"="+strconv.FormatBool(setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce))
 }

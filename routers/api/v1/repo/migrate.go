@@ -206,7 +206,7 @@ func Migrate(ctx *context.APIContext) {
 		defer func() {
 			if e := recover(); e != nil {
 				log.Error("MigrateRepository panic: %v\n%s", e, log.Stack(2))
-				if errDelete := repo_service.DeleteRepositoryDirectly(ctx, createdRepo.ID); errDelete != nil {
+				if errDelete := repo_service.DeleteFailedMigrationRepository(ctx, createdRepo.ID); errDelete != nil {
 					log.Error("Unable to delete repo after MigrateRepository panic: %v", errDelete)
 				}
 				retErr = errors.New("MigrateRepository panic") // no idea why it would happen, just legacy code

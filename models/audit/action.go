@@ -117,7 +117,7 @@ var (
 	UserWebhookUpdate               = define("user:webhook:update", "Updated webhook {webhook} of user {scope}.")
 	UserWebhookRemove               = define("user:webhook:remove", "Removed webhook {webhook} of user {scope}.")
 
-	EnterpriseAuthzDecision = define("enterprise:authz:decision", "Enterprise authorization shadow decision {decision_id} for repository {repo_id}: {action} {candidate_decision} ({reason}).")
+	EnterpriseAuthzDecision = define("enterprise:authz:decision", "Enterprise authorization decision {decision_id} for repository {repo_id}: {action} {candidate_decision} ({reason}).")
 
 	EnterpriseWeComLoginSuccess   = define("enterprise:wecom:login:success", "Enterprise WeCom login succeeded for user {scope} with identity {external_id}.")
 	EnterpriseWeComLoginDeny      = define("enterprise:wecom:login:deny", "Enterprise WeCom login was denied for identity {external_id}: {reason}.")
@@ -198,6 +198,7 @@ var (
 	RepositoryVisibility             = define("repository:visibility:update", "Changed visibility of repository {scope} to {visibility}.")
 	RepositoryConvertFork            = define("repository:fork:convert", "Converted repository {scope} from fork to regular repository.")
 	RepositoryConvertMirror          = define("repository:mirror:convert", "Converted repository {scope} from pull mirror to regular repository.")
+	RepositoryMirrorSync             = define("repository:mirror:sync", "Started pull mirror synchronization for repository {scope}.")
 	RepositoryMirrorPushAdd          = define("repository:mirror:push:add", "Added push mirror to {remote_address} for repository {scope}.")
 	RepositoryMirrorPushRemove       = define("repository:mirror:push:remove", "Removed push mirror to {remote_address} for repository {scope}.")
 	RepositorySigningVerification    = define("repository:signingverification", "Changed signing verification of repository {scope} to {trust_model}.")

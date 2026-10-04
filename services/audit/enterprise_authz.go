@@ -36,6 +36,8 @@ func UpdateEnterpriseAuthzNativeResult(ctx context.Context, record *authz_model.
 		"decision_id": record.ID, "observation_id": record.ObservationID, "operation_id": record.OperationID,
 		"repo_id": record.RepoID, "owner_id": record.OwnerID, "action": record.Action, "request_source": record.RequestSource,
 		"candidate_decision": record.CandidateDecision, "reason": record.Reason, "native_outcome": record.NativeOutcome, "native_stage": record.NativeStage,
+		"decision_mode": record.DecisionMode, "authorization_decision": record.AuthorizationDecision,
+		"authorization_reason": record.AuthorizationReason, "execution_started": record.ExecutionStarted,
 	}
 	if mismatch != nil {
 		metadata["mismatch"] = *mismatch

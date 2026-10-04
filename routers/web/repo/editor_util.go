@@ -16,10 +16,10 @@ import (
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/markup"
-	repo_module "gitea.dev/modules/repository"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	context_service "gitea.dev/services/context"
+	repo_service "gitea.dev/services/repository"
 )
 
 // getUniquePatchBranchName Gets a unique branch name for a new patch branch
@@ -127,8 +127,5 @@ func getUniqueRepositoryName(ctx context.Context, ownerID int64, name string) st
 }
 
 func editorPushBranchToForkedRepository(ctx context.Context, doer *user_model.User, baseRepo *repo_model.Repository, baseBranchName string, targetRepo *repo_model.Repository, targetBranchName string) error {
-	return git.PushManaged(ctx, baseRepo, targetRepo, git.PushOptions{
-		Branch: baseBranchName + ":" + targetBranchName,
-		Env:    repo_module.PushingEnvironment(doer, targetRepo),
-	})
+	return repo_service.CreateForkBranchFromBase(ctx, doer, baseRepo, baseBranchName, targetRepo, targetBranchName)
 }

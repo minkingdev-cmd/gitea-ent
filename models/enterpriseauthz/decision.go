@@ -11,8 +11,11 @@ import (
 )
 
 func InsertDecisionIfAbsent(ctx context.Context, record *DecisionRecord) (bool, error) {
-	result, err := db.GetEngine(ctx).Exec("INSERT INTO `enterprise_authz_decision` (`observation_id`, `operation_id`, `actor_id`, `repo_id`, `owner_id`, `action`, `request_source`, `candidate_decision`, `reason`, `missing_actions`, `native_outcome`, `native_stage`, `snapshot_json`, `created_unix`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (`observation_id`) DO NOTHING",
-		record.ObservationID, record.OperationID, record.ActorID, record.RepoID, record.OwnerID, record.Action, record.RequestSource, record.CandidateDecision, record.Reason, record.MissingActions, record.NativeOutcome, record.NativeStage, record.SnapshotJSON, record.CreatedUnix)
+	if record.DecisionMode == "" && record.AuthorizationDecision == "" {
+		record.DecisionMode, record.AuthorizationDecision = "shadow", "not_enforced"
+	}
+	result, err := db.GetEngine(ctx).Exec("INSERT INTO `enterprise_authz_decision` (`observation_id`, `operation_id`, `actor_id`, `repo_id`, `owner_id`, `action`, `request_source`, `candidate_decision`, `reason`, `missing_actions`, `native_outcome`, `native_stage`, `snapshot_json`, `created_unix`, `decision_mode`, `authorization_decision`, `authorization_reason`, `execution_started`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (`observation_id`) DO NOTHING",
+		record.ObservationID, record.OperationID, record.ActorID, record.RepoID, record.OwnerID, record.Action, record.RequestSource, record.CandidateDecision, record.Reason, record.MissingActions, record.NativeOutcome, record.NativeStage, record.SnapshotJSON, record.CreatedUnix, record.DecisionMode, record.AuthorizationDecision, record.AuthorizationReason, record.ExecutionStarted)
 	if err != nil {
 		return false, err
 	}

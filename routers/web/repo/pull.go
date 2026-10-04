@@ -1007,6 +1007,9 @@ func UpdatePullRequest(ctx *context.Context) {
 	message := fmt.Sprintf("Merge branch '%s' into %s", issue.PullRequest.BaseBranch, issue.PullRequest.HeadBranch)
 
 	if err = pull_service.Update(ctx, issue.PullRequest, ctx.Doer, message, rebase); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if conflictError, ok := err.(pull_service.ErrMergeConflicts); ok {
 			flashError, err := ctx.RenderToHTML(tplAlertDetails, map[string]any{
 				"Message": ctx.Tr("repo.pulls.merge_conflict"),
@@ -1104,6 +1107,9 @@ func MergePullRequest(ctx *context.Context) {
 	// handle manually-merged mark
 	if manuallyMerged {
 		if err := pull_service.MergedManually(ctx, pr, ctx.Doer, ctx.Repo.GitRepo, form.MergeCommitID); err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return
+			}
 			switch {
 			case pull_service.IsErrInvalidMergeStyle(err):
 				ctx.JSONError(ctx.Tr("repo.pulls.invalid_merge_option"))
@@ -1141,11 +1147,15 @@ func MergePullRequest(ctx *context.Context) {
 	deleteBranchAfterMerge := optional.FromPtr(form.DeleteBranchAfterMerge).Value()
 
 	if form.MergeWhenChecksSucceed {
-		// delete all scheduled auto merges
-		_ = pull_model.DeleteScheduledAutoMerge(ctx, pr.ID)
+		if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+			_ = pull_model.DeleteScheduledAutoMerge(ctx, pr.ID)
+		}
 		// schedule auto merge
-		scheduled, err := automerge.ScheduleAutoMerge(ctx, ctx.Doer, pr, repo_model.MergeStyle(form.Do), message, deleteBranchAfterMerge)
+		scheduled, err := automerge.ScheduleAutoMerge(ctx, ctx.Doer, pr, repo_model.MergeStyle(form.Do), message, deleteBranchAfterMerge, automerge.ScheduleOptions{ReplaceExisting: setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce})
 		if err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return
+			}
 			ctx.ServerError("ScheduleAutoMerge", err)
 			return
 		} else if scheduled {
@@ -1157,7 +1167,10 @@ func MergePullRequest(ctx *context.Context) {
 		}
 	}
 
-	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false); err != nil {
+	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false, pull_service.MergeOptions{Force: form.ForceMerge}); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if pull_service.IsErrInvalidMergeStyle(err) {
 			ctx.JSONError(ctx.Tr("repo.pulls.invalid_merge_option"))
 		} else if conflictError, ok := err.(pull_service.ErrMergeConflicts); ok {

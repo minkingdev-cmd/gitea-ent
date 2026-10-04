@@ -39,6 +39,7 @@ func TestVerifyCommits(t *testing.T) {
 			assert.NoError(t, err)
 		} else {
 			assert.Error(t, err)
+			assert.True(t, isErrUnverifiedCommit(err))
 		}
 	}
 }

@@ -16,6 +16,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/mailer"
 	repo_service "gitea.dev/services/repository"
@@ -103,6 +104,9 @@ func CollaborationPost(ctx *context.Context) {
 		return
 	}
 	if err = repo_service.AddOrUpdateCollaborator(ctx, ctx.Repo.Repository, u, perm.AccessModeWrite); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if errors.Is(err, user_model.ErrBlockedUser) {
 			ctx.Flash.Error(ctx.Tr("repo.settings.add_collaborator.blocked_user"))
 			ctx.Redirect(ctx.Repo.RepoLink + "/settings/collaboration")
@@ -134,6 +138,9 @@ func ChangeCollaborationAccessMode(ctx *context.Context) {
 		return
 	}
 	if err := repo_service.AddOrUpdateCollaborator(ctx, ctx.Repo.Repository, u, mode); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.Status(http.StatusBadRequest)
 		log.Error("AddOrUpdateCollaborator: %v", err)
 		return
@@ -155,6 +162,9 @@ func DeleteCollaboration(ctx *context.Context) {
 			return
 		}
 		if err := repo_service.DeleteCollaboration(ctx, ctx.Repo.Repository, collaborator); err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return
+			}
 			ctx.Flash.Error("DeleteCollaboration: " + err.Error())
 		} else {
 			ctx.Flash.Success(ctx.Tr("repo.settings.remove_collaborator_success"))
@@ -200,6 +210,9 @@ func AddTeamPost(ctx *context.Context) {
 	}
 
 	if err = repo_service.TeamAddRepository(ctx, team, ctx.Repo.Repository); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("TeamAddRepository", err)
 		return
 	}
@@ -221,6 +234,9 @@ func DeleteTeam(ctx *context.Context) {
 	}
 
 	if err = repo_service.RemoveRepositoryFromTeam(ctx, team, ctx.Repo.Repository.ID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("team.RemoveRepositories", err)
 		return
 	}

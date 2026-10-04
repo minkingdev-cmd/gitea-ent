@@ -25,6 +25,7 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
+	"gitea.dev/routers/common"
 	shared_user "gitea.dev/routers/web/shared/user"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
@@ -313,6 +314,9 @@ func TeamsRepoAction(ctx *context.Context) {
 	}
 
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Error("Action(%s): '%s' %v", ctx.PathParam("action"), ctx.Org.Team.Name, err)
 		ctx.ServerError("TeamsRepoAction", err)
 		return
@@ -393,6 +397,9 @@ func NewTeamPost(ctx *context.Context) {
 	}
 
 	if err := org_service.NewTeam(ctx, t); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.Data["Err_TeamName"] = true
 		switch {
 		case org_model.IsErrTeamAlreadyExist(err):
@@ -575,6 +582,9 @@ func EditTeamPost(ctx *context.Context) {
 	isAuthChanged := oldTeamAccessMode != t.AccessMode || !maps.Equal(oldTeamUnitsMap, t.GetUnitsMap())
 	t.Description = form.Description
 	if err := org_service.UpdateTeam(ctx, t, isAuthChanged, isIncludeAllChanged); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.Data["Err_TeamName"] = true
 		switch {
 		case org_model.IsErrTeamAlreadyExist(err):
@@ -593,6 +603,9 @@ func DeleteTeam(ctx *context.Context) {
 		return
 	}
 	if err := org_service.DeleteTeam(ctx, ctx.Org.Team); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.Flash.Error("DeleteTeam: " + err.Error())
 	} else {
 		ctx.Flash.Success(ctx.Tr("org.teams.delete_team_success"))

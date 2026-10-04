@@ -120,6 +120,9 @@ func Transfer(ctx *context.APIContext) {
 	oldFullname := ctx.Repo.Repository.FullName()
 
 	if err := repo_service.StartRepositoryTransfer(ctx, ctx.Doer, newOwner, ctx.Repo.Repository, teams); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		switch {
 		case repo_model.IsErrRepoTransferInProgress(err):
 			ctx.APIError(http.StatusConflict, err.Error())
@@ -173,6 +176,9 @@ func AcceptTransfer(ctx *context.APIContext) {
 
 	err := repo_service.AcceptTransferOwnership(ctx, ctx.Repo.Repository, ctx.Doer)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		switch {
 		case repo_model.IsErrNoPendingTransfer(err):
 			ctx.APIError(http.StatusNotFound, err.Error())
@@ -217,6 +223,9 @@ func RejectTransfer(ctx *context.APIContext) {
 
 	err := repo_service.RejectRepositoryTransfer(ctx, ctx.Repo.Repository, ctx.Doer)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		switch {
 		case repo_model.IsErrNoPendingTransfer(err):
 			ctx.APIError(http.StatusNotFound, err.Error())

@@ -15,6 +15,8 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
+	"gitea.dev/modules/setting"
+	"gitea.dev/modules/util"
 	notify_service "gitea.dev/services/notify"
 )
 
@@ -141,6 +143,13 @@ func GenerateRepository(ctx context.Context, doer, owner *user_model.User, templ
 	// 5 - generate the repository contents according to the template
 	// Git Content
 	if opts.GitContent && !templateRepo.IsEmpty {
+		if branchEnforcementEnabled() {
+			generateRepo.DefaultBranch = util.IfZero(generateRepo.DefaultBranch, util.IfZero(templateRepo.DefaultBranch, setting.Repository.DefaultBranch))
+			if err = repo_model.UpdateRepositoryColsNoAutoTime(ctx, generateRepo, "default_branch"); err != nil {
+				return nil, err
+			}
+			ctx = withRepositoryGitInitialization(ctx, repositoryGitInitialization{generateRepo.ID, generateRepo.OwnerID, doer.ID, generateRepo.DefaultBranch, "generate"})
+		}
 		if err = GenerateGitContent(ctx, templateRepo, generateRepo); err != nil {
 			return nil, err
 		}

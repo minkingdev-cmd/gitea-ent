@@ -15,6 +15,7 @@ import (
 	"gitea.dev/routers/common"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 	secret_service "gitea.dev/services/secrets"
 )
@@ -46,8 +47,16 @@ func PerformSecretsPost(ctx *context.Context, owner *user_model.User, repo *repo
 	form := web.GetForm[*forms.AddSecretForm](ctx)
 	ownerID, repoID := secretOwnerRepoIDs(owner, repo)
 
+	finishExecution, allowed := common.BeginRepoExecution(ctx.Base, ctx.Doer, repo, "web", authz_service.SettingsIntent(authz.ManageSecret, form.Name), authz.ManageSecret)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	s, created, err := secret_service.CreateOrUpdateSecret(ctx, ownerID, repoID, form.Name, util.NormalizeStringEOL(form.Data), form.Description)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.JSONErrorAuto(err)
 		return
 	}
@@ -68,8 +77,23 @@ func PerformSecretsDelete(ctx *context.Context, owner *user_model.User, repo *re
 	id := ctx.FormInt64("id")
 	ownerID, repoID := secretOwnerRepoIDs(owner, repo)
 
+	if repo != nil {
+		found, err := db.Find[secret_model.Secret](ctx, secret_model.FindSecretsOptions{RepoID: repoID, SecretID: id})
+		if err != nil || len(found) != 1 {
+			ctx.JSONError(ctx.Tr("secrets.deletion.failed"))
+			return
+		}
+		finishExecution, allowed := common.BeginRepoExecution(ctx.Base, ctx.Doer, repo, "web", authz_service.SettingsIntent(authz.ManageSecret, found[0].Name), authz.ManageSecret)
+		if !allowed {
+			return
+		}
+		defer finishExecution()
+	}
 	s, err := secret_service.DeleteSecretByID(ctx, ownerID, repoID, id)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Error("DeleteSecretByID(%d) failed: %v", id, err)
 		ctx.JSONError(ctx.Tr("secrets.deletion.failed"))
 		return

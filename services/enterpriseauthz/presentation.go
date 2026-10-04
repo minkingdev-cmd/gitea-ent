@@ -101,8 +101,50 @@ func validDecisionObservationID(id string) bool {
 	return true
 }
 
+func validAuthorizationReason(decision, reason string) bool {
+	switch decision {
+	case "allow":
+		return slices.Contains([]string{"native_action", "role_action"}, reason)
+	case "deny":
+		return slices.Contains([]string{"missing_action", "condition_unresolved", "condition_not_matched", "native_visibility_denied", "actor_inactive"}, reason)
+	case "error":
+		return slices.Contains([]string{"policy_read_failed", "evidence_persist_failed", "execution_timeout", "execution_canceled", "invalid_execution_context", "context_limit_exceeded"}, reason)
+	case "fallback":
+		return slices.Contains([]string{"policy_read_failed", "evidence_persist_failed", "execution_timeout"}, reason)
+	}
+	return false
+}
+
+func decisionAuthorization(record *authz_model.DecisionRecord) (string, string, error) {
+	mode, decision := record.DecisionMode, record.AuthorizationDecision
+	if mode == "" && decision == "" {
+		mode, decision = "shadow", "not_enforced"
+	}
+	if mode == "shadow" {
+		if decision != "not_enforced" || record.AuthorizationReason != "" {
+			return "", "", ErrPolicyStorage
+		}
+		return mode, decision, nil
+	}
+	if mode != "enforce" || !validAuthorizationReason(decision, record.AuthorizationReason) {
+		return "", "", ErrPolicyStorage
+	}
+	if decision == "allow" && record.CandidateDecision != "allow" || (decision == "error" || decision == "fallback") && record.CandidateDecision == "deny" {
+		return "", "", ErrPolicyStorage
+	}
+
+	if (decision == "deny" || decision == "error") && record.ExecutionStarted || !record.ExecutionStarted && record.NativeOutcome != "unknown" {
+		return "", "", ErrPolicyStorage
+	}
+	return mode, decision, nil
+}
+
 func DecisionDTO(record *authz_model.DecisionRecord) (*api.EnterpriseAuthzDecision, error) {
-	if _, ok := authz.LookupAction(record.Action); !ok {
+	mode, decision, err := decisionAuthorization(record)
+	if err != nil {
+		return nil, err
+	}
+	if action, ok := authz.LookupAction(record.Action); !ok || mode == "enforce" && !action.EnforceSupported {
 		return nil, ErrPolicyStorage
 	}
 	if !validDecisionObservationID(record.ObservationID) || !validObservationID(record.OperationID) || !authz.ValidSource(record.RequestSource) || record.RequestSource == "diagnostic" || !slices.Contains([]string{"allow", "deny", "error"}, record.CandidateDecision) || !slices.Contains([]string{"native_action", "role_action", "missing_action", "condition_unresolved", "condition_not_matched", "native_visibility_denied", "actor_inactive", "policy_read_failed", "snapshot_limit_exceeded", "observation_timeout", "observation_canceled", "invalid_evaluation_context", "unknown_action"}, record.Reason) || !slices.Contains([]string{"success", "denied", "failed", "unknown"}, record.NativeOutcome) || !slices.Contains([]string{"operation", "authorization", "transport", "pre_receive", "migration"}, record.NativeStage) {
@@ -114,12 +156,26 @@ func DecisionDTO(record *authz_model.DecisionRecord) (*api.EnterpriseAuthzDecisi
 	}
 	var snapshot struct {
 		api.EnterpriseAuthzDecisionSnapshot
-		Credential  api.EnterpriseAuthzCredentialCeiling `json:"credential"`
+		Credential struct {
+			api.EnterpriseAuthzCredentialCeiling
+			Actions []string `json:"actions"`
+		} `json:"credential"`
 		Definitions []api.EnterpriseAuthzRoleRevision    `json:"definitions"`
 		Results     []api.EnterpriseAuthzConditionResult `json:"roles"`
 	}
-	if len(record.SnapshotJSON) > authz.MaxSnapshotBytes || json.Unmarshal([]byte(record.SnapshotJSON), &snapshot) != nil || !validActions(snapshot.NativeActions) || snapshot.CatalogVersion != authz.CatalogVersion || snapshot.NativeMode < 0 || snapshot.NativeMode > 4 || snapshot.PathCount < 0 {
+	if len(record.SnapshotJSON) > authz.MaxSnapshotBytes || json.Unmarshal([]byte(record.SnapshotJSON), &snapshot) != nil || !authz.ActionInCatalog(snapshot.CatalogVersion, record.Action) || snapshot.NativeMode < 0 || snapshot.NativeMode > 4 || snapshot.PathCount < 0 {
 		return nil, ErrPolicyStorage
+	}
+	versionActions := [][]string{missing, snapshot.NativeActions, snapshot.Credential.Actions}
+	for _, actions := range versionActions {
+		if !validActions(actions) {
+			return nil, ErrPolicyStorage
+		}
+		for _, action := range actions {
+			if !authz.ActionInCatalog(snapshot.CatalogVersion, authz.Action(action)) {
+				return nil, ErrPolicyStorage
+			}
+		}
 	}
 	for _, u := range snapshot.UnitModes {
 		valid := false
@@ -133,18 +189,18 @@ func DecisionDTO(record *authz_model.DecisionRecord) (*api.EnterpriseAuthzDecisi
 			return nil, ErrPolicyStorage
 		}
 	}
-	snapshot.CredentialCeiling = snapshot.Credential
+	snapshot.CredentialCeiling = snapshot.Credential.EnterpriseAuthzCredentialCeiling
 	for _, r := range snapshot.Definitions {
 		if r.ID <= 0 || r.Revision <= 0 {
 			return nil, ErrPolicyStorage
 		}
 	}
 	for _, c := range snapshot.Results {
-		if !validCondition(c) {
+		if !validCondition(c) || !authz.ActionInCatalog(snapshot.CatalogVersion, authz.Action(c.Action)) {
 			return nil, ErrPolicyStorage
 		}
 	}
 	snapshot.EnterpriseAuthzDecisionSnapshot.Roles = snapshot.Definitions
 	snapshot.Conditions = snapshot.Results
-	return &api.EnterpriseAuthzDecision{ID: record.ID, ObservationID: record.ObservationID, OperationID: record.OperationID, ActorID: record.ActorID, RepoID: record.RepoID, OwnerID: record.OwnerID, Action: string(record.Action), RequestSource: record.RequestSource, CandidateDecision: record.CandidateDecision, Reason: record.Reason, MissingActions: missing, NativeOutcome: record.NativeOutcome, NativeStage: record.NativeStage, Snapshot: &snapshot.EnterpriseAuthzDecisionSnapshot, CandidateOnly: true, Created: record.CreatedUnix.AsTime()}, nil
+	return &api.EnterpriseAuthzDecision{ID: record.ID, ObservationID: record.ObservationID, OperationID: record.OperationID, ActorID: record.ActorID, RepoID: record.RepoID, OwnerID: record.OwnerID, Action: string(record.Action), RequestSource: record.RequestSource, DecisionMode: mode, AuthorizationDecision: decision, AuthorizationReason: record.AuthorizationReason, ExecutionStarted: record.ExecutionStarted, CandidateDecision: record.CandidateDecision, Reason: record.Reason, MissingActions: missing, NativeOutcome: record.NativeOutcome, NativeStage: record.NativeStage, Snapshot: &snapshot.EnterpriseAuthzDecisionSnapshot, CandidateOnly: true, Created: record.CreatedUnix.AsTime()}, nil
 }

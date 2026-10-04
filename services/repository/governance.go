@@ -10,7 +10,6 @@ import (
 	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/db"
 	wecom_model "gitea.dev/models/enterprisewecom"
-	"gitea.dev/models/perm"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
@@ -240,7 +239,10 @@ func ApproveOrganizationRepositoryRequest(ctx context.Context, reviewer *user_mo
 	if err != nil {
 		return nil, err
 	}
-	if err := AddOrUpdateCollaborator(ctx, repo, requester, perm.AccessModeAdmin); err != nil {
+	if err := db.WithTx(ctx, func(tx context.Context) error {
+		tx = context.WithValue(tx, accessInitializationKey{}, accessInitialization{repo.ID, repo.OwnerID, requester.ID})
+		return initializeRepositoryCreatorAccess(tx, repo, requester)
+	}); err != nil {
 		return nil, err
 	}
 	if err := upsertRepositoryGovernance(ctx, repo.ID, request.RequesterID, request.ID, wecom_model.RepositoryGovernanceSourceOrgRequest); err != nil {

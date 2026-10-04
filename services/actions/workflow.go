@@ -18,6 +18,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/actions"
 	"gitea.dev/modules/actions/jobparser"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/reqctx"
 	api "gitea.dev/modules/structs"
@@ -25,6 +26,7 @@ import (
 	"gitea.dev/services/audit"
 	gitea_context "gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 func EnableOrDisableWorkflow(ctx *gitea_context.APIContext, workflowID string, isEnable bool) error {
@@ -42,6 +44,9 @@ func EnableOrDisableWorkflow(ctx *gitea_context.APIContext, workflowID string, i
 		cfg.DisableWorkflow(workflow.ID)
 	}
 
+	if err := authz_service.RequireSettingsExecution(ctx, ctx.Repo.Repository.ID, authz.ManageCI, authz_service.SettingsIntent(authz.ManageCI, "repo-settings")); err != nil {
+		return err
+	}
 	if err := repo_model.UpdateRepoUnitConfig(ctx, cfgUnit); err != nil {
 		return err
 	}

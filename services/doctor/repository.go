@@ -58,7 +58,7 @@ func deleteOrphanedRepos(ctx context.Context) (int64, error) {
 			}
 
 			for _, id := range ids {
-				if err := repo_service.DeleteRepositoryDirectly(ctx, id, true); err != nil {
+				if err := repo_service.DeleteOrphanedRepository(ctx, id); err != nil {
 					return deleted, err
 				}
 				deleted++

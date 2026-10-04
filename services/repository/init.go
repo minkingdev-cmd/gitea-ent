@@ -67,6 +67,9 @@ func initRepoCommit(ctx context.Context, tmpPath string, repo *repo_model.Reposi
 		return fmt.Errorf("git commit: %w", err)
 	}
 
+	if branchEnforcementEnabled() {
+		return initializeRepositoryGit(ctx, tmpPath, repo)
+	}
 	if err := git.PushFromLocal(ctx, tmpPath, repo, git.PushOptions{
 		LocalRefName: "HEAD",
 		Branch:       repo.DefaultBranch,

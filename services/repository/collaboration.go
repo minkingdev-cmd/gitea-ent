@@ -15,12 +15,33 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	"gitea.dev/modules/setting"
 	"gitea.dev/services/audit"
 
 	"xorm.io/builder"
 )
 
-func AddOrUpdateCollaborator(ctx context.Context, repo *repo_model.Repository, u *user_model.User, mode perm.AccessMode) error {
+func AddOrUpdateCollaborator(ctx context.Context, repo *repo_model.Repository, u *user_model.User, mode perm.AccessMode) (err error) {
+	if mode < perm.AccessModeRead || mode > perm.AccessModeAdmin {
+		return perm.ErrInvalidAccessMode
+	}
+	ctx, finish, err := beginCollaborationMutation(ctx, repo, u.ID, int(mode), false)
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		return addOrUpdateCollaborator(ctx, repo, u, mode)
+	}
+	return db.WithTx(ctx, func(ctx context.Context) error {
+		if err := requireAccessMutation(ctx, 0, collaborationIntent(repo.ID, u.ID, int(mode), false), []*repo_model.Repository{repo}); err != nil {
+			return err
+		}
+		return addOrUpdateCollaborator(ctx, repo, u, mode)
+	})
+}
+
+func addOrUpdateCollaborator(ctx context.Context, repo *repo_model.Repository, u *user_model.User, mode perm.AccessMode) error {
 	// Only allow valid access modes, read, write and admin
 	// Keep in mind: do not allow "owner" here: because "admin" user can update collaborators but not make dangerous operations.
 	// If the "admin" user updates a user to "owner", then it means that the admin user can use owner permission, which is not expected.
@@ -85,8 +106,21 @@ func AddOrUpdateCollaborator(ctx context.Context, repo *repo_model.Repository, u
 }
 
 // DeleteCollaboration removes collaboration relation between the user and repository.
-func DeleteCollaboration(ctx context.Context, repo *repo_model.Repository, collaborator *user_model.User) error {
-	return deleteCollaboration(ctx, repo, collaborator, &repo_model.Collaboration{RepoID: repo.ID, UserID: collaborator.ID})
+func DeleteCollaboration(ctx context.Context, repo *repo_model.Repository, collaborator *user_model.User) (err error) {
+	ctx, finish, err := beginCollaborationMutation(ctx, repo, collaborator.ID, 0, true)
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		return deleteCollaboration(ctx, repo, collaborator, &repo_model.Collaboration{RepoID: repo.ID, UserID: collaborator.ID})
+	}
+	return db.WithTx(ctx, func(ctx context.Context) error {
+		if err := requireAccessMutation(ctx, 0, collaborationIntent(repo.ID, collaborator.ID, 0, true), []*repo_model.Repository{repo}); err != nil {
+			return err
+		}
+		return deleteCollaboration(ctx, repo, collaborator, &repo_model.Collaboration{RepoID: repo.ID, UserID: collaborator.ID})
+	})
 }
 
 func deleteCollaborationByMode(ctx context.Context, repo *repo_model.Repository, collaborator *user_model.User, mode perm.AccessMode) error {

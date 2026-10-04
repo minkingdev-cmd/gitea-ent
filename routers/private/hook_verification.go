@@ -6,6 +6,7 @@ package private
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 
 	"gitea.dev/modules/git"
@@ -87,6 +88,6 @@ func (e *errUnverifiedCommit) Error() string {
 }
 
 func isErrUnverifiedCommit(err error) bool {
-	_, ok := err.(*errUnverifiedCommit)
+	_, ok := errors.AsType[*errUnverifiedCommit](err)
 	return ok
 }

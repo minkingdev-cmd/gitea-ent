@@ -54,6 +54,7 @@ type roleSnapshot struct {
 	RepoID         int64                `json:"repo_id"`
 	OwnerID        int64                `json:"owner_id"`
 	TargetOwnerID  int64                `json:"target_owner_id,omitzero"`
+	IntentHash     string               `json:"intent_hash,omitempty"`
 	Archived       bool                 `json:"archived"`
 	NativeMode     int                  `json:"native_mode"`
 	UnitModes      []unitSnapshot       `json:"unit_modes"`
@@ -124,6 +125,10 @@ func baseSnapshot(input EvaluateInput, native []authz.Action) roleSnapshot {
 }
 
 func Evaluate(ctx context.Context, input EvaluateInput) (Decision, error) {
+	return evaluate(ctx, input, false)
+}
+
+func evaluate(ctx context.Context, input EvaluateInput, inSnapshot bool) (Decision, error) {
 	decision := Decision{
 		CandidateDecision: "error", Reason: "invalid_evaluation_context", Action: input.Action,
 		CandidateOnly: true, SafetyGuardsEvaluated: false,
@@ -140,7 +145,7 @@ func Evaluate(ctx context.Context, input EvaluateInput) (Decision, error) {
 		return decision, errors.New(decision.Reason)
 	}
 	decision.ownerID = input.Repo.OwnerID
-	if !input.Credential.Read || !input.Permission.HasAnyUnitAccessOrPublicAccess() {
+	if input.Credential.organizationID > 0 && input.Repo.OwnerID != input.Credential.organizationID || !input.Credential.Read || !input.Permission.HasAnyUnitAccessOrPublicAccess() {
 		decision.CandidateDecision, decision.Reason = "deny", "native_visibility_denied"
 		decision.MissingActions = []authz.Action{input.Action}
 		return decision, nil
@@ -148,7 +153,7 @@ func Evaluate(ctx context.Context, input EvaluateInput) (Decision, error) {
 
 	var policyErr error
 	var native []authz.Action
-	err := db.WithIndependentReadTx(ctx, func(snapshotCtx context.Context) error {
+	read := func(snapshotCtx context.Context) error {
 		currentRepo, exists, err := db.GetByID[repo_model.Repository](snapshotCtx, input.Repo.ID)
 		if err != nil || !exists {
 			policyErr = errors.New("policy_read_failed")
@@ -166,6 +171,9 @@ func Evaluate(ctx context.Context, input EvaluateInput) (Decision, error) {
 				currentActor = &user_model.User{ID: input.Actor.ID}
 			}
 			currentActor.ExtDoerData = input.Actor.ExtDoerData
+			if inSnapshot {
+				currentActor.IsAdmin = input.Actor.IsAdmin
+			}
 			input.Actor = currentActor
 		}
 		if input.Actor != nil && (!input.Actor.IsActive || input.Actor.ProhibitLogin) {
@@ -298,7 +306,13 @@ func Evaluate(ctx context.Context, input EvaluateInput) (Decision, error) {
 			decision.MissingActions = []authz.Action{input.Action}
 		}
 		return nil
-	})
+	}
+	var err error
+	if inSnapshot {
+		err = read(ctx)
+	} else {
+		err = db.WithIndependentReadTx(ctx, read)
+	}
 	if err != nil {
 		if policyErr != nil {
 			decision.Reason = policyErr.Error()

@@ -5,16 +5,13 @@ package repository
 
 import (
 	"errors"
-	"fmt"
 
 	issue_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
-	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
-	repo_module "gitea.dev/modules/repository"
 	"gitea.dev/modules/reqctx"
 	"gitea.dev/modules/util"
 	authz_service "gitea.dev/services/enterpriseauthz"
@@ -23,6 +20,9 @@ import (
 
 // MergeUpstream merges the base repository's default branch into the fork repository's current branch.
 func MergeUpstream(ctx reqctx.RequestContext, doer *user_model.User, repo *repo_model.Repository, branch string, ffOnly bool) (mergeStyle string, err error) {
+	if doer == nil {
+		return "", accessRejection("invalid_execution_context", 403)
+	}
 	pushDenied := false
 	operationCtx, observation := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, branch)
 	defer func() {
@@ -64,11 +64,7 @@ func MergeUpstream(ctx reqctx.RequestContext, doer *user_model.User, repo *repo_
 		return "up-to-date", nil
 	}
 
-	err = git.PushManaged(operationCtx, repo.BaseRepo, repo, git.PushOptions{
-		Branch: fmt.Sprintf("%s:%s", divergingInfo.BaseBranchName, branch),
-		Env: repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo),
-			string(authz_service.ManagedHookOperationTicket(operationCtx, doer, repo, branch, authz.PushBranch))),
-	})
+	err = pushForkBranch(operationCtx, doer, repo.BaseRepo, divergingInfo.BaseBranchName, repo, branch, false)
 	if err == nil {
 		return "fast-forward", nil
 	}

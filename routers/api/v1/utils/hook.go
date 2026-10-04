@@ -11,12 +11,14 @@ import (
 	"gitea.dev/models/db"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/models/webhook"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/validation"
 	webhook_module "gitea.dev/modules/webhook"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	webhook_service "gitea.dev/services/webhook"
 )
@@ -263,10 +265,21 @@ func addHook(ctx *context.APIContext, form *api.CreateHookOption, ownerID, repoI
 	if err := w.UpdateEvent(); err != nil {
 		ctx.APIErrorInternal(err)
 		return nil, false
-	} else if err := webhook.CreateWebhook(ctx, w); err != nil {
+	}
+
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageWebhook, "webhook:create")
+	if !allowed {
+		return nil, false
+	}
+	defer finishExecution()
+	if err := webhook_service.CreateWebhook(ctx, w); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return nil, false
+		}
 		ctx.APIErrorInternal(err)
 		return nil, false
 	}
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageWebhook)
 	return w, true
 }
 
@@ -397,10 +410,19 @@ func editHook(ctx *context.APIContext, form *api.EditHookOption, w *webhook.Webh
 		w.Name = strings.TrimSpace(*form.Name)
 	}
 
-	if err := webhook.UpdateWebhook(ctx, w); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageWebhook, "webhook:"+strconv.FormatInt(w.ID, 10))
+	if !allowed {
+		return false
+	}
+	defer finishExecution()
+	if err := webhook_service.UpdateWebhook(ctx, w); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return false
+		}
 		ctx.APIErrorInternal(err)
 		return false
 	}
+	common.MarkRepoSettingSuccess(ctx.Base, authz.ManageWebhook)
 	return true
 }
 

@@ -517,25 +517,13 @@ func modifyFile(ctx context.Context, t *TemporaryUploadRepository, file *ChangeR
 	}
 	defer writeObjectRet.LfsContent.Close()
 
-	// Now we must store the content into an LFS object
-	lfsMetaObject, err := git_model.NewLFSMetaObject(ctx, repoID, writeObjectRet.LfsPointer)
-	if err != nil {
+	if err := t.storeOrStageLFS(ctx, repoID, writeObjectRet.LfsPointer, writeObjectRet.LfsContent, contentStore); err != nil {
 		return nil, err
 	}
-	exist, err := contentStore.Exists(lfsMetaObject.Pointer)
-	if err != nil {
-		return nil, err
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		return nil, nil //nolint:nilnil // 暂存对象的 metadata 仅由实际持久化阶段清理。
 	}
-	if !exist {
-		err = contentStore.Put(lfsMetaObject.Pointer, writeObjectRet.LfsContent)
-		if err != nil {
-			if _, errRemove := git_model.RemoveLFSMetaObjectByOid(ctx, repoID, lfsMetaObject.Oid); errRemove != nil {
-				return nil, fmt.Errorf("unable to remove failed inserted LFS object %s: %v (Prev Error: %w)", lfsMetaObject.Oid, errRemove, err)
-			}
-			return nil, err
-		}
-	}
-	return &lfsMetaObject.Pointer, nil
+	return &writeObjectRet.LfsPointer, nil
 }
 
 func checkIsLfsFileInGitAttributes(ctx context.Context, t *TemporaryUploadRepository, paths []string) (ret []bool, err error) {

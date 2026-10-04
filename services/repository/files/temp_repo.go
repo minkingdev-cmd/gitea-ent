@@ -21,15 +21,18 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	asymkey_service "gitea.dev/services/asymkey"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/gitdiff"
 )
 
 // TemporaryUploadRepository is a type to wrap our upload repositories as a shallow clone
 type TemporaryUploadRepository struct {
-	repo     *repo_model.Repository
-	gitRepo  *git.Repository
-	basePath string
-	cleanup  func()
+	repo              *repo_model.Repository
+	gitRepo           *git.Repository
+	pendingLFS        []stagedLFSObject
+	createdLFSMetaIDs []int64
+	basePath          string
+	cleanup           func()
 }
 
 // NewTemporaryUploadRepository creates a new temporary upload repository
@@ -334,14 +337,45 @@ func (t *TemporaryUploadRepository) CommitTree(ctx context.Context, opts *Commit
 }
 
 // Push the provided commitHash to the repository branch by the provided user
-func (t *TemporaryUploadRepository) Push(ctx context.Context, doer *user_model.User, commitHash, branch string, force bool) error {
+func (t *TemporaryUploadRepository) Push(ctx context.Context, doer *user_model.User, commitHash, branch string, force bool) (err error) {
+	executionCtx, admission, input, err := t.beginPushExecution(ctx, doer, strings.TrimSpace(commitHash), strings.TrimSpace(branch), force)
+	if err != nil {
+		return err
+	}
+	if err := admission.Start(executionCtx); err != nil {
+		return err
+	}
+	release := func() {}
+	if admission != nil {
+		release, err = authz_service.RegisterGitExecution(executionCtx, admission, input)
+		if err != nil {
+			return err
+		}
+	}
+	defer release()
+	defer func() {
+		outcome := authz_service.NativeSuccess
+		if err != nil {
+			outcome = authz_service.NativeFailed
+			t.removeCreatedLFSMeta(ctx)
+		}
+		admission.Finish(executionCtx, outcome, authz_service.StageOperation)
+	}()
+	if err := t.flushStagedLFS(ctx); err != nil {
+		return err
+	}
 	// Because calls hooks we need to pass in the environment
 	env := repo_module.PushingEnvironment(doer, t.repo)
 	env = repo_module.WithAuthzOperation(env, string(fileMutationTicket(ctx, t.repo.ID, doer.ID, strings.TrimSpace(branch))))
+	lease := ""
+	if len(input) == 1 {
+		lease = string(input[0].Ref) + ":" + input[0].OldCommitID
+	}
 	if err := git.PushFromLocal(ctx, t.basePath, t.repo, git.PushOptions{
-		Branch: strings.TrimSpace(commitHash) + ":" + git.BranchPrefix + strings.TrimSpace(branch),
-		Env:    env,
-		Force:  force,
+		Branch:         strings.TrimSpace(commitHash) + ":" + git.BranchPrefix + strings.TrimSpace(branch),
+		Env:            env,
+		Force:          force,
+		ForceWithLease: lease,
 	}); err != nil {
 		if git.IsErrPushOutOfDate(err) {
 			return err

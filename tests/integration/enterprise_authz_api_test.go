@@ -20,6 +20,7 @@ import (
 	"gitea.dev/models/perm"
 	access_model "gitea.dev/models/perm/access"
 	"gitea.dev/models/unittest"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
@@ -92,7 +93,15 @@ func TestEnterpriseAuthzAPIScopesAndDiagnostics(t *testing.T) {
 	catalog := MakeRequest(t, NewRequest(t, "GET", "/api/v1/enterprise/authz/actions").AddTokenAuth(adminToken), http.StatusOK)
 	var directory api.EnterpriseAuthzActionCatalog
 	DecodeJSON(t, catalog, &directory)
-	require.Len(t, directory.Actions, 19)
+	require.Len(t, directory.Actions, 20)
+	require.Equal(t, 2, directory.Version)
+	var enforced []string
+	for _, action := range directory.Actions {
+		if action.EnforceSupported {
+			enforced = append(enforced, action.Key)
+		}
+	}
+	require.ElementsMatch(t, []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete"}, enforced)
 	MakeRequest(t, NewRequest(t, "GET", "/api/v1/orgs/org3/enterprise/authz/roles").AddTokenAuth(ownerToken), http.StatusOK)
 	self := MakeRequest(t, NewRequest(t, "GET", base+"/effective-permissions").AddTokenAuth(readerToken), http.StatusOK)
 	var effective api.EnterpriseAuthzEffectivePermissions
@@ -281,4 +290,29 @@ func TestEnterpriseAuthzAPIHistoryUsesCurrentScopeAndPreservesDeletedRepository(
 	unittest.AssertCount(t, &authz_model.DecisionRecord{ID: record.ID}, 0)
 	unittest.AssertCount(t, &audit_model.Event{Action: audit_model.EnterpriseAuthzDecision}, 0)
 	MakeRequest(t, NewRequest(t, "GET", "/api/v1/enterprise/authz/decisions/"+recordID).AddTokenAuth(admin), http.StatusNotFound)
+}
+
+func TestEnterpriseAuthzAPIAuthorizationHistoryFilters(t *testing.T) {
+	defer tests.PrepareTestEnv(t)()
+	defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, true)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{})()
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+	token := getTokenForLoggedInUser(t, loginUser(t, "user2"), auth_model.AccessTokenScopeWriteRepository)
+	base := "/api/v1/repos/user2/repo1/enterprise/authz/decisions"
+	record := &authz_model.DecisionRecord{ObservationID: rand.Text(), OperationID: rand.Text(), ActorID: 2, RepoID: 1, OwnerID: 2, Action: authz.Delete, RequestSource: "api", DecisionMode: "enforce", AuthorizationDecision: "deny", AuthorizationReason: "missing_action", CandidateDecision: "deny", Reason: "missing_action", MissingActions: "[]", NativeOutcome: "unknown", NativeStage: "authorization", SnapshotJSON: `{"catalog_version":2}`}
+	require.NoError(t, db.Insert(t.Context(), record))
+	response := MakeRequest(t, NewRequest(t, "GET", base+"?mode=enforce&authorization=deny").AddTokenAuth(token), http.StatusOK)
+	var records []map[string]any
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &records))
+	require.Len(t, records, 1)
+	require.Equal(t, "enforce", records[0]["decision_mode"])
+	require.Equal(t, "deny", records[0]["authorization_decision"])
+	require.Equal(t, "missing_action", records[0]["authorization_reason"])
+	require.Equal(t, false, records[0]["execution_started"])
+	require.Equal(t, "unknown", records[0]["native_outcome"])
+	for _, query := range []string{"mode=ENFORCE", "mode=disabled", "authorization=success", "mode=shadow&mode=enforce", "authorization=deny&authorization=error", "mode=", "authorization="} {
+		MakeRequest(t, NewRequest(t, "GET", base+"?"+query).AddTokenAuth(token), http.StatusUnprocessableEntity)
+	}
+	response = MakeRequest(t, NewRequest(t, "GET", base+"?mode=shadow&authorization=not_enforced").AddTokenAuth(token), http.StatusOK)
+	require.NotContains(t, response.Body.String(), `"decision_mode":"enforce"`)
 }

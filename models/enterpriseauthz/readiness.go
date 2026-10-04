@@ -28,6 +28,9 @@ func CheckReady(ctx context.Context) error {
 			return errors.New("authz_schema_missing")
 		}
 	}
+	if _, err := db.GetEngine(ctx).Query("SELECT decision_mode, authorization_decision, authorization_reason, execution_started FROM enterprise_authz_decision WHERE 1=0"); err != nil {
+		return errors.New("authz_schema_missing")
+	}
 	err := db.WithIndependentReadTx(ctx, func(ctx context.Context) error {
 		for key, actions := range authz.BuiltinRoles() {
 			role := new(RoleDefinition)

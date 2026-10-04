@@ -140,6 +140,8 @@ func AddTeam(ctx *context.APIContext) {
 	//   type: string
 	//   required: true
 	// responses:
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "204":
 	//     "$ref": "#/responses/empty"
 	//   "403":
@@ -178,6 +180,8 @@ func DeleteTeam(ctx *context.APIContext) {
 	//   type: string
 	//   required: true
 	// responses:
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "204":
 	//     "$ref": "#/responses/empty"
 	//   "403":
@@ -218,6 +222,9 @@ func changeRepoTeam(ctx *context.APIContext, add bool) {
 		err = repo_service.RemoveRepositoryFromTeam(ctx, team, ctx.Repo.Repository.ID)
 	}
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}

@@ -21,7 +21,7 @@ import (
 )
 
 // updateHeadByRebaseOnToBase handles updating a PR's head branch by rebasing it on the PR current base branch
-func updateHeadByRebaseOnToBase(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User) error {
+func updateHeadByRebaseOnToBase(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, execution *mergeExecution) error {
 	// "Clone" base repo and add the cache headers for the head repo and branch
 	mergeCtx, cancel, err := createTemporaryRepoForMerge(ctx, pr, doer, "")
 	if err != nil {
@@ -33,11 +33,24 @@ func updateHeadByRebaseOnToBase(ctx context.Context, pr *issues_model.PullReques
 	oldMergeBase, _, _ := gitcmd.NewCommand("merge-base").AddDashesAndList(tmpRepoBaseBranch, tmpRepoTrackingBranch).
 		WithRepo(mergeCtx.tmpRepo).RunStdString(ctx)
 	oldMergeBase = strings.TrimSpace(oldMergeBase)
+	oldHead, err := git.GetFullCommitID(ctx, mergeCtx.tmpRepo, tmpRepoTrackingBranch)
+	if err != nil {
+		return err
+	}
 
 	// Rebase the tracking branch on to the base as the staging branch
 	if err := rebaseTrackingOnToBase(mergeCtx, repo_model.MergeStyleRebaseUpdate); err != nil {
 		return err
 	}
+	newHead, err := git.GetFullCommitID(ctx, mergeCtx.tmpRepo, tmpRepoStagingBranch)
+	if err != nil {
+		return err
+	}
+	ctx, ticket, release, err := beginPullGitExecution(ctx, doer, pr.HeadRepo, mergeCtx.tmpRepo, pr.HeadBranch, oldHead, newHead, false, true, execution)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	if setting.LFS.StartServer {
 		// Now we need to ensure that the head repository contains any LFS objects between the new base and the old mergebase
@@ -68,6 +81,10 @@ func updateHeadByRebaseOnToBase(ctx context.Context, pr *issues_model.PullReques
 
 	pushCmd := gitcmd.NewCommand("push", "-f", "head_repo").
 		AddDynamicArguments(tmpRepoStagingBranch + ":" + git.BranchPrefix + pr.HeadBranch)
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		pushCmd = gitcmd.NewCommand("push", "head_repo").AddOptionFormat("--force-with-lease=%s:%s", git.BranchPrefix+pr.HeadBranch, oldHead).
+			AddDynamicArguments(tmpRepoStagingBranch + ":" + git.BranchPrefix + pr.HeadBranch)
+	}
 
 	// Push back to the head repository.
 	// TODO: this cause an api call to "/api/internal/hook/post-receive/...",
@@ -77,7 +94,10 @@ func updateHeadByRebaseOnToBase(ctx context.Context, pr *issues_model.PullReques
 	env := repo_module.FullPushingEnvironment(
 		headUser, doer, pr.HeadRepo, pr.HeadRepo.Name, pr.ID, pr.Index,
 	)
-	env = repo_module.WithAuthzOperation(env, string(authz_service.ManagedHookOperationTicket(ctx, doer, pr.HeadRepo, pr.HeadBranch, authz.PushBranch)))
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		ticket = authz_service.ManagedHookOperationTicket(ctx, doer, pr.HeadRepo, pr.HeadBranch, authz.PushBranch)
+	}
+	env = repo_module.WithAuthzOperation(env, string(ticket))
 	if err := pushCmd.
 		WithEnv(env).
 		WithRepo(mergeCtx.tmpRepo).

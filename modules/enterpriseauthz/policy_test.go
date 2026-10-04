@@ -14,7 +14,8 @@ import (
 
 func TestActionCatalog(t *testing.T) {
 	catalog := Catalog()
-	require.Len(t, catalog, 19)
+	require.Len(t, catalog, 20)
+	require.Equal(t, 2, CatalogVersion)
 	seen := map[Action]bool{}
 	for _, entry := range catalog {
 		require.False(t, seen[entry.Key])
@@ -41,11 +42,17 @@ func TestActionCatalog(t *testing.T) {
 	require.Equal(t, []string{"code", "pull_requests"}, pr.Units)
 	roles := BuiltinRoles()
 	require.Len(t, roles, 8)
-	require.Len(t, roles["owner"], 19)
+	require.Len(t, roles["owner"], 20)
 	require.Equal(t, roles["owner"], roles["platform-admin"])
 	require.NotContains(t, roles["reviewer"], PushBranch)
 	require.Contains(t, roles["security-maintainer"], ManageCodeowners)
 	require.NotContains(t, roles["security-maintainer"], ManageSecret)
+	for _, key := range []string{"owner", "platform-admin"} {
+		require.Contains(t, roles[key], Action("repo.manage_access"))
+	}
+	for _, key := range []string{"guest", "reporter", "developer", "reviewer", "maintainer", "security-maintainer"} {
+		require.NotContains(t, roles[key], Action("repo.manage_access"))
+	}
 	roles["owner"][0] = "repo.typo"
 	require.NotContains(t, BuiltinRoles()["owner"], Action("repo.typo"))
 }
@@ -116,4 +123,22 @@ func TestRequestSourceCatalog(t *testing.T) {
 	sources[0] = "invalid"
 	require.True(t, ValidSource("web"))
 	require.NotContains(t, RequestSources(), "invalid")
+}
+
+func TestEnforceCatalogFixedSet(t *testing.T) {
+	want := []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete"}
+	var entries []struct {
+		Key              string `json:"key"`
+		EnforceSupported bool   `json:"enforce_supported"`
+	}
+	data, err := json.Marshal(Catalog())
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &entries))
+	var actual []string
+	for _, entry := range entries {
+		if entry.EnforceSupported {
+			actual = append(actual, entry.Key)
+		}
+	}
+	require.ElementsMatch(t, want, actual)
 }

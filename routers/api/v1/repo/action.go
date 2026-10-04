@@ -35,6 +35,7 @@ import (
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	secret_service "gitea.dev/services/secrets"
 )
 
@@ -141,6 +142,11 @@ func (Action) CreateOrUpdateSecret(ctx *context.APIContext) {
 
 	opt := web.GetForm[*api.CreateOrUpdateSecretOption](ctx)
 
+	finishExecution, allowed := common.BeginRepoExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz_service.SettingsIntent(authz.ManageSecret, ctx.PathParam("secretname")), authz.ManageSecret)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	s, created, err := secret_service.CreateOrUpdateSecret(ctx, 0, repo.ID, ctx.PathParam("secretname"), opt.Data, opt.Description)
 	if err != nil {
 		ctx.APIErrorAuto(err)
@@ -196,6 +202,11 @@ func (Action) DeleteSecret(ctx *context.APIContext) {
 
 	repo := ctx.Repo.Repository
 
+	finishExecution, allowed := common.BeginRepoExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz_service.SettingsIntent(authz.ManageSecret, ctx.PathParam("secretname")), authz.ManageSecret)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	s, err := secret_service.DeleteSecretByName(ctx, 0, repo.ID, ctx.PathParam("secretname"))
 	if err != nil {
 		ctx.APIErrorAuto(err)
@@ -297,7 +308,21 @@ func (Action) DeleteVariable(ctx *context.APIContext) {
 	//   "404":
 	//     "$ref": "#/responses/notFound"
 
+	variable, err := actions_service.GetVariable(ctx, actions_model.FindVariablesOpts{RepoID: ctx.Repo.Repository.ID, Name: ctx.PathParam("variablename")})
+	if err != nil {
+		ctx.APIErrorAuto(err)
+		return
+	}
+
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "variable:"+strconv.FormatInt(variable.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	if err := actions_service.DeleteVariableByName(ctx, 0, ctx.Repo.Repository.ID, ctx.PathParam("variablename")); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorAuto(err)
 		return
 	}
@@ -361,7 +386,15 @@ func (Action) CreateVariable(ctx *context.APIContext) {
 		return
 	}
 
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "variable:create:"+variableName)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	if _, err := actions_service.CreateVariable(ctx, 0, repoID, variableName, opt.Value, opt.Description); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorAuto(err)
 		return
 	}
@@ -426,7 +459,15 @@ func (Action) UpdateVariable(ctx *context.APIContext) {
 	v.Data = opt.Value
 	v.Description = opt.Description
 
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "variable:"+strconv.FormatInt(v.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	if _, err := actions_service.UpdateVariableNameData(ctx, v); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorAuto(err)
 		return
 	}
@@ -1097,6 +1138,11 @@ func ActionsDisableWorkflow(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 
 	workflowID := ctx.PathParam("workflow_id")
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "repo-settings")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	err := actions_service.EnableOrDisableWorkflow(ctx, workflowID, false)
 	if err != nil {
 		if errors.Is(err, util.ErrNotExist) {
@@ -1251,6 +1297,11 @@ func ActionsEnableWorkflow(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 
 	workflowID := ctx.PathParam("workflow_id")
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "repo-settings")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	err := actions_service.EnableOrDisableWorkflow(ctx, workflowID, true)
 	if err != nil {
 		if errors.Is(err, util.ErrNotExist) {
@@ -1900,6 +1951,9 @@ func DeleteActionRun(ctx *context.APIContext) {
 	}
 
 	if err := actions_service.DeleteRun(ctx, run); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}

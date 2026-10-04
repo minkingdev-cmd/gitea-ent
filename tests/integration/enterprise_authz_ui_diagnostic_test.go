@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"crypto/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -173,4 +174,82 @@ func TestEnterpriseAuthzUIHistoryNamedSelectors(t *testing.T) {
 	doc := NewHTMLParser(t, response.Body)
 	require.Contains(t, doc.Find(`#authz-history-repo-selected`).Text(), "Deleted repository")
 	require.Zero(t, doc.Find(`input[name="repo_id"]:not([type="hidden"])`).Length())
+}
+
+func TestEnterpriseAuthzUIEnforcementHistory(t *testing.T) {
+	defer tests.PrepareTestEnv(t)()
+	defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, true)()
+	defer test.MockVariableValue(&setting.EnterpriseAuthz.Enforce, false)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{})()
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
+	admin := loginUser(t, "user1")
+	base := "/-/admin/enterprise/authz/scopes/system/decisions"
+	for _, tc := range []struct {
+		mode, authorization, reason, candidate, outcome, execution, mismatch string
+		started                                                              bool
+	}{
+		{"shadow", "not_enforced", "", "allow", "denied", "execution_unknown", "true", false},
+		{"enforce", "deny", "missing_action", "deny", "unknown", "not_started", "unknown", false},
+		{"enforce", "error", "policy_read_failed", "error", "unknown", "not_started", "unknown", false},
+		{"enforce", "allow", "role_action", "allow", "unknown", "not_started", "unknown", false},
+		{"enforce", "allow", "native_action", "allow", "unknown", "started", "unknown", true},
+		{"enforce", "fallback", "policy_read_failed", "error", "failed", "started", "unknown", true},
+	} {
+		setting.EnterpriseAuthz.Enforce = tc.mode == "shadow"
+		record := &authz_model.DecisionRecord{ObservationID: rand.Text(), OperationID: rand.Text(), ActorID: 4, RepoID: 1, OwnerID: 2, Action: authz.Delete, RequestSource: "api", DecisionMode: tc.mode, AuthorizationDecision: tc.authorization, AuthorizationReason: tc.reason, ExecutionStarted: tc.started, CandidateDecision: tc.candidate, Reason: "missing_action", MissingActions: "[]", NativeOutcome: tc.outcome, NativeStage: "authorization", SnapshotJSON: `{"catalog_version":2,"unknown":"<script>private-token</script>"}`}
+		require.NoError(t, db.Insert(t.Context(), record))
+		path := base + "/" + strconv.FormatInt(record.ID, 10)
+		response := admin.MakeRequest(t, NewRequest(t, "GET", path), http.StatusOK)
+		detail := NewHTMLParser(t, response.Body).Find("dl[data-native-outcome]")
+		require.Equal(t, tc.mode, detail.AttrOr("data-decision-mode", ""))
+		require.Equal(t, tc.authorization, detail.AttrOr("data-authorization-decision", ""))
+		require.Equal(t, tc.execution, detail.AttrOr("data-execution-state", ""))
+		require.Equal(t, tc.mismatch, detail.AttrOr("data-mismatch", ""))
+		require.NotContains(t, response.Body.String(), "private-token")
+		require.NotContains(t, response.Body.String(), "admin.enterprise_authz.")
+		list := admin.MakeRequest(t, NewRequest(t, "GET", base+"?mode="+tc.mode+"&authorization="+tc.authorization+"&limit=1"), http.StatusOK)
+		page := NewHTMLParser(t, list.Body)
+		require.Equal(t, tc.mode, page.Find(`[name="mode"] option[selected]`).AttrOr("value", ""))
+		require.Equal(t, tc.authorization, page.Find(`[name="authorization"] option[selected]`).AttrOr("value", ""))
+		require.Equal(t, tc.mode, page.Find(`tbody tr`).First().AttrOr("data-decision-mode", ""))
+		loginUser(t, "user2").MakeRequest(t, NewRequest(t, "GET", path), http.StatusForbidden)
+	}
+	for _, query := range []string{"mode=ENFORCE", "mode=disabled", "authorization=success", "mode=shadow&mode=enforce", "authorization=deny&authorization=error", "mode=%3Cscript%3E", "authorization=%3Cscript%3E"} {
+		admin.MakeRequest(t, NewRequest(t, "GET", base+"?"+query), http.StatusUnprocessableEntity)
+	}
+}
+
+func TestEnterpriseAuthzUIRunnerMachineHistory(t *testing.T) {
+	defer tests.PrepareTestEnv(t)()
+	defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, true)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{})()
+	record := &authz_model.DecisionRecord{ObservationID: rand.Text(), OperationID: rand.Text(), ActorID: 0, RepoID: 1, OwnerID: 2, Action: authz.ManageCI, RequestSource: "system", DecisionMode: "enforce", AuthorizationDecision: "allow", AuthorizationReason: "native_action", CandidateDecision: "allow", Reason: "native_action", MissingActions: "[]", NativeOutcome: "unknown", NativeStage: "operation", SnapshotJSON: `{"catalog_version":2,"native_mode":4,"credential":{"native_only":true,"actions":["repo.manage_ci"],"reference":"runner-registration-token:77"},"role_eligible":false,"native_actions":["repo.manage_ci"]}`}
+	require.NoError(t, db.Insert(t.Context(), record))
+	admin := loginUser(t, "user1")
+	base := "/-/admin/enterprise/authz/scopes/system/decisions"
+	response := admin.MakeRequest(t, NewRequest(t, "GET", base+"/"+strconv.FormatInt(record.ID, 10)), http.StatusOK)
+	require.Contains(t, response.Body.String(), "Repository runner registration credential (machine)")
+	require.Contains(t, response.Body.String(), "not a human ownership grant")
+	require.NotContains(t, response.Body.String(), "runner-registration-token:77")
+	response = admin.MakeRequest(t, NewRequest(t, "GET", base+"?actor_id=0&mode=enforce"), http.StatusOK)
+	require.Equal(t, "Anonymous or machine actor", NewHTMLParser(t, response.Body).Find(`#authz-history-actor-selected`).Text())
+	response = admin.MakeRequest(t, NewRequest(t, "GET", "/-/admin/enterprise/authz/selectors/history_actor?scope_type=system&q=machine"), http.StatusOK)
+	require.Contains(t, response.Body.String(), "Anonymous or machine actor")
+}
+
+func TestEnterpriseAuthzUIEnforcedSyntheticActorHistory(t *testing.T) {
+	defer tests.PrepareTestEnv(t)()
+	defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, true)()
+	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{})()
+	admin := loginUser(t, "user1")
+	base := "/-/admin/enterprise/authz/scopes/system/decisions"
+	for _, actor := range []*user_model.User{user_model.NewActionsUser(), user_model.NewDeployKeyUser()} {
+		record := &authz_model.DecisionRecord{ObservationID: rand.Text(), OperationID: rand.Text(), ActorID: actor.ID, RepoID: 1, OwnerID: 2, Action: authz.MergePullRequest, RequestSource: "api", DecisionMode: "enforce", AuthorizationDecision: "allow", AuthorizationReason: "native_action", CandidateDecision: "allow", Reason: "native_action", MissingActions: "[]", NativeOutcome: "unknown", NativeStage: "operation", SnapshotJSON: `{"catalog_version":2,"native_mode":2,"credential":{"read":true,"write":true,"native_only":true,"reference":"SENSITIVE-machine-reference"},"role_eligible":false,"native_actions":["repo.merge_pull_request"]}`}
+		require.NoError(t, db.Insert(t.Context(), record))
+		response := admin.MakeRequest(t, NewRequestf(t, "GET", "%s/%d", base, record.ID), http.StatusOK)
+		require.Contains(t, response.Body.String(), actor.Name)
+		require.NotContains(t, response.Body.String(), "SENSITIVE-machine-reference")
+		response = admin.MakeRequest(t, NewRequestf(t, "GET", "%s?actor_id=%d&mode=enforce", base, actor.ID), http.StatusOK)
+		require.Equal(t, actor.Name, NewHTMLParser(t, response.Body).Find(`#authz-history-actor-selected`).Text())
+	}
 }

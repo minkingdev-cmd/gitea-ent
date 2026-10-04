@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	actions_model "gitea.dev/models/actions"
 	"gitea.dev/models/db"
@@ -20,6 +21,7 @@ import (
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/common"
 	shared_user "gitea.dev/routers/web/shared/user"
+	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/context"
 	"gitea.dev/services/forms"
 )
@@ -144,8 +146,16 @@ func Runners(ctx *context.Context) {
 	var token *actions_model.ActionRunnerToken
 	token, err = actions_model.GetLatestRunnerToken(ctx, opts.OwnerID, opts.RepoID)
 	if errors.Is(err, util.ErrNotExist) || (token != nil && !token.IsActive) {
-		token, err = actions_model.NewRunnerToken(ctx, opts.OwnerID, opts.RepoID)
+		finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "runner:0")
+		if !allowed {
+			return
+		}
+		defer finishExecution()
+		token, err = actions_service.NewRunnerToken(ctx, opts.OwnerID, opts.RepoID)
 		if err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return
+			}
 			ctx.ServerError("CreateRunnerToken", err)
 			return
 		}
@@ -258,8 +268,20 @@ func RunnersEditPost(ctx *context.Context) {
 	form := web.GetForm[*forms.EditRunnerForm](ctx)
 	runner.Description = form.Description
 
-	err = actions_model.UpdateRunner(ctx, runner, "description")
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "runner:"+strconv.FormatInt(runner.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	updateRunner := actions_model.UpdateRunner
+	if rCtx.IsRepo {
+		updateRunner = actions_service.UpdateRunner
+	}
+	err = updateRunner(ctx, runner, "description")
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Warn("RunnerDetailsEditPost.UpdateRunner failed: %v, url: %s", err, ctx.Req.URL)
 		ctx.Flash.Warning(ctx.Tr("actions.runners.update_runner_failed"))
 		ctx.Redirect(redirectTo)
@@ -285,7 +307,15 @@ func ResetRunnerRegistrationToken(ctx *context.Context) {
 	repoID := rCtx.RepoID
 	redirectTo := rCtx.RedirectLink
 
-	if _, err := actions_model.NewRunnerToken(ctx, ownerID, repoID); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "runner:0")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if _, err := actions_service.NewRunnerToken(ctx, ownerID, repoID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("ResetRunnerRegistrationToken", err)
 		return
 	}
@@ -317,7 +347,19 @@ func RunnerDeletePost(ctx *context.Context) {
 	successRedirectTo := rCtx.RedirectLink
 	failedRedirectTo := rCtx.RedirectLink + url.PathEscape(ctx.PathParam("runnerid"))
 
-	if err := actions_model.DeleteRunner(ctx, runner.ID); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "runner:"+strconv.FormatInt(runner.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	deleteRunner := actions_model.DeleteRunner
+	if rCtx.IsRepo {
+		deleteRunner = actions_service.DeleteRunner
+	}
+	if err := deleteRunner(ctx, runner.ID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Warn("DeleteRunnerPost.UpdateRunner failed: %v, url: %s", err, ctx.Req.URL)
 		ctx.Flash.Warning(ctx.Tr("actions.runners.delete_runner_failed"))
 
@@ -365,7 +407,19 @@ func RunnerUpdatePost(ctx *context.Context) {
 		failedKey = "actions.runners.disable_runner_failed"
 	}
 
-	if err := actions_model.SetRunnerDisabled(ctx, runner, isDisabled.Value()); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "runner:"+strconv.FormatInt(runner.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	setRunnerDisabled := actions_model.SetRunnerDisabled
+	if rCtx.IsRepo {
+		setRunnerDisabled = actions_service.SetRunnerDisabled
+	}
+	if err := setRunnerDisabled(ctx, runner, isDisabled.Value()); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Warn("RunnerUpdatePost.SetRunnerDisabled failed: %v, url: %s", err, ctx.Req.URL)
 		ctx.Flash.Error(ctx.Tr(failedKey))
 		ctx.JSONRedirect("")

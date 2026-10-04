@@ -76,6 +76,14 @@ func BlockUser(ctx context.Context, doer, blocker, blockee *user_model.User, not
 	}
 
 	return db.WithTx(ctx, func(ctx context.Context) error {
+		if err := db.Insert(ctx, &user_model.Blocking{
+			BlockerID: blocker.ID,
+			BlockeeID: blockee.ID,
+			Note:      note,
+		}); err != nil {
+			return err
+		}
+
 		// unfollow each other
 		if err := user_model.UnfollowUser(ctx, blocker.ID, blockee.ID); err != nil {
 			return err
@@ -109,26 +117,18 @@ func BlockUser(ctx context.Context, doer, blocker, blockee *user_model.User, not
 		}
 
 		// remove each other from repository collaborations
-		if err := removeCollaborations(ctx, blocker, blockee); err != nil {
+		if err := removeCollaborations(ctx, blocker, blockee, doer, blocker.ID, blockee.ID); err != nil {
 			return err
 		}
-		if err := removeCollaborations(ctx, blockee, blocker); err != nil {
+		if err := removeCollaborations(ctx, blockee, blocker, doer, blocker.ID, blockee.ID); err != nil {
 			return err
 		}
 
 		// cancel each other repository transfers
-		if err := cancelRepositoryTransfers(ctx, doer, blocker, blockee); err != nil {
+		if err := cancelRepositoryTransfers(ctx, doer, blocker, blockee, blocker, blockee); err != nil {
 			return err
 		}
-		if err := cancelRepositoryTransfers(ctx, doer, blockee, blocker); err != nil {
-			return err
-		}
-
-		return db.Insert(ctx, &user_model.Blocking{
-			BlockerID: blocker.ID,
-			BlockeeID: blockee.ID,
-			Note:      note,
-		})
+		return cancelRepositoryTransfers(ctx, doer, blockee, blocker, blocker, blockee)
 	})
 }
 
@@ -192,7 +192,7 @@ func unwatchRepos(ctx context.Context, watcher, repoOwner *user_model.User) erro
 	}
 }
 
-func cancelRepositoryTransfers(ctx context.Context, doer, sender, recipient *user_model.User) error {
+func cancelRepositoryTransfers(ctx context.Context, doer, sender, recipient, blocker, blockee *user_model.User) error {
 	transfers, err := repo_model.GetPendingRepositoryTransfers(ctx, &repo_model.PendingRepositoryTransferOptions{
 		SenderID:    sender.ID,
 		RecipientID: recipient.ID,
@@ -202,7 +202,7 @@ func cancelRepositoryTransfers(ctx context.Context, doer, sender, recipient *use
 	}
 
 	for _, transfer := range transfers {
-		if err := repo_service.CancelRepositoryTransfer(ctx, transfer, doer); err != nil {
+		if err := repo_service.CancelBlockedRepositoryTransfer(ctx, transfer, doer, blocker, blockee); err != nil {
 			return err
 		}
 	}
@@ -244,7 +244,7 @@ func unassignIssues(ctx context.Context, assignee, repoOwner *user_model.User) e
 	}
 }
 
-func removeCollaborations(ctx context.Context, repoOwner, collaborator *user_model.User) error {
+func removeCollaborations(ctx context.Context, repoOwner, collaborator, doer *user_model.User, blockerID, blockeeID int64) error {
 	opts := &repo_model.FindCollaborationOptions{
 		ListOptions: db.ListOptions{
 			Page:     1,
@@ -270,7 +270,7 @@ func removeCollaborations(ctx context.Context, repoOwner, collaborator *user_mod
 				return err
 			}
 
-			if err := repo_service.DeleteCollaboration(ctx, repo, collaborator); err != nil {
+			if err := repo_service.DeleteCollaborationBlockedUser(ctx, repo, collaborator, doer, blockerID, blockeeID); err != nil {
 				return err
 			}
 		}

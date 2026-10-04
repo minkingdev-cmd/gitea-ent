@@ -19,21 +19,28 @@ import (
 
 type authzDecisionView struct {
 	*api.EnterpriseAuthzDecision
-	ActorName     string
-	RepoName      string
-	Mismatch      string
-	DeletedRepo   bool
-	ArchivedKnown bool
-	Archived      bool
+	ActorName      string
+	RepoName       string
+	ExecutionState string
+	Mismatch       string
+	DeletedRepo    bool
+	ArchivedKnown  bool
+	Archived       bool
 }
 
 func authzDecisionViewModel(ctx *context.Context, record *api.EnterpriseAuthzDecision) (*authzDecisionView, error) {
-	view := &authzDecisionView{EnterpriseAuthzDecision: record, Mismatch: "unknown"}
+	view := &authzDecisionView{EnterpriseAuthzDecision: record, Mismatch: "unknown", ExecutionState: "execution_unknown"}
+	if record.DecisionMode == "enforce" {
+		view.ExecutionState = "not_started"
+		if record.ExecutionStarted {
+			view.ExecutionState = "started"
+		}
+	}
 	if record.Snapshot != nil && record.Snapshot.Archived != nil {
 		view.ArchivedKnown = true
 		view.Archived = *record.Snapshot.Archived
 	}
-	if mismatch, known := authz_service.NativeMismatch(record.CandidateDecision, authz_service.NativeOutcome(record.NativeOutcome)); known {
+	if mismatch, known := authz_service.NativeMismatch(record.CandidateDecision, authz_service.NativeOutcome(record.NativeOutcome)); record.DecisionMode == "shadow" && known {
 		view.Mismatch = strconv.FormatBool(mismatch)
 	}
 	row, err := repo_model.GetRepositoryByID(ctx, record.RepoID)
@@ -49,6 +56,14 @@ func authzDecisionViewModel(ctx *context.Context, record *api.EnterpriseAuthzDec
 		}
 		view.RepoName = row.FullName()
 	}
+	if record.ActorID == 0 {
+		view.ActorName = ctx.Locale.TrString("admin.enterprise_authz.anonymous_machine_actor")
+		if record.Action == string(authz.ManageCI) && record.RequestSource == "system" && record.Snapshot != nil && record.Snapshot.CredentialCeiling.NativeOnly {
+			view.ActorName = ctx.Locale.TrString("admin.enterprise_authz.runner_machine_actor")
+		}
+		return view, nil
+	}
+
 	actor, err := user_model.GetUserByID(ctx, record.ActorID)
 	if user_model.IsErrUserNotExist(err) {
 		view.ActorName = ctx.Locale.TrString("admin.enterprise_authz.deleted_user")
@@ -115,6 +130,8 @@ func EnterpriseAuthzDecisions(ctx *context.Context) {
 	}
 	ctx.Data["AuthzTab"] = "decisions"
 	ctx.Data["AuthzCandidates"] = []string{"allow", "deny", "error"}
+	ctx.Data["AuthzModes"] = []string{"shadow", "enforce"}
+	ctx.Data["AuthzAuthorizations"] = []string{"not_enforced", "allow", "deny", "error", "fallback"}
 	query := ctx.Req.URL.Query()
 	nums := make(map[string]int64, 6)
 	for _, key := range []string{"page", "limit", "actor_id", "repo_id"} {
@@ -146,12 +163,12 @@ func EnterpriseAuthzDecisions(ctx *context.Context) {
 		authzError(ctx, authz_service.ErrInvalidPolicy)
 		return
 	}
-	options := authz_service.DecisionListOptions{PolicyListOptions: authz_service.PolicyListOptions{Page: int(page), Limit: int(limit)}, RepoID: nums["repo_id"], Action: authz.Action(query.Get("action")), CandidateDecision: query.Get("decision"), Since: timeutil.TimeStamp(nums["since"]), Until: timeutil.TimeStamp(nums["until"])}
+	options := authz_service.DecisionListOptions{PolicyListOptions: authz_service.PolicyListOptions{Page: int(page), Limit: int(limit)}, RepoID: nums["repo_id"], Action: authz.Action(query.Get("action")), CandidateDecision: query.Get("decision"), DecisionMode: query.Get("mode"), AuthorizationDecision: query.Get("authorization"), Since: timeutil.TimeStamp(nums["since"]), Until: timeutil.TimeStamp(nums["until"])}
 	if query.Get("actor_id") != "" {
 		actorID := nums["actor_id"]
 		options.ActorID = &actorID
 	}
-	for _, key := range []string{"action", "decision"} {
+	for _, key := range []string{"action", "decision", "mode", "authorization"} {
 		if len(query[key]) > 1 {
 			authzError(ctx, authz_service.ErrInvalidPolicy)
 			return

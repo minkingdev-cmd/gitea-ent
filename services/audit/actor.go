@@ -81,3 +81,7 @@ func ImpersonatorFromContext(ctx context.Context) *user_model.User {
 	}
 	return nil
 }
+
+func DoerFromContext(ctx context.Context) *user_model.User {
+	return doerFromContext(ctx)
+}

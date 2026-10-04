@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 
 	"gitea.dev/models/db"
@@ -271,7 +272,17 @@ func createWebhook(ctx *context.Context, params webhookParams) {
 	if err := w.UpdateEvent(); err != nil {
 		ctx.ServerError("UpdateEvent", err)
 		return
-	} else if err := webhook.CreateWebhook(ctx, w); err != nil {
+	}
+
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageWebhook, "webhook:create")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := webhook_service.CreateWebhook(ctx, w); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("CreateWebhook", err)
 		return
 	}
@@ -328,7 +339,17 @@ func editWebhook(ctx *context.Context, params webhookParams) {
 	if err := w.UpdateEvent(); err != nil {
 		ctx.ServerError("UpdateEvent", err)
 		return
-	} else if err := webhook.UpdateWebhook(ctx, w); err != nil {
+	}
+
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageWebhook, "webhook:"+strconv.FormatInt(w.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := webhook_service.UpdateWebhook(ctx, w); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("UpdateWebhook", err)
 		return
 	}
@@ -765,7 +786,19 @@ func DeleteWebhook(ctx *context.Context) {
 	hook, err := webhook.GetWebhookByRepoID(ctx, ctx.Repo.Repository.ID, ctx.FormInt64("id"))
 	if err != nil {
 		ctx.Flash.Error("GetWebhookByRepoID: " + err.Error())
-	} else if err := webhook.DeleteWebhookByRepoID(ctx, ctx.Repo.Repository.ID, hook.ID); err != nil {
+		ctx.JSONRedirect(ctx.Repo.RepoLink + "/settings/hooks")
+		return
+	}
+
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageWebhook, "webhook:"+strconv.FormatInt(hook.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := webhook_service.DeleteWebhookByRepoID(ctx, ctx.Repo.Repository.ID, hook.ID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.Flash.Error("DeleteWebhookByRepoID: " + err.Error())
 	} else {
 		audit.RecordScoped(ctx, nil, ctx.Repo.Repository, audit.WebhookRemove, "webhook", hook.URL)

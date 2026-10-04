@@ -64,6 +64,9 @@ func CherryPickPost(ctx *context.Context) {
 	// First try the simple plain read-tree -m approach
 	opts.Content = fromCommitID
 	if _, err := files.CherryPick(ctx, ctx.Repo.Repository, ctx.Doer, parsed.form.Revert, opts); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		// Drop through to the "apply" method
 		buf := &bytes.Buffer{}
 		if parsed.form.Revert {

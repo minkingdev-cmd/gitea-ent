@@ -17,8 +17,10 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/actions"
 	"gitea.dev/modules/log"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	actions_service "gitea.dev/services/actions"
+	authz_service "gitea.dev/services/enterpriseauthz"
 
 	"connectrpc.com/connect"
 	"google.golang.org/grpc/codes"
@@ -85,6 +87,16 @@ func (s *Service) Register(
 	}
 	runner.GenerateAndFillToken()
 
+	executionCtx, admission, err := authz_service.BeginRunnerRegistrationExecution(ctx, runnerToken)
+	if err == nil {
+		err = admission.Start(executionCtx)
+	}
+	if err != nil {
+		return nil, registrationExecutionError(err)
+	}
+	ctx = executionCtx
+	outcome := authz_service.NativeFailed
+	defer func() { admission.Finish(ctx, outcome, authz_service.StageOperation) }()
 	// create new runner
 	if err := actions_model.CreateRunner(ctx, runner); err != nil {
 		return nil, errors.New("can't create new runner")
@@ -92,8 +104,10 @@ func (s *Service) Register(
 
 	// update token status
 	runnerToken.IsActive = true
-	if err := actions_model.UpdateRunnerToken(ctx, runnerToken, "is_active"); err != nil {
-		return nil, errors.New("can't update runner token status")
+	if !(setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && runnerToken.RepoID > 0) {
+		if err := actions_model.UpdateRunnerToken(ctx, runnerToken, "is_active"); err != nil {
+			return nil, errors.New("can't update runner token status")
+		}
 	}
 
 	res := connect.NewResponse(&runnerv1.RegisterResponse{
@@ -108,6 +122,7 @@ func (s *Service) Register(
 		},
 	})
 
+	outcome = authz_service.NativeSuccess
 	return res, nil
 }
 
@@ -354,4 +369,16 @@ func (s *Service) UpdateLog(
 	}
 
 	return res, nil
+}
+
+func registrationExecutionError(err error) error {
+	var rejection *authz_service.ExecutionError
+	if !errors.As(err, &rejection) {
+		return connect.NewError(connect.CodeUnavailable, errors.New("authorization_unavailable"))
+	}
+	code := connect.CodePermissionDenied
+	if rejection.Status == http.StatusServiceUnavailable {
+		code = connect.CodeUnavailable
+	}
+	return connect.NewError(code, errors.New(rejection.Reason))
 }

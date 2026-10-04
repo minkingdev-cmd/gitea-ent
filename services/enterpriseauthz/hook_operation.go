@@ -249,7 +249,7 @@ func finalizeHookRecord(tx context.Context, record *authz_model.DecisionRecord) 
 	}
 	mismatch, known := NativeMismatch(record.CandidateDecision, NativeOutcome(record.NativeOutcome))
 	var value *bool
-	if known {
+	if known && (record.DecisionMode == "" || record.DecisionMode == "shadow") {
 		value = &mismatch
 	}
 	return audit.UpdateEnterpriseAuthzNativeResult(tx, record, value)

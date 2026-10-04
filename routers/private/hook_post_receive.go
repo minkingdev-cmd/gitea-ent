@@ -100,10 +100,11 @@ func HookPostReceive(ctx *gitea_context.PrivateContext) {
 		setting.PanicInDevOrTesting("wiki hook-post-receive is not supported")
 		return
 	}
-	finishReceiveBranches(ctx, opts)
 	if !loadContextDoerPermission(ctx, opts.UserID, opts.UserExtDoerData) {
 		return
 	}
+	finishReceiveBranches(ctx, opts)
+	attachReceiveExecution(ctx, opts)
 
 	repo := ctx.Repo.Repository
 	// first, collect updates and sync branches

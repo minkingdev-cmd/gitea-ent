@@ -44,8 +44,8 @@ func readEnterpriseAuthzConfig(root ConfigProvider) (EnterpriseAuthzConfig, erro
 		}
 		*field.value = value
 	}
-	if cfg.Enforce {
-		return cfg, errors.New("enforce_not_supported")
+	if cfg.Enforce && !cfg.Enabled {
+		return cfg, errors.New("enforce_requires_enabled")
 	}
 	if cfg.Enabled && Audit.RecordOutput != AuditRecordOutputDatabase {
 		return cfg, errors.New("database_audit_required")

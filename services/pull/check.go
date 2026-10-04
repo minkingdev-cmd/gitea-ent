@@ -19,6 +19,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/globallock"
@@ -30,6 +31,7 @@ import (
 	"gitea.dev/modules/timeutil"
 	asymkey_service "gitea.dev/services/asymkey"
 	"gitea.dev/services/automergequeue"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 )
 
@@ -377,6 +379,9 @@ func getMergerForManuallyMergedPullRequest(ctx context.Context, pr *issues_model
 	}
 
 	// When the doer (pusher) is unknown set the BaseRepo owner as merger
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		return nil, errors.New("manual merge pusher is unknown")
+	}
 	err := pr.BaseRepo.LoadOwner(ctx)
 	if err == nil {
 		return pr.BaseRepo.Owner, nil
@@ -418,6 +423,20 @@ func manuallyMerged(ctx context.Context, pr *issues_model.PullRequest) bool {
 	if err != nil {
 		log.Error("%-v getMergerForManuallyMergedPullRequest: %v", pr, err)
 		return false
+	}
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		gitRepo, err := git.OpenRepository(ctx, pr.BaseRepo)
+		if err != nil {
+			log.Error("%-v manual merge repository: %v", pr, err)
+			return false
+		}
+		defer gitRepo.Close()
+		ctx, _ = authz_service.WithObservationContext(ctx, authz_service.EvaluateInput{Actor: merger, Repo: pr.BaseRepo, Credential: authz_service.CredentialCeiling{Read: true, Write: true}, Action: authz.MergePullRequest, ConditionContext: authz.ConditionContext{Source: "auto_merge", Branch: pr.BaseBranch, BranchKnown: true}})
+		if err := mergedManuallyLocked(ctx, pr, merger, gitRepo, commit.ID.String(), true); err != nil {
+			log.Error("%-v manual merge execution: %v", pr, err)
+			return false
+		}
+		return true
 	}
 
 	if merged, err := SetMerged(ctx, pr, commit.ID.String(), timeutil.TimeStamp(commit.Author.When.Unix()), merger, issues_model.PullRequestStatusManuallyMerged); err != nil {

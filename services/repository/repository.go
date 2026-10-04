@@ -22,6 +22,7 @@ import (
 	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitrepo"
+	"gitea.dev/modules/globallock"
 	"gitea.dev/modules/graceful"
 	issue_indexer "gitea.dev/modules/indexer/issues"
 	"gitea.dev/modules/log"
@@ -63,7 +64,27 @@ func CreateRepository(ctx context.Context, doer, owner *user_model.User, opts Cr
 
 // DeleteRepository deletes a repository for a user or organization.
 func DeleteRepository(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, notify bool) (err error) {
-	ctx, observation := authz_service.WithRepoMutationObservation(ctx, doer, repo, authz.Delete)
+	var observation *authz_service.Observation
+	if !setting.EnterpriseAuthz.Enforce {
+		ctx, observation = authz_service.WithRepoMutationObservation(ctx, doer, repo, authz.Delete)
+	}
+	release, err := globallock.Lock(ctx, getRepoWorkingLockKey(repo.ID))
+	if err != nil {
+		return err
+	}
+	defer release()
+	doer, err = refreshLifecycleTarget(ctx, doer, repo)
+	if err != nil {
+		return err
+	}
+	if err = checkLifecycleDangerZone(ctx, doer, repo); err != nil {
+		return err
+	}
+	ctx, admission, err := beginLifecycleExecution(ctx, doer, repo, authz.Delete, deleteIntent(repo.ID), 0)
+	if err != nil {
+		return err
+	}
+	defer func() { finishLifecycleExecution(ctx, admission, err) }()
 	defer func() {
 		outcome := authz_service.NativeSuccess
 		if err != nil {
@@ -80,7 +101,7 @@ func DeleteRepository(ctx context.Context, doer *user_model.User, repo *repo_mod
 		notify_service.DeleteRepository(ctx, doer, repo)
 	}
 
-	if err := DeleteRepositoryDirectly(ctx, repo.ID); err != nil {
+	if err := deleteRepositoryDirectly(ctx, repo.ID); err != nil {
 		return err
 	}
 

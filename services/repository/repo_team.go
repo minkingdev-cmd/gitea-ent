@@ -19,14 +19,22 @@ import (
 )
 
 // TeamAddRepository adds new repository to team of organization.
-func TeamAddRepository(ctx context.Context, t *organization.Team, repo *repo_model.Repository) error {
+func TeamAddRepository(ctx context.Context, t *organization.Team, repo *repo_model.Repository) (err error) {
 	if repo.OwnerID != t.OrgID {
 		return errors.New("repository does not belong to organization")
 	} else if organization.HasTeamRepo(ctx, t.OrgID, t.ID, repo.ID) {
 		return nil
 	}
 
+	ctx, finish, err := beginTeamRepositoryMutation(ctx, t, repo, false)
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
+		if err := requireAccessMutation(ctx, t.OrgID, teamRepositoryIntent(t.ID, repo.ID, false), []*repo_model.Repository{repo}); err != nil {
+			return err
+		}
 		return addRepositoryToTeam(ctx, t, repo)
 	}); err != nil {
 		return err
@@ -69,12 +77,21 @@ func addRepositoryToTeam(ctx context.Context, t *organization.Team, repo *repo_m
 
 // AddAllRepositoriesToTeam adds all repositories to the team.
 // If the team already has some repositories they will be left unchanged.
-func AddAllRepositoriesToTeam(ctx context.Context, t *organization.Team) error {
+func AddAllRepositoriesToTeam(ctx context.Context, t *organization.Team) (err error) {
+	ctx, finish, err := beginTeamRepositoriesMutation(ctx, t, "add-all")
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
 	added := make([]*repo_model.Repository, 0, 5)
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
 		orgRepos, err := repo_model.GetOrgRepositories(ctx, t.OrgID)
 		if err != nil {
 			return fmt.Errorf("get org repos: %w", err)
+		}
+
+		if err := validateTeamAccessRepositories(ctx, t, orgRepos, false); err != nil {
+			return err
 		}
 
 		for _, repo := range orgRepos {
@@ -104,12 +121,20 @@ func RemoveAllRepositoriesFromTeam(ctx context.Context, t *organization.Team) (e
 		return nil
 	}
 
+	ctx, finish, err := beginTeamRepositoriesMutation(ctx, t, "remove-all")
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
 	var removed repo_model.RepositoryList
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
 		var err error
 		removed, err = repo_model.GetTeamRepositories(ctx, &repo_model.SearchTeamRepoOptions{TeamID: t.ID})
 		if err != nil {
 			return fmt.Errorf("GetTeamRepositories: %w", err)
+		}
+		if err := validateTeamAccessRepositories(ctx, t, removed, false); err != nil {
+			return err
 		}
 		return removeAllRepositoriesFromTeam(ctx, t)
 	}); err != nil {
@@ -177,7 +202,7 @@ func removeAllRepositoriesFromTeam(ctx context.Context, t *organization.Team) (e
 
 // RemoveRepositoryFromTeam removes repository from team of organization.
 // If the team shall include all repositories the request is ignored.
-func RemoveRepositoryFromTeam(ctx context.Context, t *organization.Team, repoID int64) error {
+func RemoveRepositoryFromTeam(ctx context.Context, t *organization.Team, repoID int64) (err error) {
 	if !HasRepository(ctx, t, repoID) {
 		return nil
 	}
@@ -191,7 +216,16 @@ func RemoveRepositoryFromTeam(ctx context.Context, t *organization.Team, repoID 
 		return err
 	}
 
+	ctx, finish, err := beginTeamRepositoryMutation(ctx, t, repo, true)
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
+
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
+		if err := requireAccessMutation(ctx, t.OrgID, teamRepositoryIntent(t.ID, repo.ID, true), []*repo_model.Repository{repo}); err != nil {
+			return err
+		}
 		return removeRepositoryFromTeam(ctx, t, repo, true)
 	}); err != nil {
 		return err

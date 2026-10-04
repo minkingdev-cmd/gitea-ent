@@ -19,11 +19,12 @@ import (
 )
 
 type CredentialCeiling struct {
-	Read       bool           `json:"read"`
-	Write      bool           `json:"write"`
-	NativeOnly bool           `json:"native_only"`
-	Reference  string         `json:"reference,omitempty"`
-	Actions    []authz.Action `json:"actions,omitempty"`
+	Read           bool           `json:"read"`
+	Write          bool           `json:"write"`
+	NativeOnly     bool           `json:"native_only"`
+	Reference      string         `json:"reference,omitempty"`
+	Actions        []authz.Action `json:"actions,omitempty"`
+	organizationID int64
 }
 
 func roleEligible(actor *user_model.User) bool {
@@ -90,7 +91,7 @@ func NativeActions(repo *repo_model.Repository, permission *access_model.Permiss
 
 func safeCredentialReference(reference string) string {
 	kind, rawID, ok := strings.Cut(reference, ":")
-	if !ok || !slices.Contains([]string{"access-token", "oauth2-grant", "gitea-actions", "deploy-key", "ssh-key"}, kind) {
+	if !ok || !slices.Contains([]string{"access-token", "oauth2-grant", "gitea-actions", "deploy-key", "ssh-key", "runner-registration-token"}, kind) {
 		return ""
 	}
 	id, err := strconv.ParseInt(rawID, 10, 64)

@@ -62,6 +62,8 @@ type Observation struct {
 	record              authz_model.DecisionRecord
 	credential          string
 	ceiling             CredentialCeiling
+	condition           authz.ConditionContext
+	targetOwnerID       int64
 	hookExisting        bool
 	transferTargetOwner atomic.Int64
 	remaining           time.Duration
@@ -187,7 +189,7 @@ func beginObservation(ctx context.Context, input EvaluateInput, budget time.Dura
 			RepoID: input.Repo.ID, OwnerID: input.Repo.OwnerID, Action: input.Action,
 			RequestSource: input.ConditionContext.Source,
 		},
-		credential: safeCredentialReference(input.Credential.Reference), ceiling: input.Credential, ready: make(chan struct{}),
+		credential: safeCredentialReference(input.Credential.Reference), ceiling: input.Credential, condition: input.ConditionContext, targetOwnerID: input.TargetOwnerID, ready: make(chan struct{}),
 	}
 	if state.hook != nil {
 		observation.record.ObservationID = hookObservationID(state.hook, input.Action, observationTarget(input))
@@ -275,6 +277,9 @@ func (o *Observation) Finish(ctx context.Context, outcome NativeOutcome, stage N
 		return
 	}
 	o.once.Do(func() {
+		if executionReplacesObservation(ctx, o) {
+			return
+		}
 		if o.remaining <= 0 {
 			if !o.evaluationFailed {
 				reportObservationFailure(o.record.OperationID, o.record.RepoID, o.record.Action, "observation_timeout")
@@ -334,38 +339,44 @@ func persistObservation(ctx context.Context, record *authz_model.DecisionRecord,
 		return errors.New("database_audit_required")
 	}
 	return db.WithIndependentTx(ctx, func(tx context.Context) error {
-		inserted, err := authz_model.InsertDecisionIfAbsent(tx, record)
-		if err != nil {
-			return errors.New("evidence_persist_failed")
-		}
-		if !inserted {
-			return nil
-		}
-		auditCtx, persisted := audit.WithRequiredPersistence(tx)
-		metadata := map[string]any{
-			"decision_id": record.ID, "observation_id": record.ObservationID, "operation_id": record.OperationID,
-			"repo_id": record.RepoID, "owner_id": record.OwnerID, "action": record.Action,
-			"request_source": record.RequestSource, "candidate_decision": record.CandidateDecision,
-			"reason": record.Reason, "native_outcome": record.NativeOutcome, "native_stage": record.NativeStage,
-		}
-		if mismatch, known := NativeMismatch(record.CandidateDecision, NativeOutcome(record.NativeOutcome)); known {
-			metadata["mismatch"] = mismatch
-		}
-		if err := audit.RecordEvent(auditCtx, audit.RecordParams{
-			Action:          audit_model.EnterpriseAuthzDecision,
-			Actor:           audit_model.EntityRef{Type: audit_model.ScopeUser, ID: record.ActorID},
-			ActorCredential: credential,
-			Impersonator:    safeAuditImpersonator(auditCtx, record.ActorID),
-			Scope:           audit_model.EntityRef{Type: audit_model.ScopeRepository, ID: record.RepoID},
-			Metadata:        metadata, TimestampUnix: record.CreatedUnix,
-		}); err != nil {
-			return errors.New("evidence_persist_failed")
-		}
-		if persisted() != nil {
-			return errors.New("evidence_persist_failed")
-		}
-		return nil
+		return persistObservationTx(tx, record, credential)
 	})
+}
+
+func persistObservationTx(tx context.Context, record *authz_model.DecisionRecord, credential string) error {
+	inserted, err := authz_model.InsertDecisionIfAbsent(tx, record)
+	if err != nil {
+		return errors.New("evidence_persist_failed")
+	}
+	if !inserted {
+		return nil
+	}
+	auditCtx, persisted := audit.WithRequiredPersistence(tx)
+	metadata := map[string]any{
+		"decision_id": record.ID, "observation_id": record.ObservationID, "operation_id": record.OperationID,
+		"repo_id": record.RepoID, "owner_id": record.OwnerID, "action": record.Action,
+		"request_source": record.RequestSource, "candidate_decision": record.CandidateDecision,
+		"reason": record.Reason, "native_outcome": record.NativeOutcome, "native_stage": record.NativeStage,
+		"decision_mode": record.DecisionMode, "authorization_decision": record.AuthorizationDecision,
+		"authorization_reason": record.AuthorizationReason, "execution_started": record.ExecutionStarted,
+	}
+	if mismatch, known := NativeMismatch(record.CandidateDecision, NativeOutcome(record.NativeOutcome)); known && record.DecisionMode == "shadow" {
+		metadata["mismatch"] = mismatch
+	}
+	if err := audit.RecordEvent(auditCtx, audit.RecordParams{
+		Action:          audit_model.EnterpriseAuthzDecision,
+		Actor:           audit_model.EntityRef{Type: audit_model.ScopeUser, ID: record.ActorID},
+		ActorCredential: credential,
+		Impersonator:    safeAuditImpersonator(auditCtx, record.ActorID),
+		Scope:           audit_model.EntityRef{Type: audit_model.ScopeRepository, ID: record.RepoID},
+		Metadata:        metadata, TimestampUnix: record.CreatedUnix,
+	}); err != nil {
+		return errors.New("evidence_persist_failed")
+	}
+	if persisted() != nil {
+		return errors.New("evidence_persist_failed")
+	}
+	return nil
 }
 
 func NativeMismatch(candidate string, native NativeOutcome) (mismatch, known bool) {
@@ -397,6 +408,10 @@ var observationWarnings = struct {
 
 func reportObservationFailure(operationID string, repoID int64, action authz.Action, reason string) {
 	metrics.EnterpriseAuthzObservationFailed.WithLabelValues(reason).Inc()
+	reportAuthorizationGap(operationID, repoID, action, reason)
+}
+
+func reportAuthorizationGap(operationID string, repoID int64, action authz.Action, reason string) {
 	observationWarnings.Lock()
 	now := time.Now()
 	warn := now.Sub(observationWarnings.last[reason]) >= time.Minute
@@ -410,7 +425,7 @@ func reportObservationFailure(operationID string, repoID int64, action authz.Act
 	if _, ok := authz.LookupAction(action); !ok {
 		action = ""
 	}
-	log.Warn("enterprise_authz_observation_failed operation=%s repo=%d action=%s reason=%s", operationID, repoID, action, reason)
+	log.Warn("enterprise_authz_evidence_gap operation=%s repo=%d action=%s reason=%s", operationID, repoID, action, reason)
 }
 
 func ObservePreparedGuardDenials(ctx context.Context, input EvaluateInput, prepare func(context.Context, EvaluateInput) ([]EvaluateInput, error)) {

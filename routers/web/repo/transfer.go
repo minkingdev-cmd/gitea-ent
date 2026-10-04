@@ -4,6 +4,7 @@
 package repo
 
 import (
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	repo_service "gitea.dev/services/repository"
 )
@@ -15,7 +16,9 @@ func acceptTransfer(ctx *context.Context) {
 		ctx.JSONRedirect(ctx.Repo.Repository.Link())
 		return
 	}
-	handleRepoActionError(ctx, err)
+	if !common.WriteExecutionError(ctx.Base, err) {
+		handleRepoActionError(ctx, err)
+	}
 }
 
 func rejectTransfer(ctx *context.Context) {
@@ -25,7 +28,9 @@ func rejectTransfer(ctx *context.Context) {
 		ctx.JSONRedirect(ctx.Repo.Repository.Link())
 		return
 	}
-	handleRepoActionError(ctx, err)
+	if !common.WriteExecutionError(ctx.Base, err) {
+		handleRepoActionError(ctx, err)
+	}
 }
 
 func ActionTransfer(ctx *context.Context) {

@@ -186,7 +186,7 @@ func GetRunningTaskByToken(ctx context.Context, token string) (*ActionTask, erro
 		if err != nil {
 			return nil, err
 		}
-		if has && util.CryptoConstTimeEqual(task.TokenHash, cached.TokenHash) {
+		if has && (task.Status == StatusRunning || task.Status == StatusCancelling) && util.CryptoConstTimeEqual(task.TokenHash, cached.TokenHash) {
 			return task, nil
 		}
 		auth_model.TokenCache().Remove(cacheKey)

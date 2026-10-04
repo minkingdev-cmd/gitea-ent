@@ -154,7 +154,7 @@ func authzUI(ctx *context.Context) *authz_service.ManagementUI {
 	ctx.Data["AuthzScopeLabel"] = label
 	actions := make([]api.EnterpriseAuthzAction, 0, len(authz.Catalog()))
 	for _, a := range authz.Catalog() {
-		actions = append(actions, api.EnterpriseAuthzAction{Key: string(a.Key), Description: ctx.Locale.TrString("admin.enterprise_authz.action." + string(a.Key)), Units: a.Units, Risk: a.Risk, Observed: a.Observed, Mutating: a.Mutating, UnitsAny: a.UnitsAny})
+		actions = append(actions, api.EnterpriseAuthzAction{Key: string(a.Key), Description: ctx.Locale.TrString("admin.enterprise_authz.action." + string(a.Key)), Units: a.Units, Risk: a.Risk, Observed: a.Observed, Mutating: a.Mutating, UnitsAny: a.UnitsAny, EnforceSupported: a.EnforceSupported})
 	}
 	ctx.Data["AuthzActions"] = actions
 	ctx.Data["AuthzSources"] = authz.RequestSources()

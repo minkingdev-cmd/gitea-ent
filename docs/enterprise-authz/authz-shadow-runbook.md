@@ -1,5 +1,7 @@
 # 企业仓库授权 shadow 运维手册
 
+> 本文保留 foundation/shadow 交付时的配置与 seed 时间线，不覆盖其历史边界。后续高风险 enforce 版本的上线、降级与恢复使用 [enforce 运维手册](authz-enforce-runbook.md)。
+
 ## 1. 发布边界
 
 服务端永久仅面向 Linux；Windows 客户端仍可访问。此版本只观察、不阻断，原生账号状态、仓库/unit 可见性、SSH/PAT/Actions/deploy-key 限权、分支保护和企微治理继续决定实际结果。企业角色不能授予管理 API 访问权，也不会修改 membership、access、IsAdmin 或撤销凭据。

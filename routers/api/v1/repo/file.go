@@ -405,6 +405,8 @@ func ChangeFiles(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 	apiOpts, opts := getAPIChangeRepoFileOptions[*api.ChangeFilesOptions](ctx)
 	if ctx.Written() {
 		return
@@ -479,6 +481,8 @@ func CreateFile(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	apiOpts, opts := getAPIChangeRepoFileOptions[*api.CreateFileOptions](ctx)
 	if ctx.Written() {
@@ -550,6 +554,8 @@ func UpdateFile(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	apiOpts, opts := getAPIChangeRepoFileOptions[*api.UpdateFileOptions](ctx)
 	if ctx.Written() {
@@ -581,6 +587,9 @@ func UpdateFile(ctx *context.APIContext) {
 }
 
 func handleChangeRepoFilesError(ctx *context.APIContext, err error) {
+	if common.WriteExecutionError(ctx.Base, err) {
+		return
+	}
 	if errPushRejected, ok := err.(*git.ErrPushRejected); ok {
 		ctx.APIError(http.StatusForbidden, errPushRejected.Message)
 		return
@@ -675,6 +684,8 @@ func DeleteFile(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	apiOpts, opts := getAPIChangeRepoFileOptions[*api.DeleteFileOptions](ctx)
 	if ctx.Written() {

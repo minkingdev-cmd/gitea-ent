@@ -435,6 +435,7 @@ func prepareMigrationTasks() []*migration {
 		newMigration(359, "Add Enterprise WeCom repository governance tables", v28.AddEnterpriseWeComRepositoryGovernanceTables),
 		newMigration(360, "Harden Enterprise WeCom governance publication and callback state", v28.HardenEnterpriseWeComGovernance),
 		newMigration(361, "Add enterprise repository authorization shadow foundation", v28.AddEnterpriseAuthzFoundation),
+		newMigration(362, "Add enterprise authorization admission evidence and manage access", v28.AddEnterpriseAuthzEnforcement),
 	}
 	return preparedMigrations
 }
@@ -511,6 +512,21 @@ func Migrate(ctx context.Context, x base.EngineMigration) error {
 
 	// Set a new clean the default mapper to GonicMapper as that is the default for Gitea.
 	x.SetMapper(names.GonicMapper{})
+	const missingVersion = "database has tables but no valid version record; restore the database version before migration"
+	hasVersionTable, err := x.IsTableExist(new(Version))
+	if err != nil {
+		return fmt.Errorf("inspect version: %w", err)
+	}
+	if !hasVersionTable {
+		tables, err := x.DBMetas()
+		if err != nil {
+			return fmt.Errorf("inspect database: %w", err)
+		}
+		if len(tables) != 0 {
+			return errors.New(missingVersion)
+		}
+		return initializeFreshDatabase(ctx, x, maxDBVer)
+	}
 	if err := x.Sync(new(Version)); err != nil {
 		return fmt.Errorf("sync: %w", err)
 	}
@@ -520,13 +536,7 @@ func Migrate(ctx context.Context, x base.EngineMigration) error {
 	if err != nil {
 		return fmt.Errorf("get: %w", err)
 	} else if !has {
-		// If the version record does not exist, it is a fresh installation, and we can skip all migrations.
-		// XORM model framework will create all tables when initializing.
-		currentVersion.ID = 0
-		currentVersion.Version = maxDBVer
-		if _, err = x.Insert(currentVersion); err != nil {
-			return fmt.Errorf("insert: %w", err)
-		}
+		return errors.New(missingVersion)
 	}
 
 	curDBVer := currentVersion.Version

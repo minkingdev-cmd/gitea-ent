@@ -6,15 +6,18 @@ package shared
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	actions_model "gitea.dev/models/actions"
 	"gitea.dev/models/db"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/utils"
 	"gitea.dev/routers/common"
+	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 )
@@ -26,9 +29,14 @@ type RegistrationToken struct {
 }
 
 func GetRegistrationToken(ctx *context.APIContext, ownerID, repoID int64) {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "runner:0")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	token, err := actions_model.GetLatestRunnerToken(ctx, ownerID, repoID)
 	if errors.Is(err, util.ErrNotExist) || (token != nil && !token.IsActive) {
-		token, err = actions_model.NewRunnerToken(ctx, ownerID, repoID)
+		token, err = actions_service.NewRunnerToken(ctx, ownerID, repoID)
 	}
 	if err != nil {
 		ctx.APIErrorInternal(err)
@@ -119,7 +127,16 @@ func DeleteRunner(ctx *context.APIContext, ownerID, repoID, runnerID int64) {
 		return
 	}
 
-	err := actions_model.DeleteRunner(ctx, runner.ID)
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "runner:"+strconv.FormatInt(runner.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	deleteRunner := actions_model.DeleteRunner
+	if repoID > 0 {
+		deleteRunner = actions_service.DeleteRunner
+	}
+	err := deleteRunner(ctx, runner.ID)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -139,7 +156,19 @@ func UpdateRunner(ctx *context.APIContext, ownerID, repoID, runnerID int64) {
 		return
 	}
 
-	if err := actions_model.SetRunnerDisabled(ctx, runner, *form.Disabled); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageCI, "runner:"+strconv.FormatInt(runner.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	setRunnerDisabled := actions_model.SetRunnerDisabled
+	if repoID > 0 {
+		setRunnerDisabled = actions_service.SetRunnerDisabled
+	}
+	if err := setRunnerDisabled(ctx, runner, *form.Disabled); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}

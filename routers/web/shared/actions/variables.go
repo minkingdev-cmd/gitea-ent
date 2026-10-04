@@ -6,6 +6,7 @@ package actions
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	actions_model "gitea.dev/models/actions"
 	"gitea.dev/models/db"
@@ -127,6 +128,11 @@ func VariableCreate(ctx *context.Context) {
 
 	form := web.GetForm[*forms.EditVariableForm](ctx)
 
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "variable:create:"+form.Name)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	v, err := actions_service.CreateVariable(ctx, vCtx.OwnerID, vCtx.RepoID, form.Name, form.Data, form.Description)
 	if err != nil {
 		ctx.JSONErrorAuto(err)
@@ -163,7 +169,15 @@ func VariableUpdate(ctx *context.Context) {
 	variable.Data = form.Data
 	variable.Description = form.Description
 
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "variable:"+strconv.FormatInt(variable.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	if _, err := actions_service.UpdateVariableNameData(ctx, variable); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.JSONErrorAuto(err)
 		return
 	}
@@ -219,7 +233,15 @@ func VariableDelete(ctx *context.Context) {
 		return
 	}
 
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "variable:"+strconv.FormatInt(variable.ID, 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	if err := actions_service.DeleteVariableByID(ctx, variable.ID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Error("Delete variable [%d] failed: %v", id, err)
 		ctx.JSONError(ctx.Tr("actions.variables.deletion.failed"))
 		return

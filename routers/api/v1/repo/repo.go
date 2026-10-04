@@ -261,6 +261,9 @@ func CreateUserRepo(ctx *context.APIContext, owner *user_model.User, opt api.Cre
 		ObjectFormatName: string(opt.ObjectFormatName),
 	})
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if repo_model.IsErrRepoAlreadyExist(err) {
 			ctx.APIError(http.StatusConflict, "The repository with the same name already exists.")
 		} else if db.IsErrNameReserved(err) ||
@@ -417,6 +420,9 @@ func Generate(ctx *context.APIContext) {
 
 	repo, err := repo_service.GenerateRepository(ctx, ctx.Doer, ctxUser, ctx.Repo.Repository, opts)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if repo_model.IsErrRepoAlreadyExist(err) {
 			ctx.APIError(http.StatusConflict, "The repository with the same name already exists.")
 		} else if db.IsErrNameReserved(err) ||
@@ -624,6 +630,36 @@ func Edit(ctx *context.APIContext) {
 		finish := common.ObserveRepoMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.Archive, "api")
 		defer finish(authz_service.NativeFailed)
 	}
+
+	required := []common.RepoExecutionAction{}
+	if opts.HasActions != nil && !unit_model.TypeActions.UnitGlobalDisabled() && *opts.HasActions != ctx.Repo.Repository.UnitEnabled(ctx, unit_model.TypeActions) {
+		required = append(required, common.RepoExecutionAction{Action: authz.ManageCI, Intent: authz_service.SettingsIntent(authz.ManageCI, "repo-settings")})
+	} else if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		opts.HasActions = nil
+	}
+	if opts.Archived != nil {
+		if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && ctx.Repo.Repository.IsMirror {
+			ctx.APIError(http.StatusUnprocessableEntity, "repo is a mirror, cannot archive/un-archive")
+			common.MarkNativeMutationDenied(ctx.Base)
+			return
+		}
+		if *opts.Archived != ctx.Repo.Repository.IsArchived {
+			if err := repo_service.CheckArchiveRepoState(ctx, ctx.Doer, ctx.Repo.Repository, *opts.Archived); err != nil {
+				if !common.WriteExecutionError(ctx.Base, err) {
+					ctx.APIErrorInternal(err)
+				}
+				return
+			}
+			required = append(required, common.RepoExecutionAction{Action: authz.Archive, Intent: authz_service.ArchiveIntent(*opts.Archived)})
+		} else if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+			opts.Archived = nil
+		}
+	}
+	finishExecution, allowed := common.BeginRepoActionExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", required)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 
 	if err := updateBasicProperties(ctx, opts); err != nil {
 		return
@@ -1012,6 +1048,9 @@ func updateRepoArchivedState(ctx *context.APIContext, opts api.EditRepoOption) e
 		}
 		if *opts.Archived {
 			if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, *opts.Archived); err != nil {
+				if common.WriteExecutionError(ctx.Base, err) {
+					return err
+				}
 				log.Error("Tried to archive a repo: %s", err)
 				ctx.APIErrorInternal(err)
 				return err
@@ -1022,6 +1061,9 @@ func updateRepoArchivedState(ctx *context.APIContext, opts api.EditRepoOption) e
 			log.Trace("Repository was archived: %s/%s", ctx.Repo.Owner.Name, repo.Name)
 		} else {
 			if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, *opts.Archived); err != nil {
+				if common.WriteExecutionError(ctx.Base, err) {
+					return err
+				}
 				log.Error("Tried to un-archive a repo: %s", err)
 				ctx.APIErrorInternal(err)
 				return err
@@ -1179,6 +1221,9 @@ func Delete(ctx *context.APIContext) {
 	}
 
 	if err := repo_service.DeleteRepository(ctx, ctx.Doer, repo, true); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}

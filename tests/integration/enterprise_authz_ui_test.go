@@ -232,6 +232,7 @@ func TestEnterpriseAuthzUIReadonlyCopyAndSelectors(t *testing.T) {
 	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{})()
 	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
 	require.NoError(t, v1_28.AddEnterpriseAuthzFoundation(t.Context(), db.GetXORMEngineForTesting()))
+	require.NoError(t, v1_28.AddEnterpriseAuthzEnforcement(t.Context(), db.GetXORMEngineForTesting()))
 	admin := loginUser(t, "user1")
 	actor := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
 	page := admin.MakeRequest(t, NewRequest(t, "GET", authzUIBase+"/scopes/repo/1/roles"), http.StatusOK)
@@ -250,12 +251,15 @@ func TestEnterpriseAuthzUIReadonlyCopyAndSelectors(t *testing.T) {
 	}
 	for _, key := range []string{"owner", "platform-admin"} {
 		builtin := unittest.AssertExistsAndLoadBean(t, &authz_model.RoleDefinition{LowerName: key})
+		unittest.AssertExistsAndLoadBean(t, &authz_model.RolePermission{RoleID: builtin.ID, Action: authz.ManageAccess, Effect: "allow"})
 		_, _, err := authz_service.PutBinding(t.Context(), actor, authz_model.Scope{Type: authz_model.ScopeSystem}, authz_service.BindingInput{SubjectType: authz_model.SubjectUser, SubjectID: 2, RoleID: builtin.ID})
 		require.NoError(t, err)
 	}
 	owner := loginUser(t, "user2")
 	owner.MakeRequest(t, NewRequest(t, "GET", authzUIBase+"/selectors/role"), http.StatusForbidden)
 	owner.MakeRequest(t, NewRequest(t, "GET", authzUIBase+"/scopes/repo/1/roles"), http.StatusForbidden)
+	owner.MakeRequest(t, NewRequest(t, "GET", authzUIBase+"/scopes/system/decisions?mode=enforce&authorization=deny"), http.StatusForbidden)
+	owner.MakeRequest(t, NewRequest(t, "GET", authzUIBase+"/scopes/repo/1/decisions/999999"), http.StatusForbidden)
 	guest := unittest.AssertExistsAndLoadBean(t, &authz_model.RoleDefinition{LowerName: "guest"})
 	res := admin.MakeRequest(t, NewRequestWithValues(t, "POST", authzUIBase+"/scopes/repo/1/roles/new", map[string]string{"authz_csrf": token, "name": "Independent copy", "copy_from_role_id": strconv.FormatInt(guest.ID, 10), "permissions_mode": "unchanged", "permission_count": "0"}), http.StatusSeeOther)
 	copyRole := unittest.AssertExistsAndLoadBean(t, &authz_model.RoleDefinition{LowerName: "independent copy"})

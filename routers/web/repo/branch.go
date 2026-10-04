@@ -6,7 +6,6 @@ package repo
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -93,6 +92,9 @@ func Branches(ctx *context.Context) {
 func DeleteBranchPost(ctx *context.Context) {
 	branchName := ctx.FormString("name")
 	err := repo_service.DeleteBranch(ctx, ctx.Doer, ctx.Repo.Repository, ctx.Repo.GitRepo, branchName)
+	if common.WriteExecutionError(ctx.Base, err) {
+		return
+	}
 	switch {
 	case err == nil:
 		ctx.Flash.Success(ctx.Tr("repo.branch.deletion_success", branchName))
@@ -123,10 +125,10 @@ func RestoreBranchPost(ctx *context.Context) {
 	outcome := authz_service.NativeFailed
 	defer func() { finish(outcome) }()
 
-	if err := git.PushManaged(ctx, ctx.Repo.Repository, ctx.Repo.Repository, git.PushOptions{
-		Branch: fmt.Sprintf("%s:%s%s", deletedBranch.CommitID, git.BranchPrefix, deletedBranch.Name),
-		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(ctx.Doer, ctx.Repo.Repository), string(authz_service.ManagedHookOperationTicket(ctx, ctx.Doer, ctx.Repo.Repository, deletedBranch.Name, authz.CreateBranch))),
-	}); err != nil {
+	if err := repo_service.CreateNewBranchFromCommit(ctx, ctx.Doer, ctx.Repo.Repository, ctx.Repo.GitRepo, deletedBranch.CommitID, deletedBranch.Name); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if strings.Contains(err.Error(), "already exists") {
 			log.Debug("RestoreBranch: Can't restore branch '%s', since one with same name already exist", deletedBranch.Name)
 			ctx.JSONError(ctx.Tr("repo.branch.already_exists", deletedBranch.Name))
@@ -196,6 +198,9 @@ func CreateBranch(ctx *context.Context) {
 		err = repo_service.CreateNewBranchFromCommit(ctx, ctx.Doer, ctx.Repo.Repository, ctx.Repo.GitRepo, ctx.Repo.CommitID, form.NewBranchName)
 	}
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if release_service.IsErrProtectedTagName(err) {
 			ctx.Flash.Error(ctx.Tr("repo.release.tag_name_protected"))
 			ctx.Redirect(ctx.Repo.RepoLink + "/src/" + ctx.Repo.RefTypeNameSubURL())
@@ -255,6 +260,9 @@ func MergeUpstream(ctx *context.Context) {
 	branchName := ctx.FormString("branch")
 	_, err := repo_service.MergeUpstream(ctx, ctx.Doer, ctx.Repo.Repository, branchName, false)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if errors.Is(err, util.ErrNotExist) || errors.Is(err, util.ErrPermissionDenied) {
 			ctx.JSONErrorNotFound()
 			return

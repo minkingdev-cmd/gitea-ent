@@ -17,15 +17,17 @@ func TestEnterpriseAuthzConfiguration(t *testing.T) {
 	for _, wecom := range []bool{false, true} {
 		EnterpriseWeCom.Enabled = wecom
 		for _, tc := range []struct {
-			name, data, reason  string
-			audit               AuditRecordOutput
-			enabled, failClosed bool
+			name, data, reason           string
+			audit                        AuditRecordOutput
+			enabled, enforce, failClosed bool
 		}{
 			{name: "defaults", failClosed: true},
 			{name: "shadow", data: "ENABLED=true", audit: AuditRecordOutputDatabase, enabled: true, failClosed: true},
-			{name: "reserved fail open", data: "ENABLED=true\nFAIL_CLOSED_ON_ERROR=false", audit: AuditRecordOutputDatabase, enabled: true},
-			{name: "disabled enforce", data: "ENFORCE=true", reason: "enforce_not_supported"},
-			{name: "enabled enforce", data: "ENABLED=true\nENFORCE=true", audit: AuditRecordOutputDatabase, reason: "enforce_not_supported"},
+			{name: "shadow fail open", data: "ENABLED=true\nFAIL_CLOSED_ON_ERROR=false", audit: AuditRecordOutputDatabase, enabled: true},
+			{name: "disabled enforce", data: "ENFORCE=true", reason: "enforce_requires_enabled"},
+			{name: "enabled enforce", data: "ENABLED=true\nENFORCE=true", audit: AuditRecordOutputDatabase, enabled: true, enforce: true, failClosed: true},
+			{name: "enforce fail open", data: "ENABLED=true\nENFORCE=true\nFAIL_CLOSED_ON_ERROR=false", audit: AuditRecordOutputDatabase, enabled: true, enforce: true},
+			{name: "enforce missing audit", data: "ENABLED=true\nENFORCE=true", reason: "database_audit_required"},
 			{name: "missing audit", data: "ENABLED=true", reason: "database_audit_required"},
 			{name: "invalid enabled", data: "ENABLED=sensitive-invalid", reason: "invalid_enabled"},
 			{name: "invalid enforce", data: "ENFORCE=sensitive-invalid", reason: "invalid_enforce"},
@@ -43,7 +45,7 @@ func TestEnterpriseAuthzConfiguration(t *testing.T) {
 				}
 				require.NoError(t, err)
 				require.Equal(t, tc.enabled, cfg.Enabled)
-				require.False(t, cfg.Enforce)
+				require.Equal(t, tc.enforce, cfg.Enforce)
 				require.Equal(t, tc.failClosed, cfg.FailClosedOnError)
 			})
 		}

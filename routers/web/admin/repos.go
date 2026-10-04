@@ -18,6 +18,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/web/explore"
 	"gitea.dev/services/context"
 	repo_service "gitea.dev/services/repository"
@@ -50,6 +51,9 @@ func DeleteRepo(ctx *context.Context) {
 	}
 
 	if err := repo_service.DeleteRepository(ctx, ctx.Doer, repo, true); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("DeleteRepository", err)
 		return
 	}

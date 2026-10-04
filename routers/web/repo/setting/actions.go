@@ -79,6 +79,11 @@ func ActionsUnitPost(ctx *context.Context) {
 	enableActionsUnit := ctx.FormBool("enable_actions")
 	repo := ctx.Repo.Repository
 
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, repo, "web", authz.ManageCI, "repo-settings")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	var err error
 	if enableActionsUnit && !unit_model.TypeActions.UnitGlobalDisabled() {
 		err = repo_service.UpdateRepositoryUnits(ctx, repo, []repo_model.RepoUnit{newRepoUnit(repo, unit_model.TypeActions, nil)}, nil)
@@ -115,7 +120,15 @@ func AddCollaborativeOwner(ctx *context.Context) {
 	}
 	actionsCfg := actionsUnit.ActionsConfig()
 	actionsCfg.AddCollaborativeOwner(collUser.ID)
-	if err := repo_model.UpdateRepoUnitConfig(ctx, actionsUnit); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "repo-settings")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := repo_service.UpdateActionsUnitConfig(ctx, actionsUnit); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("UpdateRepoUnitConfig", err)
 		return
 	}
@@ -140,7 +153,15 @@ func DeleteCollaborativeOwner(ctx *context.Context) {
 		return
 	}
 	actionsCfg.RemoveCollaborativeOwner(ownerID)
-	if err := repo_model.UpdateRepoUnitConfig(ctx, actionsUnit); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "repo-settings")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := repo_service.UpdateActionsUnitConfig(ctx, actionsUnit); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("UpdateRepoUnitConfig", err)
 		return
 	}
@@ -190,7 +211,15 @@ func UpdateTokenPermissions(ctx *context.Context) {
 		}
 	}
 
-	if err := repo_model.UpdateRepoUnitConfig(ctx, actionsUnit); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "repo-settings")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := repo_service.UpdateActionsUnitConfig(ctx, actionsUnit); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("UpdateRepoUnitConfig", err)
 		return
 	}

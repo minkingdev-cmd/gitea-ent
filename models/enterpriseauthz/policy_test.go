@@ -82,6 +82,12 @@ func TestPolicyInsertIdempotencyPreservesExistingRecords(t *testing.T) {
 	inserted, err = InsertDecisionIfAbsent(ctx, decision)
 	require.NoError(t, err)
 	require.True(t, inserted)
+	admission, err := db.GetEngine(ctx).Query("SELECT decision_mode, authorization_decision, authorization_reason, execution_started FROM enterprise_authz_decision WHERE id = ?", decision.ID)
+	require.NoError(t, err)
+	require.Len(t, admission, 1)
+	require.Equal(t, "shadow", string(admission[0]["decision_mode"]))
+	require.Equal(t, "not_enforced", string(admission[0]["authorization_decision"]))
+	require.Empty(t, admission[0]["authorization_reason"])
 	duplicateDecision := *decision
 	duplicateDecision.ID = 0
 	duplicateDecision.OperationID = "operation-retry"

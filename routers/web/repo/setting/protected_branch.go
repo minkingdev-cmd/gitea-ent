@@ -23,6 +23,7 @@ import (
 	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/glob"
 	"gitea.dev/modules/json"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/common"
@@ -164,7 +165,7 @@ func SettingsProtectedBranchPost(ctx *context.Context) {
 		}
 	}
 
-	if f.EnableStatusCheck || f.StatusCheckContexts != "" || protectBranch.EnableStatusCheck || len(protectBranch.StatusCheckContexts) > 0 {
+	if !setting.EnterpriseAuthz.Enforce && (f.EnableStatusCheck || f.StatusCheckContexts != "" || protectBranch.EnableStatusCheck || len(protectBranch.StatusCheckContexts) > 0) {
 		defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	}
 
@@ -286,6 +287,23 @@ func SettingsProtectedBranchPost(ctx *context.Context) {
 	protectBranch.BlockOnOutdatedBranch = f.BlockOnOutdatedBranch
 	protectBranch.BlockAdminMergeOverride = f.BlockAdminMergeOverride
 
+	checksChanged, checksErr := pull_service.RequiredChecksChanged(ctx, protectBranch)
+	if checksErr != nil {
+		ctx.ServerError("RequiredChecksChanged", checksErr)
+		return
+	}
+	additionalActions := []authz.Action{}
+	if checksChanged {
+		if setting.EnterpriseAuthz.Enforce {
+			defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
+		}
+		additionalActions = append(additionalActions, authz.ManageCI)
+	}
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageBranchProtection, protectBranch.RuleName, additionalActions...)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
 	if err = pull_service.CreateOrUpdateProtectedBranch(ctx, ctx.Repo.Repository, protectBranch, git_model.WhitelistOptions{
 		UserIDs:          whitelistUsers,
 		TeamIDs:          whitelistTeams,
@@ -298,6 +316,9 @@ func SettingsProtectedBranchPost(ctx *context.Context) {
 		BypassUserIDs:    bypassAllowlistUsers,
 		BypassTeamIDs:    bypassAllowlistTeams,
 	}); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("CreateOrUpdateProtectedBranch", err)
 		return
 	}
@@ -341,7 +362,19 @@ func DeleteProtectedBranchRulePost(ctx *context.Context) {
 		defer common.ObserveRepoSettingMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.ManageCI)()
 	}
 
-	if err := git_model.DeleteProtectedBranch(ctx, ctx.Repo.Repository, ruleID); err != nil {
+	additionalActions := []authz.Action{}
+	if rule.EnableStatusCheck || len(rule.StatusCheckContexts) > 0 {
+		additionalActions = append(additionalActions, authz.ManageCI)
+	}
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageBranchProtection, rule.RuleName, additionalActions...)
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := pull_service.DeleteProtectedBranch(ctx, ctx.Repo.Repository, ruleID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.Flash.Error(ctx.Tr("repo.settings.remove_protected_branch_failed", rule.RuleName))
 		ctx.JSONRedirect(ctx.Repo.RepoLink + "/settings/branches")
 		return
@@ -364,7 +397,15 @@ func UpdateBranchProtectionPriories(ctx *context.Context) {
 		ctx.JSONError("invalid argument")
 		return
 	}
-	if err := git_model.UpdateProtectBranchPriorities(ctx, ctx.Repo.Repository, form.IDs); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageBranchProtection, "priority")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := pull_service.UpdateProtectBranchPriorities(ctx, ctx.Repo.Repository, form.IDs); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("UpdateProtectBranchPriorities", err)
 		return
 	}
@@ -388,6 +429,9 @@ func RenameBranchPost(ctx *context.Context) {
 
 	msg, err := repository.RenameBranch(ctx, ctx.Repo.Repository, ctx.Doer, form.From, form.To)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		switch {
 		case repo_model.IsErrUserDoesNotHaveAccessToRepo(err):
 			ctx.Flash.Error(ctx.Tr("repo.branch.rename_default_or_protected_branch_error"))

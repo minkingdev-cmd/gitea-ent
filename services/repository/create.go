@@ -14,7 +14,6 @@ import (
 
 	"gitea.dev/models/db"
 	"gitea.dev/models/organization"
-	"gitea.dev/models/perm"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	system_model "gitea.dev/models/system"
@@ -175,6 +174,7 @@ func initRepository(ctx context.Context, u *user_model.User, repo *repo_model.Re
 		}
 
 		// Apply changes and commit.
+		ctx = withRepositoryGitInitialization(ctx, repositoryGitInitialization{repo.ID, repo.OwnerID, u.ID, repo.DefaultBranch, "create"})
 		if err = initRepoCommit(ctx, tmpDir, repo, u); err != nil {
 			return fmt.Errorf("initRepoCommit: %w", err)
 		}
@@ -366,6 +366,7 @@ func createRepositoryInDB(ctx context.Context, doer, u *user_model.User, repo *r
 	if err = db.Insert(ctx, repo); err != nil {
 		return err
 	}
+	ctx = context.WithValue(ctx, accessInitializationKey{}, accessInitialization{repo.ID, repo.OwnerID, doer.ID})
 	if err = repo_model.DeleteRedirect(ctx, u.ID, repo.Name); err != nil {
 		return err
 	}
@@ -432,7 +433,7 @@ func createRepositoryInDB(ctx context.Context, doer, u *user_model.User, repo *r
 		}
 		for _, t := range teams {
 			if t.IncludesAllRepositories {
-				if err := addRepositoryToTeam(ctx, t, repo); err != nil {
+				if err := initializeRepositoryTeamAccess(ctx, t, repo); err != nil {
 					return fmt.Errorf("AddRepository: %w", err)
 				}
 			}
@@ -440,7 +441,7 @@ func createRepositoryInDB(ctx context.Context, doer, u *user_model.User, repo *r
 
 		if !access_model.IsUserRepoAdmin(ctx, repo, doer) {
 			// Make creator repo admin if it wasn't assigned automatically
-			if err = AddOrUpdateCollaborator(ctx, repo, doer, perm.AccessModeAdmin); err != nil {
+			if err = initializeRepositoryCreatorAccess(ctx, repo, doer); err != nil {
 				return fmt.Errorf("AddCollaborator: %w", err)
 			}
 		}
@@ -464,7 +465,7 @@ func createRepositoryInDB(ctx context.Context, doer, u *user_model.User, repo *r
 
 func cleanupRepository(repo *repo_model.Repository) {
 	ctx := graceful.GetManager().ShutdownContext()
-	if errDelete := DeleteRepositoryDirectly(ctx, repo.ID); errDelete != nil {
+	if errDelete := DeleteRepositoryDirectly(repositoryDeletionMaintenance(ctx, repo, "failed-creation"), repo.ID); errDelete != nil {
 		log.Error("cleanupRepository failed: %v", errDelete)
 		if err := system_model.CreateRepositoryNotice("DeleteRepositoryDirectly failed when cleanup repository (%s)", repo.FullName(), errDelete); err != nil {
 			log.Error("CreateRepositoryNotice: %v", err)

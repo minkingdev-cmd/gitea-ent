@@ -6,6 +6,7 @@ package repo
 
 import (
 	"net/http"
+	"strconv"
 
 	"gitea.dev/models/db"
 	"gitea.dev/models/perm"
@@ -301,7 +302,19 @@ func DeleteHook(ctx *context.APIContext) {
 	//     "$ref": "#/responses/empty"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
-	if err := webhook.DeleteWebhookByRepoID(ctx, ctx.Repo.Repository.ID, ctx.PathParamInt64("id")); err != nil {
+	if _, err := utils.GetRepoHook(ctx, ctx.Repo.Repository.ID, ctx.PathParamInt64("id")); err != nil {
+		return
+	}
+
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageWebhook, "webhook:"+strconv.FormatInt(ctx.PathParamInt64("id"), 10))
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := webhook_service.DeleteWebhookByRepoID(ctx, ctx.Repo.Repository.ID, ctx.PathParamInt64("id")); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if webhook.IsErrWebhookNotExist(err) {
 			ctx.APIErrorNotFound()
 		} else {

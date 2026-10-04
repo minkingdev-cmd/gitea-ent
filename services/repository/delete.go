@@ -25,13 +25,16 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/models/webhook"
 	actions_module "gitea.dev/modules/actions"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
+	"gitea.dev/modules/globallock"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/lfs"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/storage"
 	actions_service "gitea.dev/services/actions"
 	asymkey_service "gitea.dev/services/asymkey"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	issue_service "gitea.dev/services/issue"
 
 	"xorm.io/builder"
@@ -52,6 +55,15 @@ func deleteDBRepository(ctx context.Context, repoID int64) error {
 
 // DeleteRepositoryDirectly deletes a repository for a user or organization.
 func DeleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams ...bool) error {
+	release, err := globallock.Lock(ctx, getRepoWorkingLockKey(repoID))
+	if err != nil {
+		return err
+	}
+	defer release()
+	return deleteRepositoryDirectly(ctx, repoID, ignoreOrgTeams...)
+}
+
+func deleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams ...bool) error {
 	if db.InTransaction(ctx) {
 		return errors.New("DeleteRepositoryDirectly must not be called within a transaction, it deletes storage once its own transaction commits")
 	}
@@ -74,6 +86,12 @@ func DeleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams 
 		}
 	}
 
+	if err := requireRepositoryDelete(ctx, repo); err != nil {
+		return err
+	}
+	if err := recordRepositoryDeletionMaintenance(ctx, repo); err != nil {
+		return err
+	}
 	if err := authz_model.DeleteScope(ctx, authz_model.Scope{Type: authz_model.ScopeRepo, ID: repo.ID}); err != nil {
 		return err
 	}
@@ -412,10 +430,28 @@ func DeleteOwnerRepositoriesDirectly(ctx context.Context, owner *user_model.User
 			break
 		}
 		for _, repo := range repos {
-			if err := DeleteRepositoryDirectly(ctx, repo.ID); err != nil {
+			if repo.OwnerID != owner.ID {
+				return errors.New("repository owner changed during cleanup")
+			}
+			if err := DeleteRepositoryDirectly(repositoryDeletionMaintenance(ctx, repo, "owner-removal"), repo.ID); err != nil {
 				return fmt.Errorf("unable to delete repository %s for %s[%d]. Error: %w", repo.Name, owner.Name, owner.ID, err)
 			}
 		}
 	}
 	return nil
+}
+
+type (
+	repositoryDeleteMaintenanceKey struct{}
+	repositoryDeleteMaintenance    struct {
+		repoID, ownerID int64
+		kind            string
+	}
+)
+
+func requireRepositoryDelete(ctx context.Context, repo *repo_model.Repository) error {
+	if maintenance, ok := ctx.Value(repositoryDeleteMaintenanceKey{}).(repositoryDeleteMaintenance); ok {
+		return validateRepositoryDeletionMaintenance(ctx, repo, maintenance)
+	}
+	return authz_service.RequireExecutionTarget(ctx, repo, authz.Delete, deleteIntent(repo.ID))
 }

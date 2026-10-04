@@ -179,6 +179,9 @@ func prepareEditorCommitSubmittedForm[T forms.CommitCommonFormInterface](ctx *co
 	if fromBaseBranch != "" {
 		err = editorPushBranchToForkedRepository(ctx, ctx.Doer, ctx.Repo.Repository.BaseRepo, fromBaseBranch, commitFormOptions.TargetRepo, targetBranchName)
 		if err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return nil
+			}
 			log.Error("Unable to editorPushBranchToForkedRepository: %v", err)
 			ctx.JSONError(ctx.Tr("repo.editor.fork_failed_to_push_branch", targetBranchName))
 			return nil

@@ -36,7 +36,7 @@ func insertQueryDecision(t *testing.T, repoID, ownerID, actorID int64, action au
 	t.Helper()
 	snapshot, err := json.Marshal(roleSnapshot{CatalogVersion: 1, RepoID: repoID, OwnerID: ownerID, ActorID: actorID})
 	require.NoError(t, err)
-	record := authz_model.DecisionRecord{ObservationID: rand.Text(), OperationID: "operation-1", ActorID: actorID, RepoID: repoID, OwnerID: ownerID, Action: action, RequestSource: "api", CandidateDecision: decision, Reason: "missing_action", MissingActions: `[]`, NativeOutcome: "denied", NativeStage: "authorization", SnapshotJSON: string(snapshot), CreatedUnix: created}
+	record := authz_model.DecisionRecord{ObservationID: rand.Text(), OperationID: "operation-1", ActorID: actorID, RepoID: repoID, OwnerID: ownerID, Action: action, RequestSource: "api", DecisionMode: "shadow", AuthorizationDecision: "not_enforced", CandidateDecision: decision, Reason: "missing_action", MissingActions: `[]`, NativeOutcome: "denied", NativeStage: "authorization", SnapshotJSON: string(snapshot), CreatedUnix: created}
 	_, err = db.GetEngine(t.Context()).NoAutoTime().Insert(&record)
 	require.NoError(t, err)
 	return record
@@ -188,6 +188,8 @@ func TestDecisionQueryFiltersPaginationAndValidation(t *testing.T) {
 		{CandidateDecision: "ALLOW"},
 		{Since: -1},
 		{Until: -1},
+		{Since: 253402300800},
+		{Until: 253402300800},
 		{Since: 300, Until: 100},
 	} {
 		records, total, err := ListDecisions(t.Context(), admin, system, options)
@@ -398,4 +400,46 @@ func TestDecisionQueryAuthorityReadErrorsAreSafe(t *testing.T) {
 	record, err := GetDecision(t.Context(), owner, scope, 1)
 	require.EqualError(t, err, "policy_storage_failed")
 	require.Nil(t, record)
+}
+
+func TestDecisionQueryAuthorizationFilters(t *testing.T) {
+	prepareDecisionQuery(t)
+	admin := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
+	scope := authz_model.Scope{Type: authz_model.ScopeSystem}
+	shadow := insertQueryDecision(t, 1, 2, 2, authz.Delete, "deny", 100)
+	denied := insertQueryDecision(t, 1, 2, 2, authz.Delete, "deny", 200)
+	fallback := insertQueryDecision(t, 999999, 2, 2, authz.Delete, "error", 300)
+	for id, decision := range map[int64]string{denied.ID: "deny", fallback.ID: "fallback"} {
+		_, err := db.GetEngine(t.Context()).ID(id).Cols("decision_mode", "authorization_decision").Update(&authz_model.DecisionRecord{DecisionMode: "enforce", AuthorizationDecision: decision})
+		require.NoError(t, err)
+	}
+	for _, tc := range []struct {
+		options string
+		want    []int64
+		valid   bool
+	}{
+		{`{"DecisionMode":"shadow"}`, []int64{shadow.ID}, true},
+		{`{"DecisionMode":"enforce"}`, []int64{fallback.ID, denied.ID}, true},
+		{`{"DecisionMode":"enforce","AuthorizationDecision":"deny"}`, []int64{denied.ID}, true},
+		{`{"AuthorizationDecision":"fallback","RepoID":999999}`, []int64{fallback.ID}, true},
+		{`{"AuthorizationDecision":"allow"}`, []int64{}, true},
+		{`{"DecisionMode":"ENFORCE"}`, nil, false},
+		{`{"DecisionMode":"disabled"}`, nil, false},
+		{`{"AuthorizationDecision":"success"}`, nil, false},
+		{`{"AuthorizationDecision":"<script>"}`, nil, false},
+	} {
+		t.Run(tc.options, func(t *testing.T) {
+			var options DecisionListOptions
+			require.NoError(t, json.Unmarshal([]byte(tc.options), &options))
+			records, total, err := ListDecisions(t.Context(), admin, scope, options)
+			if !tc.valid {
+				require.ErrorIs(t, err, ErrInvalidPolicy)
+				require.Zero(t, total)
+				return
+			}
+			require.NoError(t, err)
+			require.EqualValues(t, len(tc.want), total)
+			require.Equal(t, tc.want, decisionQueryIDs(records))
+		})
+	}
 }

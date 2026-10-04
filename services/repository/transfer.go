@@ -5,8 +5,10 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	actions_model "gitea.dev/models/actions"
@@ -19,10 +21,12 @@ import (
 	project_model "gitea.dev/models/project"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitrepo"
 	"gitea.dev/modules/globallock"
 	"gitea.dev/modules/log"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	"gitea.dev/services/audit"
 	authz_service "gitea.dev/services/enterpriseauthz"
@@ -46,7 +50,10 @@ func getRepoWorkingLockKey(repoID int64) string {
 
 // AcceptTransferOwnership transfers all corresponding setting from old user to new one.
 func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, doer *user_model.User) (err error) {
-	ctx, observation := authz_service.WithRepoTransferObservation(ctx, doer, repo, 0)
+	var observation *authz_service.Observation
+	if !setting.EnterpriseAuthz.Enforce {
+		ctx, observation = authz_service.WithRepoTransferObservation(ctx, doer, repo, 0)
+	}
 	var targetOwnerID int64
 	defer func() {
 		outcome := authz_service.NativeSuccess
@@ -65,6 +72,10 @@ func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, d
 	}
 	defer releaser()
 
+	doer, err = refreshLifecycleTarget(ctx, doer, repo)
+	if err != nil {
+		return err
+	}
 	repoTransfer, err := repo_model.GetPendingRepositoryTransfer(ctx, repo)
 	if err != nil {
 		return err
@@ -73,6 +84,20 @@ func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, d
 	targetOwnerID = repoTransfer.RecipientID
 	oldOwnerName := repo.OwnerName
 
+	if err = repoTransfer.LoadAttributes(ctx); err != nil {
+		return err
+	}
+	if !doer.CanCreateRepoIn(repoTransfer.Recipient) {
+		return LimitReachedError{Limit: repoTransfer.Recipient.MaxCreationLimit()}
+	}
+	if !repoTransfer.CanUserAcceptOrRejectTransfer(ctx, doer) {
+		return util.ErrPermissionDenied
+	}
+	ctx, admission, err := beginTransferExecution(ctx, doer, repo, repoTransfer.Recipient, repoTransfer.Teams, "accept", repoTransfer.ID)
+	if err != nil {
+		return err
+	}
+	defer func() { finishLifecycleExecution(ctx, admission, err) }()
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
 		if err := repoTransfer.LoadAttributes(ctx); err != nil {
 			return err
@@ -95,7 +120,11 @@ func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, d
 			}
 		}
 
-		return transferOwnership(ctx, repoTransfer.Doer, repoTransfer.Recipient.Name, repo, repoTransfer.Teams)
+		transferDoer := repoTransfer.Doer
+		if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+			transferDoer = doer
+		}
+		return transferOwnership(ctx, transferDoer, repoTransfer.Recipient.Name, repo, repoTransfer.Teams)
 	}); err != nil {
 		return err
 	}
@@ -119,6 +148,9 @@ func isRepositoryModelOrDirExist(ctx context.Context, u *user_model.User, repoNa
 
 // transferOwnership transfers all corresponding repository items from old user to new one.
 func transferOwnership(ctx context.Context, doer *user_model.User, newOwnerName string, repo *repo_model.Repository, teams []*organization.Team) (err error) {
+	if err := requireTransferExecution(ctx, repo); err != nil {
+		return err
+	}
 	repoRenamed := false
 	wikiRenamed := false
 	oldOwnerName := doer.Name
@@ -451,7 +483,10 @@ func ChangeRepositoryName(ctx context.Context, doer *user_model.User, repo *repo
 // StartRepositoryTransfer transfer a repo from one owner to a new one.
 // it make repository into pending transfer state, if doer can not create repo for new owner.
 func StartRepositoryTransfer(ctx context.Context, doer, newOwner *user_model.User, repo *repo_model.Repository, teams []*organization.Team) (err error) {
-	ctx, observation := authz_service.WithRepoTransferObservation(ctx, doer, repo, newOwner.ID)
+	var observation *authz_service.Observation
+	if !setting.EnterpriseAuthz.Enforce {
+		ctx, observation = authz_service.WithRepoTransferObservation(ctx, doer, repo, newOwner.ID)
+	}
 	defer func() {
 		outcome := authz_service.NativeSuccess
 		if err != nil {
@@ -470,14 +505,38 @@ func StartRepositoryTransfer(ctx context.Context, doer, newOwner *user_model.Use
 	}
 	defer releaser()
 
+	doer, err = refreshLifecycleTarget(ctx, doer, repo)
+	if err != nil {
+		return err
+	}
+	if err = checkLifecycleDangerZone(ctx, doer, repo); err != nil {
+		return err
+	}
 	if err := repo_model.TestRepositoryReadyForTransfer(repo.Status); err != nil {
 		return err
 	}
 
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		newOwner, err = user_model.GetUserByID(ctx, newOwner.ID)
+		if err != nil {
+			return err
+		}
+	}
 	if !doer.CanForkRepoIn(newOwner) {
 		return LimitReachedError{Limit: newOwner.MaxCreationLimit()}
 	}
 
+	ctx, admission, err := beginTransferExecution(ctx, doer, repo, newOwner, teams, "start", 0)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == nil && repo.Status == repo_model.RepositoryPendingTransfer {
+			admission.Finish(ctx, authz_service.NativeUnknown, authz_service.StageOperation)
+			return
+		}
+		finishLifecycleExecution(ctx, admission, err)
+	}()
 	var isDirectTransfer bool
 	oldOwnerName := repo.OwnerName
 
@@ -540,7 +599,31 @@ func StartRepositoryTransfer(ctx context.Context, doer, newOwner *user_model.Use
 // RejectRepositoryTransfer marks the repository as ready and remove pending transfer entry,
 // thus cancel the transfer process.
 // The accepter can reject the transfer.
-func RejectRepositoryTransfer(ctx context.Context, repo *repo_model.Repository, doer *user_model.User) error {
+func RejectRepositoryTransfer(ctx context.Context, repo *repo_model.Repository, doer *user_model.User) (err error) {
+	release, err := globallock.Lock(ctx, getRepoWorkingLockKey(repo.ID))
+	if err != nil {
+		return err
+	}
+	defer release()
+	doer, err = refreshLifecycleTarget(ctx, doer, repo)
+	if err != nil {
+		return err
+	}
+	pending, err := repo_model.GetPendingRepositoryTransfer(ctx, repo)
+	if err != nil {
+		return err
+	}
+	if err = pending.LoadAttributes(ctx); err != nil {
+		return err
+	}
+	if !pending.CanUserAcceptOrRejectTransfer(ctx, doer) {
+		return util.ErrPermissionDenied
+	}
+	ctx, admission, err := beginTransferExecution(ctx, doer, repo, pending.Recipient, pending.Teams, "reject", pending.ID)
+	if err != nil {
+		return err
+	}
+	defer func() { finishLifecycleExecution(ctx, admission, err) }()
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
 		repoTransfer, err := repo_model.GetPendingRepositoryTransfer(ctx, repo)
 		if err != nil {
@@ -609,7 +692,35 @@ func canUserCancelTransfer(ctx context.Context, r *repo_model.RepoTransfer, u *u
 
 // CancelRepositoryTransfer cancels the repository transfer process. The sender or
 // the users who have admin permission of the original repository can cancel the transfer
-func CancelRepositoryTransfer(ctx context.Context, repoTransfer *repo_model.RepoTransfer, doer *user_model.User) error {
+func CancelRepositoryTransfer(ctx context.Context, repoTransfer *repo_model.RepoTransfer, doer *user_model.User) (err error) {
+	release, err := globallock.Lock(ctx, getRepoWorkingLockKey(repoTransfer.RepoID))
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err = repoTransfer.LoadAttributes(ctx); err != nil {
+		return err
+	}
+	doer, err = refreshLifecycleTarget(ctx, doer, repoTransfer.Repo)
+	if err != nil {
+		return err
+	}
+	current, err := repo_model.GetPendingRepositoryTransfer(ctx, repoTransfer.Repo)
+	if err != nil {
+		return err
+	}
+	repoTransfer = current
+	if err = repoTransfer.LoadAttributes(ctx); err != nil {
+		return err
+	}
+	if !canUserCancelTransfer(ctx, repoTransfer, doer) {
+		return util.ErrPermissionDenied
+	}
+	ctx, admission, err := beginTransferExecution(ctx, doer, repoTransfer.Repo, repoTransfer.Recipient, repoTransfer.Teams, "cancel", repoTransfer.ID)
+	if err != nil {
+		return err
+	}
+	defer func() { finishLifecycleExecution(ctx, admission, err) }()
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
 		if err := repoTransfer.LoadAttributes(ctx); err != nil {
 			return err
@@ -635,4 +746,60 @@ func CancelRepositoryTransfer(ctx context.Context, repoTransfer *repo_model.Repo
 	audit.Record(ctx, audit_model.RepositoryTransferCancel, repoTransfer.Repo)
 
 	return nil
+}
+
+type (
+	transferExecutionKey struct{}
+	transferExecution    struct {
+		repoID, ownerID int64
+		intent          string
+	}
+)
+
+func beginTransferExecution(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, recipient *user_model.User, teams []*organization.Team, operation string, transferID int64) (context.Context, *authz_service.Admission, error) {
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		return ctx, nil, nil
+	}
+	if len(teams) > 1000 {
+		return ctx, nil, &authz_service.ExecutionError{Reason: "context_limit_exceeded", Status: 403}
+	}
+	if operation == "cancel" {
+		if ok, err := validateBlockedTransferCleanup(ctx, repo, recipient, doer, transferID); ok || err != nil {
+			return ctx, nil, err
+		}
+	}
+	teamIDs := make([]int64, 0, len(teams))
+	for _, team := range teams {
+		if operation == "reject" || operation == "cancel" {
+			teamIDs = append(teamIDs, team.ID)
+			continue
+		}
+		current, err := organization.GetTeamByID(ctx, team.ID)
+		if err != nil {
+			return ctx, nil, err
+		}
+		if current.OrgID != recipient.ID {
+			return ctx, nil, util.ErrPermissionDenied
+		}
+		*team = *current
+		teamIDs = append(teamIDs, team.ID)
+	}
+	slices.Sort(teamIDs)
+	intent := fmt.Sprintf("transfer:%s:%d:%d:%x", operation, transferID, recipient.ID, sha256.Sum256([]byte(fmt.Sprint(teamIDs))))
+	ctx, admission, err := beginLifecycleExecution(ctx, doer, repo, authz.Transfer, intent, recipient.ID)
+	if err != nil {
+		return ctx, nil, err
+	}
+	return context.WithValue(ctx, transferExecutionKey{}, transferExecution{repo.ID, repo.OwnerID, intent}), admission, nil
+}
+
+func requireTransferExecution(ctx context.Context, repo *repo_model.Repository) error {
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		return nil
+	}
+	boundary, ok := ctx.Value(transferExecutionKey{}).(transferExecution)
+	if !ok || boundary.repoID != repo.ID || boundary.ownerID != repo.OwnerID {
+		return &authz_service.ExecutionError{Reason: "invalid_execution_context", Status: 403}
+	}
+	return authz_service.RequireExecutionTarget(ctx, repo, authz.Transfer, boundary.intent)
 }

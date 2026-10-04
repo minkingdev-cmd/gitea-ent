@@ -7,13 +7,17 @@ import (
 	"context"
 	"slices"
 
+	user_model "gitea.dev/models/user"
 	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/reqctx"
 	"gitea.dev/modules/setting"
 	"gitea.dev/services/audit"
 )
 
-type boundObservationKey struct{}
+type (
+	boundObservationKey struct{}
+	executionParentKey  struct{}
+)
 
 type boundObservation struct {
 	actorID, repoID int64
@@ -59,7 +63,34 @@ func DetachedObservationContext(target, source context.Context) context.Context 
 			target = context.WithValue(target, key, value)
 		}
 	}
+	if setting.EnterpriseAuthz.Enforce {
+		target = context.WithValue(target, executionParentKey{}, ExecutionParentContext(source))
+	}
 	return audit.CopyAttribution(target, source)
+}
+
+func ExecutionParentContext(ctx context.Context) context.Context {
+	if parent, ok := ctx.Value(executionParentKey{}).(context.Context); ok && parent != nil {
+		return parent
+	}
+	return ctx
+}
+
+func ExecutionAttribution(ctx context.Context, actorID, repoID int64) (string, CredentialCeiling) {
+	if bound, ok := ctx.Value(boundObservationKey{}).(boundObservation); ok && bound.actorID == actorID && bound.repoID == repoID {
+		return bound.source, bound.credential
+	}
+	return ExecutionSource(ctx), RequestCredentialCeiling(ExecutionParentContext(ctx), audit.DoerFromContext(ctx))
+}
+
+func ExecutionAttributionForActor(ctx context.Context, actor *user_model.User, repoID int64) (string, CredentialCeiling) {
+	if actor == nil {
+		return "system", CredentialCeiling{}
+	}
+	if bound, ok := ctx.Value(boundObservationKey{}).(boundObservation); ok && bound.actorID == actor.ID && bound.repoID == repoID {
+		return bound.source, bound.credential
+	}
+	return ExecutionSource(ctx), RequestCredentialCeiling(ExecutionParentContext(ctx), actor)
 }
 
 func FinishOperationObservation(ctx context.Context, actorID, repoID int64, action authz.Action, outcome NativeOutcome, stage NativeStage) {

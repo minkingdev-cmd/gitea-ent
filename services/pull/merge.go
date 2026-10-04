@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -256,15 +257,21 @@ func addTestPullRequestTaskAfterWebOperation(pr *issues_model.PullRequest, doer 
 
 // Merge merges pull request to base repository.
 // Caller should check PR is ready to be merged (review and status checks)
-func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *user_model.User, mergeStyle repo_model.MergeStyle, expectedHeadCommitID, message string, wasAutoMerged bool) (err error) {
+func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *user_model.User, mergeStyle repo_model.MergeStyle, expectedHeadCommitID, message string, wasAutoMerged bool, options ...MergeOptions) (err error) {
+	if pr == nil || doer == nil {
+		return util.ErrInvalidArgument
+	}
 	ctx := authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), operationCtx) // don't abort the git operation even if the user's request is canceled
+	execution := new(mergeExecution)
+	defer func() { execution.finish(err) }()
+	actorID, repoID := doer.ID, pr.BaseRepoID
 
 	defer func() {
 		outcome := authz_service.NativeSuccess
 		if err != nil {
 			outcome = authz_service.NativeFailed
 		}
-		authz_service.FinishOperationObservation(ctx, doer.ID, pr.BaseRepoID, authz.MergePullRequest, outcome, authz_service.StageOperation)
+		authz_service.FinishOperationObservation(ctx, actorID, repoID, authz.MergePullRequest, outcome, authz_service.StageOperation)
 	}()
 
 	if err := pr.LoadBaseRepo(ctx); err != nil {
@@ -288,10 +295,30 @@ func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *use
 	}
 
 	err = globallock.LockAndDo(ctx, getPullWorkingLockKey(pr.ID), func(ctx context.Context) error {
-		_, err := doMergeAndPush(ctx, pr, doer, mergeStyle, expectedHeadCommitID, message, repo_module.PushTriggerPRMergeToBase)
+		var err error
+		doer, err = refreshPullMutation(ctx, pr, doer)
+		if err != nil {
+			return err
+		}
+		force := len(options) > 0 && options[0].Force
+		if err := checkMergeExecutionNative(ctx, pr, doer, mergeStyle, MergeCheckTypeGeneral, force); err != nil {
+			return err
+		}
+		execution.nativeGuard = func(snapshot context.Context, actor *user_model.User, _ *repo_model.Repository) error {
+			current := *pr
+			actor.ExtDoerData = doer.ExtDoerData
+			actor, err := refreshPullMutation(snapshot, &current, actor)
+			if err != nil {
+				return err
+			}
+			return checkMergeExecutionNative(snapshot, &current, actor, mergeStyle, MergeCheckTypeGeneral, force)
+		}
+		_, err = doMergeAndPush(ctx, pr, doer, mergeStyle, expectedHeadCommitID, message, repo_module.PushTriggerPRMergeToBase, execution)
 		return err
 	})
-	defer addTestPullRequestTaskAfterWebOperation(pr, doer) // keep the same behavior as old code: always call AddTestPullRequestTask
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce || err == nil {
+		defer addTestPullRequestTaskAfterWebOperation(pr, doer)
+	}
 	// TODO: the "merge" operation has finished, there could still be some edge cases:
 	// * if the post-process hook isn't executed correctly:
 	//   * the commit has been merged into target branch
@@ -310,6 +337,9 @@ func handleMergePostProcess(ctx context.Context, prID int64, doer *user_model.Us
 	pr, err := issues_model.GetPullRequestByID(ctx, prID)
 	if err != nil {
 		return err
+	}
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && !pr.HasMerged {
+		return errors.New("merge push completed without merged pull request state")
 	}
 
 	if err := pr.LoadIssue(ctx); err != nil {
@@ -366,7 +396,7 @@ func handleCloseCrossReferences(ctx context.Context, pr *issues_model.PullReques
 }
 
 // doMergeAndPush performs the merge operation without changing any pull information in database and pushes it up to the base repository
-func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, mergeStyle repo_model.MergeStyle, expectedHeadCommitID, message string, pushTrigger repo_module.PushTrigger) (string, error) { //nolint:unparam // non-error result is never used
+func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, mergeStyle repo_model.MergeStyle, expectedHeadCommitID, message string, pushTrigger repo_module.PushTrigger, execution *mergeExecution) (string, error) { //nolint:unparam // non-error result is never used
 	// Clone base repo.
 	mergeCtx, cancel, err := createTemporaryRepoForMerge(ctx, pr, doer, expectedHeadCommitID)
 	if err != nil {
@@ -409,6 +439,11 @@ func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *use
 	if err != nil {
 		return "", fmt.Errorf("Failed to get full commit id for the new merge: %w", err)
 	}
+	ctx, ticket, release, err := beginPullGitExecution(ctx, doer, pr.BaseRepo, mergeCtx.tmpRepo, pr.BaseBranch, mergeBaseSHA, mergeCommitID, pushTrigger == repo_module.PushTriggerPRMergeToBase, true, execution)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 
 	// Now it's questionable about where this should go - either after or before the push
 	// I think in the interests of data safety - failures to push to the lfs should prevent
@@ -446,8 +481,14 @@ func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *use
 	if pushTrigger == repo_module.PushTriggerPRUpdateWithBase {
 		parentAction = authz.PushBranch
 	}
-	mergeCtx.env = repo_module.WithAuthzOperation(mergeCtx.env, string(authz_service.ManagedHookOperationTicket(ctx, doer, pr.BaseRepo, pr.BaseBranch, parentAction)))
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		ticket = authz_service.ManagedHookOperationTicket(ctx, doer, pr.BaseRepo, pr.BaseBranch, parentAction)
+	}
+	mergeCtx.env = repo_module.WithAuthzOperation(mergeCtx.env, string(ticket))
 	pushCmd := gitcmd.NewCommand("push", "origin").AddDynamicArguments(tmpRepoBaseBranch + ":" + git.BranchPrefix + pr.BaseBranch)
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		pushCmd.AddOptionFormat("--force-with-lease=%s:%s", git.BranchPrefix+pr.BaseBranch, mergeBaseSHA)
+	}
 
 	// Push back to upstream.
 	// This cause an api call to "/api/internal/hook/post-receive/...",
@@ -662,19 +703,80 @@ func CheckPullBranchProtections(ctx context.Context, pr *issues_model.PullReques
 
 // MergedManually mark pr as merged manually
 func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string) (err error) {
+	if pr == nil || doer == nil || baseGitRepo == nil {
+		return util.ErrInvalidArgument
+	}
+	releaser, err := globallock.Lock(ctx, getPullWorkingLockKey(pr.ID))
+	if err != nil {
+		return fmt.Errorf("lock.Lock: %w", err)
+	}
+	defer releaser()
+	return mergedManuallyLocked(ctx, pr, doer, baseGitRepo, commitID, false)
+}
+
+func mergedManuallyLocked(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string, automatic bool) (err error) {
+	execution := new(mergeExecution)
+	defer func() { execution.finish(err) }()
+	actorID, repoID := doer.ID, pr.BaseRepoID
 	defer func() {
 		outcome := authz_service.NativeSuccess
 		if err != nil {
 			outcome = authz_service.NativeFailed
 		}
-		authz_service.FinishOperationObservation(ctx, doer.ID, pr.BaseRepoID, authz.MergePullRequest, outcome, authz_service.StageOperation)
+		authz_service.FinishOperationObservation(ctx, actorID, repoID, authz.MergePullRequest, outcome, authz_service.StageOperation)
 	}()
-	releaser, err := globallock.Lock(ctx, getPullWorkingLockKey(pr.ID))
+	doer, err = refreshPullMutation(ctx, pr, doer)
 	if err != nil {
-		log.Error("lock.Lock(): %v", err)
-		return fmt.Errorf("lock.Lock: %w", err)
+		return err
 	}
-	defer releaser()
+	if err := checkManualMergeExecutionNative(ctx, pr, doer, automatic); err != nil {
+		return err
+	}
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		trustedRepo, err := git.OpenRepository(ctx, pr.BaseRepo)
+		if err != nil {
+			return err
+		}
+		defer trustedRepo.Close()
+		baseGitRepo = trustedRepo
+		objectFormat := git.ObjectFormatFromName(pr.BaseRepo.ObjectFormatName)
+		if len(commitID) != objectFormat.FullLength() {
+			return errors.New("Wrong commit ID")
+		}
+		commit, err := baseGitRepo.GetCommit(ctx, commitID)
+		if err != nil {
+			return err
+		}
+		commitID = commit.ID.String()
+		ok, err := baseGitRepo.IsCommitInBranch(ctx, commitID, pr.BaseBranch)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("Wrong commit ID")
+		}
+		if _, err := baseGitRepo.GetCommit(ctx, pr.MergeBase); err != nil || pr.MergeBase == "" {
+			return &authz_service.ExecutionError{Reason: "invalid_execution_context", Status: http.StatusForbidden}
+		}
+		execution.nativeGuard = func(snapshot context.Context, actor *user_model.User, _ *repo_model.Repository) error {
+			current := *pr
+			actor.ExtDoerData = doer.ExtDoerData
+			actor, err := refreshPullMutation(snapshot, &current, actor)
+			if err != nil {
+				return err
+			}
+			if current.MergeBase != pr.MergeBase || current.BaseBranch != pr.BaseBranch {
+				return &authz_service.ExecutionError{Reason: "invalid_execution_context", Status: http.StatusForbidden}
+			}
+			return checkManualMergeExecutionNative(snapshot, &current, actor, automatic)
+		}
+		var release func()
+		ctx, _, release, err = beginPullGitExecution(ctx, doer, pr.BaseRepo, baseGitRepo, pr.BaseBranch, pr.MergeBase, commitID, true, false, execution)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 
 	err = db.WithTx(ctx, func(ctx context.Context) error {
 		if err := pr.LoadBaseRepo(ctx); err != nil {
@@ -687,7 +789,7 @@ func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *use
 		prConfig := prUnit.PullRequestsConfig()
 
 		// Check if merge style is correct and allowed
-		if !prConfig.IsMergeStyleAllowed(repo_model.MergeStyleManuallyMerged) {
+		if !automatic && !prConfig.IsMergeStyleAllowed(repo_model.MergeStyleManuallyMerged) || automatic && !prConfig.AutodetectManualMerge {
 			return ErrInvalidMergeStyle{ID: pr.BaseRepo.ID, Style: repo_model.MergeStyleManuallyMerged}
 		}
 
@@ -721,7 +823,6 @@ func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *use
 		}
 		return nil
 	})
-	releaser()
 	if err != nil {
 		return err
 	}
@@ -734,6 +835,12 @@ func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *use
 
 // SetMerged sets a pull request to merged and closes the corresponding issue
 func SetMerged(ctx context.Context, pr *issues_model.PullRequest, mergedCommitID string, mergedTimeStamp timeutil.TimeStamp, merger *user_model.User, mergeStatus issues_model.PullRequestStatus) (bool, error) {
+	if pr == nil || merger == nil {
+		return false, util.ErrInvalidArgument
+	}
+	if err := authz_service.RequireGitMergeExecution(ctx, merger.ID, pr.BaseRepoID, pr.BaseBranch, mergedCommitID); err != nil {
+		return false, err
+	}
 	if pr.HasMerged {
 		return false, fmt.Errorf("PullRequest[%d] already merged", pr.Index)
 	}

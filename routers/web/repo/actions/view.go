@@ -44,6 +44,7 @@ import (
 	"gitea.dev/routers/common"
 	actions_service "gitea.dev/services/actions"
 	context_module "gitea.dev/services/context"
+	repo_service "gitea.dev/services/repository"
 )
 
 func findCurrentJobByPathParam(ctx *context_module.Context, jobs []*actions_model.ActionRunJob) (job *actions_model.ActionRunJob, hasPathParam bool) {
@@ -1083,6 +1084,9 @@ func Delete(ctx *context_module.Context) {
 	}
 
 	if err := actions_service.DeleteRun(ctx, run); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("DeleteRun", err)
 		return
 	}
@@ -1381,7 +1385,15 @@ func disableOrEnableWorkflowFile(ctx *context_module.Context, isEnable bool) {
 		cfg.DisableWorkflow(workflow)
 	}
 
-	if err := repo_model.UpdateRepoUnitConfig(ctx, cfgUnit); err != nil {
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageCI, "repo-settings")
+	if !allowed {
+		return
+	}
+	defer finishExecution()
+	if err := repo_service.UpdateActionsUnitConfig(ctx, cfgUnit); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("UpdateRepoUnit", err)
 		return
 	}

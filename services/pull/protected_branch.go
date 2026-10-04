@@ -13,7 +13,7 @@ import (
 func CreateOrUpdateProtectedBranch(ctx context.Context, repo *repo_model.Repository,
 	protectBranch *git_model.ProtectedBranch, whitelistOptions git_model.WhitelistOptions,
 ) error {
-	err := git_model.UpdateProtectBranch(ctx, repo, protectBranch, whitelistOptions)
+	err := UpdateProtectedBranch(ctx, repo, protectBranch, whitelistOptions)
 	if err != nil {
 		return err
 	}

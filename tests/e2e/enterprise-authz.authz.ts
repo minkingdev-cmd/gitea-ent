@@ -136,3 +136,43 @@ for (const [timezoneId, winter, summer] of [
     });
   });
 }
+
+test('enforcement history keeps admission separate from business outcomes', async ({page}, testInfo) => {
+  test.skip(env.GITEA_TEST_E2E_AUTHZ_ENFORCEMENT_HISTORY !== 'true', 'requires isolated enforcement history fixtures');
+  await login(page);
+  await page.goto('/-/admin/enterprise/authz/scopes/system/decisions?mode=enforce&authorization=deny&action=repo.delete');
+  const mode = page.getByLabel('Recorded mode', {exact: true});
+  await expect(mode).toHaveValue('enforce');
+  await mode.focus();
+  await expect(mode).toBeFocused();
+  await mode.press('Tab');
+  await expect(page.getByRole('combobox', {name: 'Enterprise authorization', exact: true})).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(mode).toBeFocused();
+  await mode.selectOption('shadow');
+  await expect(mode).toHaveValue('shadow');
+  await mode.selectOption('enforce');
+  await page.getByRole('button', {name: 'Filter', exact: true}).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('combobox', {name: 'Enterprise authorization', exact: true})).toHaveValue('deny');
+  await expect(page.getByRole('cell', {name: 'Denied — not executed', exact: true})).toBeVisible();
+  await page.screenshot({path: testInfo.outputPath('enterprise-authz-enforce-deny-light.png'), fullPage: true});
+  await page.getByRole('link', {name: 'View details', exact: true}).click();
+  await expect(page.getByRole('heading', {name: 'Authorization decision details', exact: true})).toBeVisible();
+  const detail = page.locator('dl[data-native-outcome]');
+  await expect(detail).toHaveAttribute('data-decision-mode', 'enforce');
+  await expect(detail).toHaveAttribute('data-authorization-decision', 'deny');
+  await expect(detail).toHaveAttribute('data-native-outcome', 'unknown');
+  await expect(detail).toHaveAttribute('data-execution-state', 'not_started');
+  await expect(detail).toHaveAttribute('data-mismatch', 'unknown');
+  await page.emulateMedia({colorScheme: 'dark'});
+  await expect.poll(() => page.locator(':root').evaluate((el) => el.ownerDocument.defaultView!.getComputedStyle(el).getPropertyValue('--is-dark-theme').trim())).toBe('true');
+  await page.screenshot({path: testInfo.outputPath('enterprise-authz-enforce-deny-dark.png'), fullPage: true});
+  await page.goto('/-/admin/enterprise/authz/scopes/system/decisions?mode=enforce&authorization=allow&action=repo.delete');
+  await expect(page.getByRole('cell', {name: 'Admitted — not a business outcome', exact: true})).toBeVisible();
+  await expect(page.getByRole('cell', {name: 'Not executed', exact: true})).toBeVisible();
+  await expect(page.getByRole('cell', {name: 'Success', exact: true})).toHaveCount(0);
+  await page.goto('/-/admin/enterprise/authz/scopes/system/decisions?mode=enforce&authorization=fallback&action=repo.delete');
+  await expect(page.getByRole('cell', {name: 'Fallback — native guards decide', exact: true})).toBeVisible();
+  await page.screenshot({path: testInfo.outputPath('enterprise-authz-enforce-fallback-dark.png'), fullPage: true});
+});

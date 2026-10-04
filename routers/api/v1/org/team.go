@@ -207,6 +207,10 @@ func CreateTeam(ctx *context.APIContext) {
 	//   schema:
 	//     "$ref": "#/definitions/CreateTeamOption"
 	// responses:
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "201":
 	//     "$ref": "#/responses/Team"
 	//   "404":
@@ -232,6 +236,9 @@ func CreateTeam(ctx *context.APIContext) {
 	}
 
 	if err := org_service.NewTeam(ctx, team); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if organization.IsErrTeamAlreadyExist(err) {
 			ctx.APIError(http.StatusUnprocessableEntity, err.Error())
 		} else {
@@ -268,6 +275,10 @@ func EditTeam(ctx *context.APIContext) {
 	//   schema:
 	//     "$ref": "#/definitions/EditTeamOption"
 	// responses:
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "200":
 	//     "$ref": "#/responses/Team"
 	//   "404":
@@ -317,6 +328,9 @@ func EditTeam(ctx *context.APIContext) {
 	}
 
 	if err := org_service.UpdateTeam(ctx, team, isAuthChanged, isIncludeAllChanged); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}
@@ -342,6 +356,10 @@ func DeleteTeam(ctx *context.APIContext) {
 	//   format: int64
 	//   required: true
 	// responses:
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "204":
 	//     description: team deleted
 	//   "404":
@@ -351,6 +369,9 @@ func DeleteTeam(ctx *context.APIContext) {
 		return
 	}
 	if err := org_service.DeleteTeam(ctx, ctx.Org.Team); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}
@@ -713,6 +734,8 @@ func AddTeamRepository(ctx *context.APIContext) {
 	//   type: string
 	//   required: true
 	// responses:
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "204":
 	//     "$ref": "#/responses/empty"
 	//   "403":
@@ -728,6 +751,9 @@ func AddTeamRepository(ctx *context.APIContext) {
 		return
 	}
 	if err := repo_service.TeamAddRepository(ctx, ctx.Org.Team, repo); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}
@@ -761,6 +787,8 @@ func RemoveTeamRepository(ctx *context.APIContext) {
 	//   type: string
 	//   required: true
 	// responses:
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "204":
 	//     "$ref": "#/responses/empty"
 	//   "403":
@@ -776,6 +804,9 @@ func RemoveTeamRepository(ctx *context.APIContext) {
 		return
 	}
 	if err := repo_service.RemoveRepositoryFromTeam(ctx, ctx.Org.Team, repo.ID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}

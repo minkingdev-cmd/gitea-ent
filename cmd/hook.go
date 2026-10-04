@@ -216,6 +216,8 @@ Gitea or set your environment appropriately.`, "")
 	count := 0
 	total := 0
 	lastline := 0
+	collectAll, _ := strconv.ParseBool(os.Getenv(repo_module.EnvAuthzEnforce))
+	collectAll = collectAll || setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce
 
 	out := io.Discard
 	if setting.Git.VerbosePush {
@@ -248,13 +250,18 @@ Gitea or set your environment appropriately.`, "")
 		// if supportProcReceive all ref should be checked because
 		// permission check was delayed
 		if supportProcReceive || refFullName.IsBranch() || refFullName.IsTag() {
+			if count == len(oldCommitIDs) {
+				oldCommitIDs = append(oldCommitIDs, make([]string, hookBatchSize)...)
+				newCommitIDs = append(newCommitIDs, make([]string, hookBatchSize)...)
+				refFullNames = append(refFullNames, make([]git.RefName, hookBatchSize)...)
+			}
 			oldCommitIDs[count] = oldCommitID
 			newCommitIDs[count] = newCommitID
 			refFullNames[count] = refFullName
 			count++
 			fmt.Fprintf(out, "*")
 
-			if count >= hookBatchSize {
+			if count >= hookBatchSize && !collectAll {
 				fmt.Fprintf(out, " Checking %d references\n", count)
 
 				hookOptions.OldCommitIDs = oldCommitIDs

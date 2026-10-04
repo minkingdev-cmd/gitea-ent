@@ -89,13 +89,14 @@ type EnterpriseAuthzBinding struct {
 // EnterpriseAuthzAction 描述 action，不因此实现 feature grant 或安全守卫。
 // swagger:model
 type EnterpriseAuthzAction struct {
-	Key         string   `json:"key"`
-	Description string   `json:"description"`
-	Units       []string `json:"units"`
-	Risk        string   `json:"risk"`
-	Mutating    bool     `json:"mutating"`
-	Observed    bool     `json:"observed"`
-	UnitsAny    bool     `json:"units_any"`
+	Key              string   `json:"key"`
+	Description      string   `json:"description"`
+	Units            []string `json:"units"`
+	Risk             string   `json:"risk"`
+	Mutating         bool     `json:"mutating"`
+	Observed         bool     `json:"observed"`
+	UnitsAny         bool     `json:"units_any"`
+	EnforceSupported bool     `json:"enforce_supported"`
 }
 
 // EnterpriseAuthzActionCatalog 是不可修改的 action 目录。
@@ -202,7 +203,7 @@ type EnterpriseAuthzDecisionSnapshot struct {
 	Conditions        []EnterpriseAuthzConditionResult `json:"conditions"`
 }
 
-// EnterpriseAuthzDecision 是真实操作 shadow 证据，candidate 不影响原生操作。
+// EnterpriseAuthzDecision 区分候选解释、实际授权及原生执行结果。
 // swagger:model
 type EnterpriseAuthzDecision struct {
 	ID                    int64                            `json:"id"`
@@ -213,13 +214,18 @@ type EnterpriseAuthzDecision struct {
 	OwnerID               int64                            `json:"owner_id"`
 	Action                string                           `json:"action"`
 	RequestSource         string                           `json:"request_source"`
+	DecisionMode          string                           `json:"decision_mode"`
+	AuthorizationDecision string                           `json:"authorization_decision"`
+	AuthorizationReason   string                           `json:"authorization_reason"`
+	ExecutionStarted      bool                             `json:"execution_started"`
 	CandidateDecision     string                           `json:"candidate_decision"`
 	Reason                string                           `json:"reason"`
 	MissingActions        []string                         `json:"missing_actions"`
 	NativeOutcome         string                           `json:"native_outcome"`
 	NativeStage           string                           `json:"native_stage"`
 	Snapshot              *EnterpriseAuthzDecisionSnapshot `json:"snapshot"`
-	CandidateOnly         bool                             `json:"candidate_only"`
-	SafetyGuardsEvaluated bool                             `json:"safety_guards_evaluated"`
-	Created               time.Time                        `json:"created"`
+	// CandidateOnly 仅描述候选解释，不否定独立的真实授权字段。
+	CandidateOnly         bool      `json:"candidate_only"`
+	SafetyGuardsEvaluated bool      `json:"safety_guards_evaluated"`
+	Created               time.Time `json:"created"`
 }

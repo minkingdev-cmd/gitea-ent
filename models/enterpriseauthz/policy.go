@@ -81,21 +81,25 @@ type SubjectRoleBinding struct {
 func (*SubjectRoleBinding) TableName() string { return "enterprise_subject_role_binding" }
 
 type DecisionRecord struct {
-	ID                int64              `xorm:"pk autoincr"`
-	ObservationID     string             `xorm:"VARCHAR(64) NOT NULL UNIQUE"`
-	OperationID       string             `xorm:"VARCHAR(64) NOT NULL INDEX"`
-	ActorID           int64              `xorm:"NOT NULL INDEX(actor_time)"`
-	RepoID            int64              `xorm:"NOT NULL INDEX(repo_time)"`
-	OwnerID           int64              `xorm:"NOT NULL"`
-	Action            authz.Action       `xorm:"VARCHAR(64) NOT NULL INDEX(action_time)"`
-	RequestSource     string             `xorm:"VARCHAR(32) NOT NULL"`
-	CandidateDecision string             `xorm:"VARCHAR(16) NOT NULL INDEX(decision_time)"`
-	Reason            string             `xorm:"VARCHAR(64) NOT NULL"`
-	MissingActions    string             `xorm:"TEXT NOT NULL"`
-	NativeOutcome     string             `xorm:"VARCHAR(16) NOT NULL"`
-	NativeStage       string             `xorm:"VARCHAR(64) NOT NULL"`
-	SnapshotJSON      string             `xorm:"LONGTEXT NOT NULL"`
-	CreatedUnix       timeutil.TimeStamp `xorm:"created INDEX(repo_time) INDEX(actor_time) INDEX(action_time) INDEX(decision_time)"`
+	ID                    int64              `xorm:"pk autoincr"`
+	ObservationID         string             `xorm:"VARCHAR(64) NOT NULL UNIQUE"`
+	OperationID           string             `xorm:"VARCHAR(64) NOT NULL INDEX"`
+	ActorID               int64              `xorm:"NOT NULL INDEX(actor_time)"`
+	RepoID                int64              `xorm:"NOT NULL INDEX(repo_time)"`
+	OwnerID               int64              `xorm:"NOT NULL"`
+	Action                authz.Action       `xorm:"VARCHAR(64) NOT NULL INDEX(action_time)"`
+	RequestSource         string             `xorm:"VARCHAR(32) NOT NULL"`
+	CandidateDecision     string             `xorm:"VARCHAR(16) NOT NULL INDEX(decision_time)"`
+	Reason                string             `xorm:"VARCHAR(64) NOT NULL"`
+	MissingActions        string             `xorm:"TEXT NOT NULL"`
+	NativeOutcome         string             `xorm:"VARCHAR(16) NOT NULL"`
+	NativeStage           string             `xorm:"VARCHAR(64) NOT NULL"`
+	SnapshotJSON          string             `xorm:"LONGTEXT NOT NULL"`
+	DecisionMode          string             `xorm:"VARCHAR(16) NOT NULL DEFAULT 'shadow' INDEX"`
+	AuthorizationDecision string             `xorm:"VARCHAR(16) NOT NULL DEFAULT 'not_enforced' INDEX"`
+	AuthorizationReason   string             `xorm:"VARCHAR(64) NOT NULL DEFAULT ''"`
+	ExecutionStarted      bool               `xorm:"NOT NULL DEFAULT false"`
+	CreatedUnix           timeutil.TimeStamp `xorm:"created INDEX(repo_time) INDEX(actor_time) INDEX(action_time) INDEX(decision_time)"`
 }
 
 func (*DecisionRecord) TableName() string { return "enterprise_authz_decision" }

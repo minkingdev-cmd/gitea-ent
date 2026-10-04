@@ -929,6 +929,8 @@ func MergePullRequest(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	form := web.GetForm[*forms.MergePullRequestForm](ctx)
 
@@ -949,7 +951,7 @@ func MergePullRequest(ctx *context.APIContext) {
 	}
 	pr.Issue.Repo = ctx.Repo.Repository
 
-	if ctx.IsSigned {
+	if ctx.IsSigned && (!setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce) {
 		// Update issue-user.
 		if err := notifications.SetIssueReadBy(ctx, pr.Issue.ID, ctx.Doer.ID); err != nil {
 			ctx.APIErrorInternal(err)
@@ -958,6 +960,13 @@ func MergePullRequest(ctx *context.APIContext) {
 	}
 
 	nativeOutcome := authz_service.NativeFailed
+	defer func() {
+		if ctx.IsSigned && setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && (nativeOutcome == authz_service.NativeSuccess || nativeOutcome == authz_service.NativeUnknown) {
+			if err := notifications.SetIssueReadBy(ctx, pr.Issue.ID, ctx.Doer.ID); err != nil {
+				log.Error("merged pull read marker: %v", err)
+			}
+		}
+	}()
 	finishObservation := common.ObserveRepoBranchMutation(ctx.Base, ctx.Doer, ctx.Repo.Repository, &ctx.Repo.Permission, authz.MergePullRequest, "api", pr.BaseBranch)
 	defer func() { finishObservation(nativeOutcome) }()
 
@@ -998,6 +1007,9 @@ func MergePullRequest(ctx *context.APIContext) {
 	// handle manually-merged mark
 	if manuallyMerged {
 		if err := pull_service.MergedManually(ctx, pr, ctx.Doer, ctx.Repo.GitRepo, form.MergeCommitID); err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return
+			}
 			if pull_service.IsErrInvalidMergeStyle(err) {
 				ctx.APIError(http.StatusMethodNotAllowed, fmt.Sprintf("%s is not allowed an allowed merge style for this repository", repo_model.MergeStyle(form.Do)))
 				return
@@ -1041,6 +1053,9 @@ func MergePullRequest(ctx *context.APIContext) {
 	if form.MergeWhenChecksSucceed {
 		scheduled, err := automerge.ScheduleAutoMerge(ctx, ctx.Doer, pr, repo_model.MergeStyle(form.Do), message, deleteBranchAfterMerge)
 		if err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return
+			}
 			if pull_model.IsErrAlreadyScheduledToAutoMerge(err) {
 				ctx.APIError(http.StatusConflict, err.Error())
 				return
@@ -1055,7 +1070,10 @@ func MergePullRequest(ctx *context.APIContext) {
 		}
 	}
 
-	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false); err != nil {
+	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false, pull_service.MergeOptions{Force: form.ForceMerge}); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if pull_service.IsErrInvalidMergeStyle(err) {
 			ctx.APIError(http.StatusMethodNotAllowed, fmt.Sprintf("%s is not allowed an allowed merge style for this repository", repo_model.MergeStyle(form.Do)))
 		} else if conflictError, ok := err.(pull_service.ErrMergeConflicts); ok {
@@ -1233,6 +1251,8 @@ func UpdatePullRequest(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "422":
 	//     "$ref": "#/responses/validationError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	pr, err := issues_model.GetPullRequestByIndex(ctx, ctx.Repo.Repository.ID, ctx.PathParamInt64("index"))
 	if err != nil {
@@ -1294,6 +1314,9 @@ func UpdatePullRequest(ctx *context.APIContext) {
 	message := fmt.Sprintf("Merge branch '%s' into %s", pr.BaseBranch, pr.HeadBranch)
 
 	if err = pull_service.Update(ctx, pr, ctx.Doer, message, rebase); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if pull_service.IsErrMergeConflicts(err) {
 			ctx.APIError(http.StatusConflict, "merge failed because of conflict")
 			return

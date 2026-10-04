@@ -307,6 +307,9 @@ func CreatePost(ctx *context.Context) {
 		}
 	}
 
+	if common.WriteExecutionError(ctx.Base, err) {
+		return
+	}
 	if errors.Is(err, repo_service.ErrEnterpriseOrgRepoRequiresApproval) {
 		request, submitErr := repo_service.SubmitOrganizationRepositoryRequest(ctx, ctx.Doer, ctxUser, repo_service.OrganizationRepositoryRequestOptions{
 			Name:        form.RepoName,

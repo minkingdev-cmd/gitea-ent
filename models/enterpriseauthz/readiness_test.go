@@ -68,3 +68,21 @@ func TestReadinessSanitizesTransactionErrors(t *testing.T) {
 		return nil
 	}))
 }
+
+func TestReadinessRejectsOldDecisionSchema(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	defer test.MockVariableValue(&setting.EnterpriseAuthz)()
+	seedBuiltinRoles(t)
+	x := db.GetXORMEngineForTesting()
+	require.NoError(t, x.DropTables(new(DecisionRecord)))
+	_, err := x.Exec("CREATE TABLE enterprise_authz_decision (id INTEGER PRIMARY KEY)")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, x.DropTables(new(DecisionRecord)))
+		require.NoError(t, x.Sync(new(DecisionRecord)))
+	}()
+	setting.EnterpriseAuthz.Enabled = false
+	require.NoError(t, CheckReady(t.Context()))
+	setting.EnterpriseAuthz.Enabled = true
+	require.EqualError(t, CheckReady(t.Context()), "authz_schema_missing")
+}

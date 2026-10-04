@@ -905,6 +905,9 @@ func handleSettingsPostTransfer(ctx *context.Context) {
 
 	oldFullname := repo.FullName()
 	if err := repo_service.StartRepositoryTransfer(ctx, ctx.Doer, newOwner, repo, nil); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if repo_model.IsErrRepoAlreadyExist(err) {
 			ctx.JSONError(ctx.Tr("repo.settings.new_owner_has_same_repo"))
 		} else if repo_model.IsErrRepoTransferInProgress(err) {
@@ -949,6 +952,9 @@ func handleSettingsPostCancelTransfer(ctx *context.Context) {
 	}
 
 	if err := repo_service.CancelRepositoryTransfer(ctx, repoTransfer, ctx.Doer); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("CancelRepositoryTransfer", err)
 		return
 	}
@@ -976,6 +982,9 @@ func handleSettingsPostDelete(ctx *context.Context) {
 	}
 
 	if err := repo_service.DeleteRepository(ctx, ctx.Doer, ctx.Repo.Repository, true); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("DeleteRepository", err)
 		return
 	}
@@ -1020,6 +1029,9 @@ func handleSettingsPostArchive(ctx *context.Context) {
 	}
 
 	if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, true); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Error("Tried to archive a repo: %s", err)
 		ctx.Flash.Error(ctx.Tr("repo.settings.archive.error"))
 		ctx.Redirect(ctx.Repo.RepoLink + "/settings")
@@ -1048,6 +1060,9 @@ func handleSettingsPostUnarchive(ctx *context.Context) {
 
 	repo := ctx.Repo.Repository
 	if err := repo_service.SetArchiveRepoState(ctx, ctx.Doer, repo, false); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		log.Error("Tried to unarchive a repo: %s", err)
 		ctx.Flash.Error(ctx.Tr("repo.settings.unarchive.error"))
 		ctx.Redirect(ctx.Repo.RepoLink + "/settings")

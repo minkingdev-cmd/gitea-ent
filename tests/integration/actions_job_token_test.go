@@ -188,6 +188,10 @@ func TestActionsJobTokenPermissiveAccess(t *testing.T) {
 }
 
 func TestActionsCrossRepoAccess(t *testing.T) {
+	testActionsCrossRepoAccess(t, true)
+}
+
+func testActionsCrossRepoAccess(t *testing.T, transferAllowed bool) {
 	onGiteaRun(t, func(t *testing.T, u *url.URL) {
 		session := loginUser(t, "user2")
 		token := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeWriteUser, auth_model.AccessTokenScopeWriteRepository, auth_model.AccessTokenScopeWriteOrganization)
@@ -275,12 +279,22 @@ func TestActionsCrossRepoAccess(t *testing.T) {
 			session4 := loginUser(t, "user4")
 			token4 := getTokenForLoggedInUser(t, session4, auth_model.AccessTokenScopeWriteUser, auth_model.AccessTokenScopeWriteRepository)
 			req = NewRequest(t, "POST", fmt.Sprintf("/api/v1/repos/%s/repo-B/transfer/accept", orgName)).AddTokenAuth(token4)
-			MakeRequest(t, req, http.StatusAccepted)
+			if transferAllowed {
+				MakeRequest(t, req, http.StatusAccepted)
+			} else {
+				MakeRequest(t, req, http.StatusForbidden)
+				MakeRequest(t, NewRequest(t, "GET", "/api/v1/user").AddTokenAuth(token4), http.StatusOK)
+				unittest.AssertExistsAndLoadBean(t, &repo_model.Repository{ID: repoBID, OwnerID: owner.ID})
+			}
 
 			// Verify it is removed from the org's config
 			ownerActionsCfg, err = actions_model.GetOwnerActionsConfig(t.Context(), owner.ID)
 			require.NoError(t, err)
-			assert.NotContains(t, ownerActionsCfg.AllowedCrossRepoIDs, repoBID)
+			if transferAllowed {
+				assert.NotContains(t, ownerActionsCfg.AllowedCrossRepoIDs, repoBID)
+			} else {
+				assert.Contains(t, ownerActionsCfg.AllowedCrossRepoIDs, repoBID)
+			}
 		})
 	})
 }

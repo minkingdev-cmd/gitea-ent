@@ -20,11 +20,13 @@ import (
 
 type DecisionListOptions struct {
 	PolicyListOptions
-	ActorID           *int64
-	RepoID            int64
-	Action            authz.Action
-	CandidateDecision string
-	Since, Until      timeutil.TimeStamp
+	ActorID               *int64
+	RepoID                int64
+	Action                authz.Action
+	DecisionMode          string
+	AuthorizationDecision string
+	CandidateDecision     string
+	Since, Until          timeutil.TimeStamp
 }
 
 func ListDecisions(ctx context.Context, actor *user_model.User, scope authz_model.Scope, options DecisionListOptions) ([]authz_model.DecisionRecord, int64, error) {
@@ -57,6 +59,12 @@ func ListDecisions(ctx context.Context, actor *user_model.User, scope authz_mode
 		}
 		if options.CandidateDecision != "" {
 			cond = cond.And(builder.Eq{"candidate_decision": options.CandidateDecision})
+		}
+		if options.DecisionMode != "" {
+			cond = cond.And(builder.Eq{"decision_mode": options.DecisionMode})
+		}
+		if options.AuthorizationDecision != "" {
+			cond = cond.And(builder.Eq{"authorization_decision": options.AuthorizationDecision})
 		}
 		if options.Since != 0 {
 			cond = cond.And(builder.Gte{"created_unix": options.Since})
@@ -107,7 +115,7 @@ func GetDecision(ctx context.Context, actor *user_model.User, scope authz_model.
 }
 
 func (o DecisionListOptions) validate() error {
-	if o.RepoID < 0 || o.Since < 0 || o.Until < 0 || o.Since != 0 && o.Until != 0 && o.Since > o.Until {
+	if o.RepoID < 0 || o.Since < 0 || o.Until < 0 || o.Since > 253402300799 || o.Until > 253402300799 || o.Since != 0 && o.Until != 0 && o.Since > o.Until {
 		return ErrInvalidPolicy
 	}
 	if o.ActorID != nil && *o.ActorID < 0 && !slices.Contains([]int64{user_model.GhostUserID, user_model.ActionsUserID, user_model.DeployKeyUserID, user_model.CliUserID, user_model.AuthSourceUserID}, *o.ActorID) {
@@ -117,6 +125,12 @@ func (o DecisionListOptions) validate() error {
 		if _, exists := authz.LookupAction(o.Action); !exists {
 			return ErrInvalidPolicy
 		}
+	}
+	if o.DecisionMode != "" && !slices.Contains([]string{"shadow", "enforce"}, o.DecisionMode) {
+		return ErrInvalidPolicy
+	}
+	if o.AuthorizationDecision != "" && !slices.Contains([]string{"not_enforced", "allow", "deny", "error", "fallback"}, o.AuthorizationDecision) {
+		return ErrInvalidPolicy
 	}
 	if o.CandidateDecision != "" && !slices.Contains([]string{"allow", "deny", "error"}, o.CandidateDecision) {
 		return ErrInvalidPolicy

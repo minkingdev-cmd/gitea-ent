@@ -1363,7 +1363,7 @@
     },
     "/enterprise/authz/actions": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1396,7 +1396,7 @@
     },
     "/enterprise/authz/bindings": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1444,7 +1444,7 @@
         }
       },
       "put": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -1491,7 +1491,7 @@
     },
     "/enterprise/authz/bindings/{id}": {
       "delete": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1534,7 +1534,7 @@
     },
     "/enterprise/authz/decisions": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1586,6 +1586,29 @@
             "in": "query"
           },
           {
+            "enum": [
+              "shadow",
+              "enforce"
+            ],
+            "type": "string",
+            "description": "Recorded mode (shadow or enforce), never inferred from current configuration",
+            "name": "mode",
+            "in": "query"
+          },
+          {
+            "enum": [
+              "not_enforced",
+              "allow",
+              "deny",
+              "error",
+              "fallback"
+            ],
+            "type": "string",
+            "description": "Actual enterprise admission, not the candidate or business outcome",
+            "name": "authorization",
+            "in": "query"
+          },
+          {
             "type": "integer",
             "format": "int64",
             "description": "Inclusive Unix timestamp in seconds",
@@ -1624,7 +1647,7 @@
     },
     "/enterprise/authz/decisions/{id}": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1667,7 +1690,7 @@
     },
     "/enterprise/authz/roles": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1715,7 +1738,7 @@
         }
       },
       "post": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -1765,7 +1788,7 @@
     },
     "/enterprise/authz/roles/{id}": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1806,7 +1829,7 @@
         }
       },
       "delete": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -1858,7 +1881,7 @@
         }
       },
       "patch": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -3705,7 +3728,7 @@
     },
     "/orgs/{org}/enterprise/authz/bindings": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -3760,7 +3783,7 @@
         }
       },
       "put": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -3814,7 +3837,7 @@
     },
     "/orgs/{org}/enterprise/authz/bindings/{id}": {
       "delete": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -3864,7 +3887,7 @@
     },
     "/orgs/{org}/enterprise/authz/decisions": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -3923,6 +3946,29 @@
             "in": "query"
           },
           {
+            "enum": [
+              "shadow",
+              "enforce"
+            ],
+            "type": "string",
+            "description": "Recorded mode (shadow or enforce), never inferred from current configuration",
+            "name": "mode",
+            "in": "query"
+          },
+          {
+            "enum": [
+              "not_enforced",
+              "allow",
+              "deny",
+              "error",
+              "fallback"
+            ],
+            "type": "string",
+            "description": "Actual enterprise admission, not the candidate or business outcome",
+            "name": "authorization",
+            "in": "query"
+          },
+          {
             "type": "integer",
             "format": "int64",
             "description": "Inclusive Unix timestamp in seconds",
@@ -3961,7 +4007,7 @@
     },
     "/orgs/{org}/enterprise/authz/decisions/{id}": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -4011,7 +4057,7 @@
     },
     "/orgs/{org}/enterprise/authz/roles": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -4066,7 +4112,7 @@
         }
       },
       "post": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -4123,7 +4169,7 @@
     },
     "/orgs/{org}/enterprise/authz/roles/{id}": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -4171,7 +4217,7 @@
         }
       },
       "delete": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -4230,7 +4276,7 @@
         }
       },
       "patch": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -5965,11 +6011,17 @@
           "201": {
             "$ref": "#/responses/Team"
           },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
           "404": {
             "$ref": "#/responses/notFound"
           },
           "422": {
             "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -9785,7 +9837,7 @@
             "$ref": "#/responses/Branch"
           },
           "403": {
-            "description": "The branch is archived or a mirror."
+            "description": "The native or enterprise authorization denied the operation."
           },
           "404": {
             "description": "The old branch does not exist."
@@ -9795,6 +9847,9 @@
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -9898,6 +9953,9 @@
           },
           "422": {
             "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -9945,6 +10003,9 @@
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -10002,6 +10063,9 @@
           },
           "422": {
             "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -10189,11 +10253,17 @@
           "204": {
             "$ref": "#/responses/empty"
           },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
           "404": {
             "$ref": "#/responses/notFound"
           },
           "422": {
             "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -10681,6 +10751,9 @@
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -10851,6 +10924,9 @@
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -10912,6 +10988,9 @@
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -10976,6 +11055,9 @@
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -11021,11 +11103,17 @@
           "200": {
             "$ref": "#/responses/FileResponse"
           },
+          "403": {
+            "$ref": "#/responses/error"
+          },
           "404": {
             "$ref": "#/responses/notFound"
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -11081,7 +11169,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/bindings": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11143,7 +11231,7 @@
         }
       },
       "put": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -11204,7 +11292,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/bindings/{id}": {
       "delete": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11261,7 +11349,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/decisions": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11327,6 +11415,29 @@
             "in": "query"
           },
           {
+            "enum": [
+              "shadow",
+              "enforce"
+            ],
+            "type": "string",
+            "description": "Recorded mode (shadow or enforce), never inferred from current configuration",
+            "name": "mode",
+            "in": "query"
+          },
+          {
+            "enum": [
+              "not_enforced",
+              "allow",
+              "deny",
+              "error",
+              "fallback"
+            ],
+            "type": "string",
+            "description": "Actual enterprise admission, not the candidate or business outcome",
+            "name": "authorization",
+            "in": "query"
+          },
+          {
             "type": "integer",
             "format": "int64",
             "description": "Inclusive Unix timestamp in seconds",
@@ -11365,7 +11476,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/decisions/{id}": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11422,7 +11533,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/effective-permissions": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11478,7 +11589,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/evaluate": {
       "post": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -11539,7 +11650,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/roles": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11601,7 +11712,7 @@
         }
       },
       "post": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -11665,7 +11776,7 @@
     },
     "/repos/{owner}/{repo}/enterprise/authz/roles/{id}": {
       "get": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11720,7 +11831,7 @@
         }
       },
       "delete": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "produces": [
           "application/json"
         ],
@@ -11786,7 +11897,7 @@
         }
       },
       "patch": {
-        "description": "Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.",
+        "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
         "consumes": [
           "application/json"
         ],
@@ -17116,10 +17227,16 @@
           "400": {
             "$ref": "#/responses/error"
           },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
           "404": {
             "$ref": "#/responses/notFound"
           },
           "409": {
+            "$ref": "#/responses/error"
+          },
+          "503": {
             "$ref": "#/responses/error"
           }
         }
@@ -19353,6 +19470,9 @@
           },
           "423": {
             "$ref": "#/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -20026,6 +20146,9 @@
           },
           "422": {
             "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -21963,6 +22086,9 @@
           },
           "422": {
             "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -22013,6 +22139,9 @@
           },
           "422": {
             "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -22996,8 +23125,14 @@
           "204": {
             "description": "team deleted"
           },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
           "404": {
             "$ref": "#/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -23033,8 +23168,14 @@
           "200": {
             "$ref": "#/responses/Team"
           },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
           "404": {
             "$ref": "#/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -23367,6 +23508,9 @@
           },
           "404": {
             "$ref": "#/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       },
@@ -23413,6 +23557,9 @@
           },
           "404": {
             "$ref": "#/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -31642,6 +31789,10 @@
           "type": "string",
           "x-go-name": "Description"
         },
+        "enforce_supported": {
+          "type": "boolean",
+          "x-go-name": "EnforceSupported"
+        },
         "key": {
           "type": "string",
           "x-go-name": "Key"
@@ -31834,7 +31985,7 @@
     },
     "EnterpriseAuthzDecision": {
       "type": "object",
-      "title": "EnterpriseAuthzDecision 是真实操作 shadow 证据，candidate 不影响原生操作。",
+      "title": "EnterpriseAuthzDecision 区分候选解释、实际授权及原生执行结果。",
       "properties": {
         "action": {
           "type": "string",
@@ -31845,11 +31996,20 @@
           "format": "int64",
           "x-go-name": "ActorID"
         },
+        "authorization_decision": {
+          "type": "string",
+          "x-go-name": "AuthorizationDecision"
+        },
+        "authorization_reason": {
+          "type": "string",
+          "x-go-name": "AuthorizationReason"
+        },
         "candidate_decision": {
           "type": "string",
           "x-go-name": "CandidateDecision"
         },
         "candidate_only": {
+          "description": "CandidateOnly 仅描述候选解释，不否定独立的真实授权字段。",
           "type": "boolean",
           "x-go-name": "CandidateOnly"
         },
@@ -31857,6 +32017,14 @@
           "type": "string",
           "format": "date-time",
           "x-go-name": "Created"
+        },
+        "decision_mode": {
+          "type": "string",
+          "x-go-name": "DecisionMode"
+        },
+        "execution_started": {
+          "type": "boolean",
+          "x-go-name": "ExecutionStarted"
         },
         "id": {
           "type": "integer",

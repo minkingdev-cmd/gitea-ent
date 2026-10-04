@@ -1,7 +1,7 @@
 {{template "admin/layout_head" (dict "pageClass" "admin enterprise-authz")}}
 <div data-authz-config data-authz-root="{{.AuthzRoot}}" data-authz-scope-type="{{.AuthzScope.Type}}" data-authz-scope-id="{{.AuthzScope.ID}}" data-choose="{{ctx.Locale.Tr "admin.enterprise_authz.choose_object"}}" data-loading="{{ctx.Locale.Tr "admin.enterprise_authz.search_loading"}}" data-error="{{ctx.Locale.Tr "admin.enterprise_authz.search_failed"}}" data-empty="{{ctx.Locale.Tr "admin.enterprise_authz.empty"}}" data-next="{{ctx.Locale.Tr "admin.enterprise_authz.next_page"}}" data-previous="{{ctx.Locale.Tr "admin.enterprise_authz.previous"}}"></div>
 <h2 class="ui header">{{ctx.Locale.Tr "admin.enterprise_authz.title"}}</h2>
-<div class="ui info message">{{ctx.Locale.Tr "admin.enterprise_authz.shadow_only"}}</div>
+<div class="ui info message">{{ctx.Locale.Tr "admin.enterprise_authz.mode_notice"}}</div>
 <h3>{{.AuthzScopeLabel}}</h3>
 <form class="ui form tw-mb-4" action="{{.AuthzRoot}}/scope" method="get" data-authz-scope>
  <div class="inline fields">

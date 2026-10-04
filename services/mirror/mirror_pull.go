@@ -106,6 +106,10 @@ func checkRecoverableSyncError(stderrMessage string) bool {
 
 // runSync returns true if sync finished without error.
 func runSync(ctx context.Context, m *repo_model.Mirror) ([]*repo_module.SyncResult, bool) {
+	if err := requirePullMirrorSyncMaintenance(ctx, m); err != nil {
+		log.Error("SyncMirrors: pull mirror maintenance admission failed: %v", err)
+		return nil, false
+	}
 	log.Trace("SyncMirrors [repo: %-v]: running git remote update...", m.Repo)
 
 	remoteURL, remoteErr := git.ParseRemoteAddressURL(ctx, m.Repo, m.GetRemoteName())
@@ -300,7 +304,11 @@ func SyncPullMirror(ctx context.Context, repoID int64) bool {
 		log.Error("SyncMirrors [repo_id: %v]: unable to GetMirrorByRepoID: %v", repoID, err)
 		return false
 	}
-	m.GetRepository(ctx) // force load repository of mirror
+	if m.GetRepository(ctx) == nil {
+		return false
+	}
+	maintenance := &pullMirrorSyncMaintenance{mirrorID: m.ID, repoID: m.RepoID, ownerID: m.Repo.OwnerID}
+	ctx = context.WithValue(ctx, pullMirrorSyncKey{}, maintenance)
 
 	ctx, _, finished := process.GetManager().AddContext(ctx, fmt.Sprintf("Syncing Mirror %s/%s", m.Repo.OwnerName, m.Repo.Name))
 	defer finished()
@@ -308,6 +316,9 @@ func SyncPullMirror(ctx context.Context, repoID int64) bool {
 	log.Trace("SyncMirrors [repo: %-v]: Running Sync", m.Repo)
 	results, ok := runSync(ctx, m)
 	if !ok {
+		if pullMirrorEnforceEnabled() && !maintenance.admitted {
+			return false
+		}
 		if err = repo_model.TouchMirror(ctx, m); err != nil {
 			log.Error("SyncMirrors [repo: %-v]: failed to TouchMirror: %v", m.Repo, err)
 		}

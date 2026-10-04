@@ -193,6 +193,9 @@ func AddOrUpdateCollaborator(ctx *context.APIContext) {
 		return
 	}
 	if err := repo_service.AddOrUpdateCollaborator(ctx, ctx.Repo.Repository, collaborator, p); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if errors.Is(err, user_model.ErrBlockedUser) {
 			ctx.APIError(http.StatusForbidden, err.Error())
 		} else {
@@ -228,6 +231,10 @@ func DeleteCollaborator(ctx *context.APIContext) {
 	//   type: string
 	//   required: true
 	// responses:
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 	//   "204":
 	//     "$ref": "#/responses/empty"
 	//   "404":
@@ -250,6 +257,9 @@ func DeleteCollaborator(ctx *context.APIContext) {
 		return
 	}
 	if err := repo_service.DeleteCollaboration(ctx, ctx.Repo.Repository, collaborator); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}

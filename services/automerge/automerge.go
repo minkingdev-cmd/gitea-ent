@@ -20,10 +20,12 @@ import (
 	user_model "gitea.dev/models/user"
 	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
+	"gitea.dev/modules/globallock"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/process"
 	"gitea.dev/modules/queue"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/services/automergequeue"
 	authz_service "gitea.dev/services/enterpriseauthz"
@@ -70,8 +72,35 @@ func populateRecentAutoMergeItems(ctx context.Context) {
 }
 
 // ScheduleAutoMerge if schedule is false and no error, pull can be merged directly
-func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_model.PullRequest, style repo_model.MergeStyle, message string, deleteBranchAfterMerge bool) (scheduled bool, err error) {
+func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_model.PullRequest, style repo_model.MergeStyle, message string, deleteBranchAfterMerge bool, options ...ScheduleOptions) (scheduled bool, err error) {
+	if pull == nil || doer == nil {
+		return false, errors.New("invalid auto merge target")
+	}
+	release := func() {}
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		release, err = globallock.Lock(ctx, fmt.Sprintf("pull_working_%d", pull.ID))
+		if err != nil {
+			return false, err
+		}
+	}
+	defer release()
+	ctx, admission, doer, err := beginAutoMergeSchedule(ctx, doer, pull, style, message, deleteBranchAfterMerge)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		outcome := authz_service.NativeUnknown
+		if err != nil {
+			outcome = authz_service.NativeFailed
+		}
+		admission.Finish(ctx, outcome, authz_service.StageOperation)
+	}()
 	err = db.WithTx(ctx, func(ctx context.Context) error {
+		if len(options) > 0 && options[0].ReplaceExisting {
+			if err := pull_model.DeleteScheduledAutoMerge(ctx, pull.ID); err != nil {
+				return err
+			}
+		}
 		if err := pull_model.ScheduleAutoMerge(ctx, doer, pull.ID, style, message, deleteBranchAfterMerge); err != nil {
 			return err
 		}
@@ -82,6 +111,7 @@ func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_
 	// If the transaction rolls back, then the pull request is not scheduled to auto merge.
 	// So we should only set "scheduled" to true if there is no error.
 	scheduled = err == nil
+	release()
 	if scheduled {
 		log.Trace("Pull request [%d] scheduled for auto merge with style [%s] and message [%s]", pull.ID, style, message)
 		automergequeue.StartAutoMergeCheckByPullHead(ctx, pull)
@@ -213,6 +243,17 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 	if err != nil {
 		return fmt.Errorf("failed to get scheduled user[%d]: %w", scheduledPRM.DoerID, err)
 	}
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		if doer.ID <= 0 {
+			return errors.Join(errSkipAutoMerge, errors.New("scheduled actor is no longer active"))
+		}
+		if doer.IsAdmin {
+			doer.IsAdmin, err = access_model.HasSystemManagementAuthority(ctx, doer)
+			if err != nil {
+				return err
+			}
+		}
+	}
 
 	perm, err := access_model.GetDoerRepoPermission(ctx, pr.BaseRepo, doer)
 	if err != nil {
@@ -224,6 +265,10 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		Credential: authz_service.CredentialCeiling{Read: true, Write: true},
 		Action:     authz.MergePullRequest, ConditionContext: authz.ConditionContext{Source: "auto_merge", Branch: pr.BaseBranch, BranchKnown: true},
 	})
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && (!doer.IsActive || doer.ProhibitLogin) {
+		authz_service.FinishOperationObservation(ctx, doer.ID, pr.BaseRepoID, authz.MergePullRequest, authz_service.NativeDenied, authz_service.StageAuthorization)
+		return errors.Join(errSkipAutoMerge, errors.New("scheduled actor is no longer active"))
+	}
 
 	if err := pull_service.CheckPullMergeable(ctx, doer, &perm, pr, pull_service.MergeCheckTypeGeneral, scheduledPRM.MergeStyle, false); err != nil {
 		return errors.Join(errSkipAutoMerge, errors.New("pull request is not mergeable"))
@@ -247,8 +292,17 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		if err != nil {
 			log.Error("ShouldDeleteBranchAfterMerge: %v", err)
 		} else if deleteBranchAfterMerge {
-			if err = repo_service.DeleteBranchAfterMerge(ctx, doer, pr.ID, nil); err != nil {
-				log.Error("DeleteBranchAfterMerge: %v", err)
+			cleanupCtx, observation, cleanupErr := autoMergeBranchCleanupContext(ctx, doer, pr.HeadRepoID, pr.HeadBranch)
+			if cleanupErr == nil {
+				cleanupErr = repo_service.DeleteBranchAfterMerge(cleanupCtx, doer, pr.ID, nil)
+			}
+			outcome := authz_service.NativeSuccess
+			if cleanupErr != nil {
+				outcome = authz_service.NativeFailed
+			}
+			observation.Finish(cleanupCtx, outcome, authz_service.StageOperation)
+			if cleanupErr != nil {
+				log.Error("DeleteBranchAfterMerge: %v", cleanupErr)
 			}
 		}
 	}

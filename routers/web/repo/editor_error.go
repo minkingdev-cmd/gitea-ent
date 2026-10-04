@@ -11,6 +11,7 @@ import (
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+	"gitea.dev/routers/common"
 	"gitea.dev/routers/utils"
 	context_service "gitea.dev/services/context"
 	files_service "gitea.dev/services/repository/files"
@@ -38,6 +39,9 @@ func editorHandleFileOperationErrorRender(ctx *context_service.Context, message,
 }
 
 func editorHandleFileOperationError(ctx *context_service.Context, targetBranchName string, err error) {
+	if common.WriteExecutionError(ctx.Base, err) {
+		return
+	}
 	if errAs := util.ErrorAsTranslatable(err); errAs != nil {
 		ctx.JSONError(errAs.Translate(ctx.Locale))
 	} else if errAs, ok := errorAs[git.ErrNotExist](err); ok {

@@ -40,10 +40,14 @@ func ApplyDiffPatch(ctx *context.APIContext) {
 	// responses:
 	//   "200":
 	//     "$ref": "#/responses/FileResponse"
+	//   "403":
+	//     "$ref": "#/responses/error"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 	apiOpts, changeRepoFileOpts := getAPIChangeRepoFileOptions[*api.ApplyDiffPatchFileOptions](ctx)
 	opts := &files.ApplyDiffPatchOptions{
 		Content: apiOpts.Content,

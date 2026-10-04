@@ -231,7 +231,7 @@ func total(ctx *context.APIContext, n int64) {
 func Actions(ctx *context.APIContext) {
 	result := api.EnterpriseAuthzActionCatalog{Version: authz.CatalogVersion, Actions: []api.EnterpriseAuthzAction{}}
 	for _, a := range authz.Catalog() {
-		result.Actions = append(result.Actions, api.EnterpriseAuthzAction{Key: string(a.Key), Description: a.Description, Units: a.Units, Risk: a.Risk, Mutating: a.Mutating, Observed: a.Observed, UnitsAny: a.UnitsAny})
+		result.Actions = append(result.Actions, api.EnterpriseAuthzAction{Key: string(a.Key), Description: a.Description, Units: a.Units, Risk: a.Risk, Mutating: a.Mutating, Observed: a.Observed, UnitsAny: a.UnitsAny, EnforceSupported: a.EnforceSupported})
 	}
 	ctx.JSON(http.StatusOK, result)
 }
@@ -418,7 +418,14 @@ func ListDecisions(ctx *context.APIContext) {
 		apiError(ctx, err)
 		return
 	}
-	options := authz_service.DecisionListOptions{PolicyListOptions: page, Action: authz.Action(ctx.FormString("action")), CandidateDecision: ctx.FormString("decision")}
+	query := ctx.Req.URL.Query()
+	for _, key := range []string{"action", "decision", "mode", "authorization"} {
+		if values, exists := query[key]; exists && (len(values) != 1 || values[0] == "") {
+			apiError(ctx, authz_service.ErrInvalidPolicy)
+			return
+		}
+	}
+	options := authz_service.DecisionListOptions{PolicyListOptions: page, Action: authz.Action(query.Get("action")), CandidateDecision: query.Get("decision"), DecisionMode: query.Get("mode"), AuthorizationDecision: query.Get("authorization")}
 	repoID, e1 := queryInt(ctx, "repo_id")
 	actorID, e2 := queryInt(ctx, "actor_id")
 	since, e3 := queryInt(ctx, "since")

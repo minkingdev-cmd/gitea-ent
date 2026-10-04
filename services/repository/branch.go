@@ -20,6 +20,7 @@ import (
 	"gitea.dev/modules/cache"
 	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
+	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/log"
@@ -376,6 +377,9 @@ func SyncBranchesToDB(ctx context.Context, repoID, pusherID int64, gitRepo *git.
 
 // CreateNewBranchFromCommit creates a new repository branch
 func CreateNewBranchFromCommit(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, gitRepo *git.Repository, commitID, branchName string) (err error) {
+	if doer == nil {
+		return accessRejection("invalid_execution_context", 403)
+	}
 	defer func() {
 		outcome := authz_service.NativeSuccess
 		if err != nil {
@@ -397,10 +401,31 @@ func CreateNewBranchFromCommit(ctx context.Context, doer *user_model.User, repo 
 		return err
 	}
 
-	if err := git.PushManaged(ctx, repo, repo, git.PushOptions{
+	ctx, ticket, finish, err := beginBranchGitExecution(ctx, doer, repo, authz.CreateBranch, branchName, func(bounded context.Context) ([]authz_service.GitExecutionInput, error) {
+		commit, err := gitRepo.GetCommit(bounded, commitID)
+		if err != nil {
+			return nil, err
+		}
+		commitID = commit.ID.String()
+		return []authz_service.GitExecutionInput{{Ref: git.RefNameFromBranch(branchName), OldCommitID: branchEmptyID(repo), NewCommitID: commit.ID.String(), GitRepo: gitRepo, NativeGuard: func(ctx context.Context, actor *user_model.User, current *repo_model.Repository) error {
+			return checkBranchExecutionNative(ctx, actor, current, "create", "", branchName, false)
+		}}}, nil
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
+	if err := validateBranchExecutionOwner(ctx, repo); err != nil {
+		return err
+	}
+	pushOptions := git.PushOptions{
 		Branch: fmt.Sprintf("%s:%s%s", commitID, git.BranchPrefix, branchName),
-		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo), string(authz_service.ManagedHookOperationTicket(ctx, doer, repo, branchName, authz.CreateBranch))),
-	}); err != nil {
+		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo), string(ticket)),
+	}
+	if branchEnforcementEnabled() {
+		pushOptions.ForceWithLease = git.BranchPrefix + branchName + ":" + branchEmptyID(repo)
+	}
+	if err := git.PushManaged(ctx, repo, repo, pushOptions); err != nil {
 		if git.IsErrPushOutOfDate(err) || git.IsErrPushRejected(err) {
 			return err
 		}
@@ -411,6 +436,9 @@ func CreateNewBranchFromCommit(ctx context.Context, doer *user_model.User, repo 
 
 // RenameBranch rename a branch
 func RenameBranch(ctx context.Context, repo *repo_model.Repository, doer *user_model.User, from, to string) (message string, err error) {
+	if doer == nil {
+		return "", accessRejection("invalid_execution_context", 403)
+	}
 	ctx, removed := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, from)
 	ctx, created := authz_service.WithRepoCreateBranchObservation(ctx, doer, repo.ID, to)
 	defer func() {
@@ -474,36 +502,66 @@ func RenameBranch(ctx context.Context, repo *repo_model.Repository, doer *user_m
 		return "", git_model.ErrBranchIsProtected
 	}
 
-	if err := git_model.RenameBranch(ctx, repo, from, to, func(ctx context.Context, isDefault bool) error {
-		err2 := git.RenameBranch(ctx, repo, from, to)
-		if err2 != nil {
-			return err2
+	gitRepo, err := git.OpenRepository(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+	defer gitRepo.Close()
+	var preparedOld string
+	ctx, _, finish, err := beginBranchGitExecution(ctx, doer, repo, authz.PushBranch, from, func(bounded context.Context) ([]authz_service.GitExecutionInput, error) {
+		old, err := gitRepo.GetBranchCommitID(bounded, from)
+		if err != nil {
+			return nil, err
 		}
-
-		if isDefault {
-			// if default branch changed, we need to delete all schedules and cron jobs
-			if err := actions_model.DeleteScheduleTaskByRepo(ctx, repo.ID); err != nil {
-				log.Error("DeleteCronTaskByRepo: %v", err)
+		preparedOld = old
+		native := func(ctx context.Context, actor *user_model.User, current *repo_model.Repository) error {
+			return checkBranchExecutionNative(ctx, actor, current, "rename", from, to, false)
+		}
+		return []authz_service.GitExecutionInput{{Ref: git.RefNameFromBranch(from), OldCommitID: old, NewCommitID: branchEmptyID(repo), GitRepo: gitRepo, NativeGuard: native}, {Ref: git.RefNameFromBranch(to), OldCommitID: branchEmptyID(repo), NewCommitID: old, GitRepo: gitRepo, NativeGuard: native}}, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	defer func() { finish(err) }()
+	if err := validateBranchExecutionOwner(ctx, repo); err != nil {
+		return "", err
+	}
+	if err := git_model.RenameBranch(ctx, repo, from, to,
+		func(ctx context.Context, isDefault bool) error {
+			var err2 error
+			if branchEnforcementEnabled() {
+				err2 = renameBranchWithLease(ctx, repo, from, to, preparedOld)
+			} else {
+				err2 = git.RenameBranch(ctx, repo, from, to)
 			}
-			// cancel running cron jobs of this repository and delete old schedules
-			if err := actions_service.CancelPreviousJobs(
-				ctx,
-				repo.ID,
-				from,
-				"",
-				webhook_module.HookEventSchedule,
-			); err != nil {
-				log.Error("CancelPreviousJobs: %v", err)
-			}
-
-			err2 = git.SetDefaultBranch(ctx, repo, to)
 			if err2 != nil {
 				return err2
 			}
-		}
 
-		return nil
-	}); err != nil {
+			if isDefault {
+				// if default branch changed, we need to delete all schedules and cron jobs
+				if err := actions_model.DeleteScheduleTaskByRepo(ctx, repo.ID); err != nil {
+					log.Error("DeleteCronTaskByRepo: %v", err)
+				}
+				// cancel running cron jobs of this repository and delete old schedules
+				if err := actions_service.CancelPreviousJobs(
+					ctx,
+					repo.ID,
+					from,
+					"",
+					webhook_module.HookEventSchedule,
+				); err != nil {
+					log.Error("CancelPreviousJobs: %v", err)
+				}
+
+				err2 = git.SetDefaultBranch(ctx, repo, to)
+				if err2 != nil {
+					return err2
+				}
+			}
+
+			return nil
+		}); err != nil {
 		return "", err
 	}
 
@@ -515,6 +573,9 @@ func RenameBranch(ctx context.Context, repo *repo_model.Repository, doer *user_m
 
 // UpdateBranch moves a branch reference to the provided commit. permission check should be done before calling this function.
 func UpdateBranch(ctx context.Context, repo *repo_model.Repository, gitRepo *git.Repository, doer *user_model.User, branchName, newCommitID, expectedOldCommitID string, force bool) (err error) {
+	if doer == nil {
+		return accessRejection("invalid_execution_context", 403)
+	}
 	ctx, observation := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, branchName)
 	pushed := false
 	defer func() {
@@ -560,14 +621,42 @@ func UpdateBranch(ctx context.Context, repo *repo_model.Repository, gitRepo *git
 		return util.NewInvalidArgumentErrorf("Force push %s need a confirm force parameter", branchName)
 	}
 
+	preparedOld := branch.CommitID
+	ctx, ticket, finish, err := beginBranchGitExecution(ctx, doer, repo, authz.PushBranch, branchName, func(bounded context.Context) ([]authz_service.GitExecutionInput, error) {
+		old, err := gitRepo.GetBranchCommitID(bounded, branchName)
+		if err != nil {
+			return nil, err
+		}
+		preparedOld = old
+		if expectedOldCommitID != "" && old != branch.CommitID {
+			return nil, accessRejection("invalid_execution_context", 403)
+		}
+		isForcePush, err = newCommit.IsForcePush(bounded, gitRepo, old)
+		if err != nil {
+			return nil, err
+		}
+		if isForcePush && !force {
+			return nil, accessRejection("native_visibility_denied", 403)
+		}
+		return []authz_service.GitExecutionInput{{Ref: git.RefNameFromBranch(branchName), OldCommitID: old, NewCommitID: newCommit.ID.String(), GitRepo: gitRepo, NativeGuard: func(ctx context.Context, actor *user_model.User, current *repo_model.Repository) error {
+			return checkBranchExecutionNative(ctx, actor, current, "update", branchName, branchName, isForcePush)
+		}}}, nil
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
+	if err := validateBranchExecutionOwner(ctx, repo); err != nil {
+		return err
+	}
 	pushOpts := git.PushOptions{
 		Branch: fmt.Sprintf("%s:%s%s", newCommit.ID.String(), git.BranchPrefix, branchName),
-		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo), string(authz_service.ManagedHookOperationTicket(ctx, doer, repo, branchName, authz.PushBranch))),
+		Env:    repo_module.WithAuthzOperation(repo_module.PushingEnvironment(doer, repo), string(ticket)),
 		Force:  isForcePush || force,
 	}
 
-	if expectedOldCommitID != "" {
-		pushOpts.ForceWithLease = fmt.Sprintf("%s:%s", git.BranchPrefix+branchName, branch.CommitID)
+	if expectedOldCommitID != "" || branchEnforcementEnabled() {
+		pushOpts.ForceWithLease = fmt.Sprintf("%s:%s", git.BranchPrefix+branchName, preparedOld)
 	}
 
 	// branch protection will be checked in the pre received hook, so that we don't need any check here
@@ -617,7 +706,15 @@ func deleteBranchInternal(ctx context.Context, doer *user_model.User, repo *repo
 
 	// process the branch in git
 	if branchCommit != nil {
-		err := git.DeleteBranch(ctx, repo, branchName, true)
+		var err error
+		if branchEnforcementEnabled() {
+			err = gitcmd.NewCommand("update-ref", "--no-deref", "-d").AddDynamicArguments(git.BranchPrefix+branchName, branchCommit.ID.String()).WithRepo(repo).Run(ctx)
+			if err == nil {
+				err = moveBranchConfig(ctx, repo, branchName, "")
+			}
+		} else {
+			err = git.DeleteBranch(ctx, repo, branchName, true)
+		}
 		if err != nil {
 			return false, fmt.Errorf("DeleteBranch: %w", err)
 		}
@@ -634,6 +731,9 @@ func deleteBranchInternal(ctx context.Context, doer *user_model.User, repo *repo
 
 // DeleteBranch delete branch
 func DeleteBranch(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, gitRepo *git.Repository, branchName string) (err error) {
+	if doer == nil {
+		return accessRejection("invalid_execution_context", 403)
+	}
 	ctx, observation := authz_service.WithRepoPushObservation(ctx, doer, repo.ID, branchName)
 	defer func() { observation.Finish(ctx, branchMutationOutcome(err), authz_service.StageOperation) }()
 	err = repo.MustNotBeArchived()
@@ -650,8 +750,29 @@ func DeleteBranch(ctx context.Context, doer *user_model.User, repo *repo_model.R
 	if err != nil && !errors.Is(err, util.ErrNotExist) {
 		return err
 	}
+	ctx, _, finish, err := beginBranchGitExecution(ctx, doer, repo, authz.PushBranch, branchName, func(bounded context.Context) ([]authz_service.GitExecutionInput, error) {
+		current, err := gitRepo.GetBranchCommit(bounded, branchName)
+		if err != nil && !errors.Is(err, util.ErrNotExist) {
+			return nil, err
+		}
+		branchCommit = current
+		old := branchEmptyID(repo)
+		if current != nil {
+			old = current.ID.String()
+		}
+		return []authz_service.GitExecutionInput{{Ref: git.RefNameFromBranch(branchName), OldCommitID: old, NewCommitID: branchEmptyID(repo), GitRepo: gitRepo, NativeGuard: func(ctx context.Context, actor *user_model.User, current *repo_model.Repository) error {
+			return checkBranchExecutionNative(ctx, actor, current, "delete", branchName, "", false)
+		}}}, nil
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
 
 	branchExisted, err := db.WithTx2(ctx, func(ctx context.Context) (bool, error) {
+		if err := validateBranchExecutionOwner(ctx, repo); err != nil {
+			return false, err
+		}
 		return deleteBranchInternal(ctx, doer, repo, branchName, branchCommit)
 	})
 	if err != nil {

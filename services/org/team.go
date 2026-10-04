@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	audit_model "gitea.dev/models/audit"
@@ -70,7 +71,20 @@ func NewTeam(ctx context.Context, t *organization.Team) (err error) {
 		return organization.ErrTeamAlreadyExist{OrgID: t.OrgID, Name: t.LowerName}
 	}
 
+	finish := func(error) {}
+	if t.IncludesAllRepositories {
+		ctx, finish, err = repo_service.BeginTeamAccessMutation(ctx, t, "create")
+		if err != nil {
+			return err
+		}
+	}
+	defer func() { finish(err) }()
 	if err = db.WithTx(ctx, func(ctx context.Context) error {
+		if t.IncludesAllRepositories {
+			if err := repo_service.ValidateTeamAccessMutation(ctx, t); err != nil {
+				return err
+			}
+		}
 		if err = db.Insert(ctx, t); err != nil {
 			return err
 		}
@@ -106,7 +120,7 @@ func NewTeam(ctx context.Context, t *organization.Team) (err error) {
 }
 
 // UpdateTeam updates information of team.
-func UpdateTeam(ctx context.Context, t *organization.Team, authChanged, includeAllChanged bool) (err error) {
+func UpdateTeam(ctx context.Context, t *organization.Team, authChanged, _ bool) (err error) {
 	if len(t.Name) == 0 {
 		return util.NewInvalidArgumentErrorf("empty team name")
 	}
@@ -115,7 +129,37 @@ func UpdateTeam(ctx context.Context, t *organization.Team, authChanged, includeA
 		t.Description = t.Description[:255]
 	}
 
+	current, err := organization.GetTeamByID(ctx, t.ID)
+	if err != nil {
+		return err
+	}
+	if current.OrgID != t.OrgID {
+		return util.ErrPermissionDenied
+	}
+	if err := current.LoadUnits(ctx); err != nil {
+		return err
+	}
+	if t.Units == nil && !authChanged {
+		t.Units = current.Units
+	}
+	authChanged = current.AccessMode != t.AccessMode || !maps.Equal(current.GetUnitsMap(), t.GetUnitsMap())
+	includeAllChanged := current.IncludesAllRepositories != t.IncludesAllRepositories
+	finish := func(error) {}
+	if authChanged || includeAllChanged {
+		ctx, finish, err = repo_service.BeginTeamAccessMutation(ctx, t, "update")
+		if err != nil {
+			return err
+		}
+	}
+	defer func() { finish(err) }()
+
 	if err = db.WithTx(ctx, func(ctx context.Context) error {
+		if authChanged || includeAllChanged {
+			if err := repo_service.ValidateTeamAccessMutation(ctx, t); err != nil {
+				return err
+			}
+		}
+
 		t.LowerName = strings.ToLower(t.Name)
 		has, err := db.Exist[organization.Team](ctx, builder.Eq{
 			"org_id":     t.OrgID,
@@ -189,8 +233,17 @@ func UpdateTeam(ctx context.Context, t *organization.Team, authChanged, includeA
 
 // DeleteTeam deletes given team.
 // It's caller's responsibility to assign organization ID.
-func DeleteTeam(ctx context.Context, t *organization.Team) error {
+func DeleteTeam(ctx context.Context, t *organization.Team) (err error) {
+	ctx, finish, err := repo_service.BeginTeamAccessMutation(ctx, t, "delete")
+	if err != nil {
+		return err
+	}
+	defer func() { finish(err) }()
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
+		if err := repo_service.ValidateTeamAccessMutation(ctx, t); err != nil {
+			return err
+		}
+
 		if err := authz_model.DeleteSubject(ctx, authz_model.SubjectTeam, t.ID); err != nil {
 			return err
 		}
@@ -214,7 +267,7 @@ func DeleteTeam(ctx context.Context, t *organization.Team) error {
 			}
 		}
 
-		if err := repo_service.RemoveAllRepositoriesFromTeam(ctx, t); err != nil {
+		if err := repo_service.RemoveTeamRepositoriesForDeletion(ctx, t); err != nil {
 			return err
 		}
 

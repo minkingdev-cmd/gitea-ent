@@ -45,6 +45,12 @@ func authzScopeName(ctx *context.Context, scope authz_model.Scope) (string, erro
 }
 
 func authzSelectorDisplay(ctx *context.Context, kind string, item *authz_service.UISelectorItem) error {
+	if kind == "history_actor" && item.ID == 0 {
+		item.Label = ctx.Locale.TrString("admin.enterprise_authz.anonymous_machine_actor")
+		item.Missing = false
+		return nil
+	}
+
 	if item.Missing {
 		key := "deleted_user"
 		if kind == "history_repo" {

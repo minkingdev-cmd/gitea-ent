@@ -4,6 +4,7 @@
 package enterpriseauthz
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -190,6 +191,10 @@ func (ui *ManagementUI) selectHistory(resolved *managementScope, kind, keyword s
 		}
 		search := builder.In(column, candidates)
 		if kind == "history_actor" {
+			if slices.ContainsFunc([]string{"anonymous", "machine", "runner"}, func(alias string) bool { return strings.Contains(alias, text) }) {
+				search = search.Or(builder.Eq{column: 0})
+			}
+
 			for _, actor := range []*user_model.User{user_model.NewGhostUser(), user_model.NewActionsUser(), user_model.NewDeployKeyUser(), user_model.NewCliUser(), user_model.NewAuthSourceUser()} {
 				if strings.Contains(actor.LowerName, text) || strings.Contains(strings.ToLower(actor.FullName), text) {
 					search = search.Or(builder.Eq{column: actor.ID})

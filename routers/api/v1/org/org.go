@@ -21,14 +21,17 @@ import (
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/optional"
+	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/user"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	feed_service "gitea.dev/services/feed"
 	"gitea.dev/services/org"
 	repo_service "gitea.dev/services/repository"
@@ -540,9 +543,13 @@ func ListOrgActivityFeeds(ctx *context.APIContext) {
 	ctx.JSON(http.StatusOK, convert.ToActivities(ctx, feeds, ctx.Doer))
 }
 
-func deleteOrgReposBackground(ctx gocontext.Context, org *organization.Organization, repoIDs []int64, doer *user_model.User) {
+func deleteOrgReposBackground(ctx gocontext.Context, org *organization.Organization, repoIDs []int64, doer *user_model.User, admission *authz_service.Admission, cleanup func()) {
+	defer cleanup()
+	outcome := authz_service.NativeSuccess
+	defer func() { admission.Finish(ctx, outcome, authz_service.StageOperation) }()
 	defer func() {
 		if r := recover(); r != nil {
+			outcome = authz_service.NativeFailed
 			log.Error("panic during org repo deletion: %v, stack: %v", r, log.Stack(2))
 		}
 	}()
@@ -550,12 +557,14 @@ func deleteOrgReposBackground(ctx gocontext.Context, org *organization.Organizat
 	for _, repoID := range repoIDs {
 		repo, err := repo_model.GetRepositoryByID(ctx, repoID)
 		if err != nil {
+			outcome = authz_service.NativeFailed
 			desc := fmt.Sprintf("Failed to get repository ID %d in org %s: %v", repoID, org.Name, err)
 			_ = system_model.CreateNotice(ctx, system_model.NoticeRepository, desc)
 			log.Error("GetRepositoryByID failed: %v", desc)
 			continue
 		}
 		if err := repo_service.DeleteRepository(ctx, doer, repo, true); err != nil {
+			outcome = authz_service.NativeFailed
 			desc := fmt.Sprintf("Failed to delete repository %s (ID: %d) in org %s: %v", repo.Name, repo.ID, org.Name, err)
 			_ = system_model.CreateNotice(ctx, system_model.NoticeRepository, desc)
 			log.Error("DeleteRepository failed: %v", desc)
@@ -602,7 +611,23 @@ func DeleteOrgRepos(ctx *context.APIContext) {
 	}
 
 	// Start deletion (slow) in background with detached context, so it can continue even if the request is canceled
-	go deleteOrgReposBackground(graceful.GetManager().ShutdownContext(), ctx.Org.Organization, repoIDs, ctx.Doer)
+	backgroundCtx := graceful.GetManager().ShutdownContext()
+	var admission *authz_service.Admission
+	cleanup := func() {}
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		detached, cancel := gocontext.WithCancel(gocontext.WithoutCancel(ctx))
+		stop := gocontext.AfterFunc(backgroundCtx, cancel)
+		cleanup = func() { stop(); cancel() }
+		backgroundCtx, admission, err = repo_service.PrepareOrganizationRepositoryDeletion(detached, ctx.Doer, ctx.Org.Organization.ID, repoIDs)
+		if err != nil {
+			cleanup()
+			if !common.WriteExecutionError(ctx.Base, err) {
+				ctx.APIErrorInternal(err)
+			}
+			return
+		}
+	}
+	go deleteOrgReposBackground(backgroundCtx, ctx.Org.Organization, repoIDs, ctx.Doer, admission, cleanup)
 
 	ctx.Status(http.StatusAccepted)
 }

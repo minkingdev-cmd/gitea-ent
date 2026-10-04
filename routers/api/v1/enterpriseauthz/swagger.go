@@ -6,7 +6,7 @@ package enterpriseauthz
 // swagger:operation GET /enterprise/authz/roles enterprise enterpriseAuthzSystemListRoles
 // ---
 // summary: System enterprise authorization ListRoles
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -40,7 +40,7 @@ package enterpriseauthz
 // swagger:operation POST /enterprise/authz/roles enterprise enterpriseAuthzSystemCreateRole
 // ---
 // summary: System enterprise authorization CreateRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -71,7 +71,7 @@ package enterpriseauthz
 // swagger:operation GET /enterprise/authz/roles/{id} enterprise enterpriseAuthzSystemGetRole
 // ---
 // summary: System enterprise authorization GetRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -98,7 +98,7 @@ package enterpriseauthz
 // swagger:operation PATCH /enterprise/authz/roles/{id} enterprise enterpriseAuthzSystemUpdateRole
 // ---
 // summary: System enterprise authorization UpdateRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -135,7 +135,7 @@ package enterpriseauthz
 // swagger:operation DELETE /enterprise/authz/roles/{id} enterprise enterpriseAuthzSystemDeleteRole
 // ---
 // summary: System enterprise authorization DeleteRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -170,7 +170,7 @@ package enterpriseauthz
 // swagger:operation GET /enterprise/authz/bindings enterprise enterpriseAuthzSystemListBindings
 // ---
 // summary: System enterprise authorization ListBindings
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -204,7 +204,7 @@ package enterpriseauthz
 // swagger:operation PUT /enterprise/authz/bindings enterprise enterpriseAuthzSystemPutBinding
 // ---
 // summary: System enterprise authorization PutBinding
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -233,7 +233,7 @@ package enterpriseauthz
 // swagger:operation DELETE /enterprise/authz/bindings/{id} enterprise enterpriseAuthzSystemDeleteBinding
 // ---
 // summary: System enterprise authorization DeleteBinding
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -260,7 +260,7 @@ package enterpriseauthz
 // swagger:operation GET /enterprise/authz/decisions enterprise enterpriseAuthzSystemListDecisions
 // ---
 // summary: System enterprise authorization ListDecisions
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -299,6 +299,18 @@ package enterpriseauthz
 //   type: string
 //   required: false
 //   description: allow, deny or error
+// - name: mode
+//   in: query
+//   type: string
+//   required: false
+//   description: Recorded mode (shadow or enforce), never inferred from current configuration
+//   enum: [shadow, enforce]
+// - name: authorization
+//   in: query
+//   type: string
+//   required: false
+//   description: Actual enterprise admission, not the candidate or business outcome
+//   enum: [not_enforced, allow, deny, error, fallback]
 // - name: since
 //   in: query
 //   type: integer
@@ -328,7 +340,7 @@ package enterpriseauthz
 // swagger:operation GET /enterprise/authz/decisions/{id} enterprise enterpriseAuthzSystemGetDecision
 // ---
 // summary: System enterprise authorization GetDecision
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -355,7 +367,7 @@ package enterpriseauthz
 // swagger:operation GET /enterprise/authz/actions enterprise enterpriseAuthzSystemActions
 // ---
 // summary: System enterprise authorization Actions
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // responses:
@@ -375,7 +387,7 @@ package enterpriseauthz
 // swagger:operation GET /orgs/{org}/enterprise/authz/roles enterprise enterpriseAuthzOrgListRoles
 // ---
 // summary: Org enterprise authorization ListRoles
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -414,7 +426,7 @@ package enterpriseauthz
 // swagger:operation POST /orgs/{org}/enterprise/authz/roles enterprise enterpriseAuthzOrgCreateRole
 // ---
 // summary: Org enterprise authorization CreateRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -450,7 +462,7 @@ package enterpriseauthz
 // swagger:operation GET /orgs/{org}/enterprise/authz/roles/{id} enterprise enterpriseAuthzOrgGetRole
 // ---
 // summary: Org enterprise authorization GetRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -482,7 +494,7 @@ package enterpriseauthz
 // swagger:operation PATCH /orgs/{org}/enterprise/authz/roles/{id} enterprise enterpriseAuthzOrgUpdateRole
 // ---
 // summary: Org enterprise authorization UpdateRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -524,7 +536,7 @@ package enterpriseauthz
 // swagger:operation DELETE /orgs/{org}/enterprise/authz/roles/{id} enterprise enterpriseAuthzOrgDeleteRole
 // ---
 // summary: Org enterprise authorization DeleteRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -564,7 +576,7 @@ package enterpriseauthz
 // swagger:operation GET /orgs/{org}/enterprise/authz/bindings enterprise enterpriseAuthzOrgListBindings
 // ---
 // summary: Org enterprise authorization ListBindings
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -603,7 +615,7 @@ package enterpriseauthz
 // swagger:operation PUT /orgs/{org}/enterprise/authz/bindings enterprise enterpriseAuthzOrgPutBinding
 // ---
 // summary: Org enterprise authorization PutBinding
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -637,7 +649,7 @@ package enterpriseauthz
 // swagger:operation DELETE /orgs/{org}/enterprise/authz/bindings/{id} enterprise enterpriseAuthzOrgDeleteBinding
 // ---
 // summary: Org enterprise authorization DeleteBinding
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -669,7 +681,7 @@ package enterpriseauthz
 // swagger:operation GET /orgs/{org}/enterprise/authz/decisions enterprise enterpriseAuthzOrgListDecisions
 // ---
 // summary: Org enterprise authorization ListDecisions
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -713,6 +725,18 @@ package enterpriseauthz
 //   type: string
 //   required: false
 //   description: allow, deny or error
+// - name: mode
+//   in: query
+//   type: string
+//   required: false
+//   description: Recorded mode (shadow or enforce), never inferred from current configuration
+//   enum: [shadow, enforce]
+// - name: authorization
+//   in: query
+//   type: string
+//   required: false
+//   description: Actual enterprise admission, not the candidate or business outcome
+//   enum: [not_enforced, allow, deny, error, fallback]
 // - name: since
 //   in: query
 //   type: integer
@@ -742,7 +766,7 @@ package enterpriseauthz
 // swagger:operation GET /orgs/{org}/enterprise/authz/decisions/{id} enterprise enterpriseAuthzOrgGetDecision
 // ---
 // summary: Org enterprise authorization GetDecision
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -774,7 +798,7 @@ package enterpriseauthz
 // swagger:operation GET /repos/{owner}/{repo}/enterprise/authz/roles enterprise enterpriseAuthzRepoListRoles
 // ---
 // summary: Repo enterprise authorization ListRoles
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -818,7 +842,7 @@ package enterpriseauthz
 // swagger:operation POST /repos/{owner}/{repo}/enterprise/authz/roles enterprise enterpriseAuthzRepoCreateRole
 // ---
 // summary: Repo enterprise authorization CreateRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -859,7 +883,7 @@ package enterpriseauthz
 // swagger:operation GET /repos/{owner}/{repo}/enterprise/authz/roles/{id} enterprise enterpriseAuthzRepoGetRole
 // ---
 // summary: Repo enterprise authorization GetRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -896,7 +920,7 @@ package enterpriseauthz
 // swagger:operation PATCH /repos/{owner}/{repo}/enterprise/authz/roles/{id} enterprise enterpriseAuthzRepoUpdateRole
 // ---
 // summary: Repo enterprise authorization UpdateRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -943,7 +967,7 @@ package enterpriseauthz
 // swagger:operation DELETE /repos/{owner}/{repo}/enterprise/authz/roles/{id} enterprise enterpriseAuthzRepoDeleteRole
 // ---
 // summary: Repo enterprise authorization DeleteRole
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -988,7 +1012,7 @@ package enterpriseauthz
 // swagger:operation GET /repos/{owner}/{repo}/enterprise/authz/bindings enterprise enterpriseAuthzRepoListBindings
 // ---
 // summary: Repo enterprise authorization ListBindings
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -1032,7 +1056,7 @@ package enterpriseauthz
 // swagger:operation PUT /repos/{owner}/{repo}/enterprise/authz/bindings enterprise enterpriseAuthzRepoPutBinding
 // ---
 // summary: Repo enterprise authorization PutBinding
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:
@@ -1071,7 +1095,7 @@ package enterpriseauthz
 // swagger:operation DELETE /repos/{owner}/{repo}/enterprise/authz/bindings/{id} enterprise enterpriseAuthzRepoDeleteBinding
 // ---
 // summary: Repo enterprise authorization DeleteBinding
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -1108,7 +1132,7 @@ package enterpriseauthz
 // swagger:operation GET /repos/{owner}/{repo}/enterprise/authz/decisions enterprise enterpriseAuthzRepoListDecisions
 // ---
 // summary: Repo enterprise authorization ListDecisions
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -1157,6 +1181,18 @@ package enterpriseauthz
 //   type: string
 //   required: false
 //   description: allow, deny or error
+// - name: mode
+//   in: query
+//   type: string
+//   required: false
+//   description: Recorded mode (shadow or enforce), never inferred from current configuration
+//   enum: [shadow, enforce]
+// - name: authorization
+//   in: query
+//   type: string
+//   required: false
+//   description: Actual enterprise admission, not the candidate or business outcome
+//   enum: [not_enforced, allow, deny, error, fallback]
 // - name: since
 //   in: query
 //   type: integer
@@ -1186,7 +1222,7 @@ package enterpriseauthz
 // swagger:operation GET /repos/{owner}/{repo}/enterprise/authz/decisions/{id} enterprise enterpriseAuthzRepoGetDecision
 // ---
 // summary: Repo enterprise authorization GetDecision
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -1223,7 +1259,7 @@ package enterpriseauthz
 // swagger:operation GET /repos/{owner}/{repo}/enterprise/authz/effective-permissions enterprise enterpriseAuthzRepoEffectivePermissions
 // ---
 // summary: Repo enterprise authorization EffectivePermissions
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // parameters:
@@ -1260,7 +1296,7 @@ package enterpriseauthz
 // swagger:operation POST /repos/{owner}/{repo}/enterprise/authz/evaluate enterprise enterpriseAuthzRepoEvaluate
 // ---
 // summary: Repo enterprise authorization Evaluate
-// description: Native token scopes and authority are required; shadow roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only is true and safety_guards_evaluated is false. POST requires write scope, GET requires read scope.
+// description: Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.
 // produces:
 // - application/json
 // consumes:

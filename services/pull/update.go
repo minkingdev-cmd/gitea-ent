@@ -19,14 +19,20 @@ import (
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/repository"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // Update updates pull request with base branch.
 func Update(operationCtx context.Context, pr *issues_model.PullRequest, doer *user_model.User, message string, rebase bool) (err error) {
+	if pr == nil || doer == nil {
+		return util.ErrInvalidArgument
+	}
 	operationCtx, observation := authz_service.WithRepoPushObservation(operationCtx, doer, pr.HeadRepoID, pr.HeadBranch)
 	ctx := authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), operationCtx)
+	execution := new(mergeExecution)
+	defer func() { execution.finish(err) }()
 	defer func() {
 		outcome := authz_service.NativeSuccess
 		if err != nil {
@@ -48,6 +54,24 @@ func Update(operationCtx context.Context, pr *issues_model.PullRequest, doer *us
 		return fmt.Errorf("lock.Lock: %w", err)
 	}
 	defer releaser()
+	doer, err = refreshPullMutation(ctx, pr, doer)
+	if err != nil {
+		return err
+	}
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		if err := checkUpdateExecutionNative(ctx, pr, doer, rebase); err != nil {
+			return err
+		}
+		execution.nativeGuard = func(snapshot context.Context, actor *user_model.User, _ *repo_model.Repository) error {
+			current := *pr
+			actor.ExtDoerData = doer.ExtDoerData
+			actor, err := refreshPullMutation(snapshot, &current, actor)
+			if err != nil {
+				return err
+			}
+			return checkUpdateExecutionNative(snapshot, &current, actor, rebase)
+		}
+	}
 
 	if err := pr.LoadBaseRepo(ctx); err != nil {
 		log.Error("unable to load BaseRepo for %-v during update-by-merge: %v", pr, err)
@@ -80,10 +104,14 @@ func Update(operationCtx context.Context, pr *issues_model.PullRequest, doer *us
 	// TODO: The code is from https://github.com/go-gitea/gitea/pull/9784,
 	// it seems a simple copy-paste from https://github.com/go-gitea/gitea/pull/7082 without a real reason.
 	// TODO: DUPLICATE-PR-TASK: search and see another TODO comment for more details
-	defer addTestPullRequestTaskAfterWebOperation(pr, doer)
+	defer func() {
+		if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce || err == nil {
+			addTestPullRequestTaskAfterWebOperation(pr, doer)
+		}
+	}()
 
 	if rebase {
-		return updateHeadByRebaseOnToBase(ctx, pr, doer)
+		return updateHeadByRebaseOnToBase(ctx, pr, doer, execution)
 	}
 
 	// TODO: FakePR: it is somewhat hacky, but it is the only way to "merge" at the moment
@@ -101,7 +129,7 @@ func Update(operationCtx context.Context, pr *issues_model.PullRequest, doer *us
 		BaseBranch: pr.HeadBranch,
 	}
 
-	_, err = doMergeAndPush(ctx, reversePR, doer, repo_model.MergeStyleMerge, "", message, repository.PushTriggerPRUpdateWithBase)
+	_, err = doMergeAndPush(ctx, reversePR, doer, repo_model.MergeStyleMerge, "", message, repository.PushTriggerPRUpdateWithBase, execution)
 	// TODO: the "update" (merge target branch to PR head branch) operation has finished, there could still be some edge cases:
 	// * the database was already out of sync: the target branch was already in head branch:
 	//   * so no post-receive hook is really executed, no PR status update

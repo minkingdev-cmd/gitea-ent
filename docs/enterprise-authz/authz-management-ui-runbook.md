@@ -9,7 +9,7 @@
 - 企微开启时：有效原生站点管理员＋当前 CorpID/AgentID 下 active、已绑定的 management authority。普通 IsAdmin、message-only、其他应用 authority、失效绑定均拒绝。
 - 企微关闭时：沿用有效原生站点管理员。被禁用、限制、撤销 authority 的旧 session/表单下一请求不能继续维护。
 - `EnterpriseAuthz.Enabled=false` 时入口隐藏；已认证且受权者访问返回404，不读取企业策略。没有 UI 启停/enforce 按钮。
-- 全部结果仅为 shadow/candidate。角色不能绕过仓库可见性、repo unit、分支保护、合并守卫或其他原生检查。
+- 有效权限和诊断始终仅为 candidate；真实历史区分记录时的 shadow/enforce 与企业准入结果。角色不能绕过仓库可见性、repo unit、分支保护、合并守卫或其他原生检查。
 
 ## 维护流程
 
@@ -40,7 +40,7 @@
 - 按名称选择本地用户，输入 branch 和完整 paths 后显示 native actions、role actions、缺失 action、匹配/未匹配/unresolved、角色名称和 revision；技术编号仅在辅助详情中显示。
 - “候选允许”不代表真实操作一定通过；完整分支/merge safety guards 未评估，不模拟某个特定 PAT、SSH key 或 deploy credential。诊断不执行 Git、不写真实操作决策。
 - 诊断 paths 只用于本请求，结果不回显；失败保留用户/action/branch 等可恢复字段，但不持久保存 paths。
-- 历史按 actor/repo 名称、action/candidate/本地日期时间筛选，最多100条/页。详情使用记录时的安全 snapshot、revision 和 condition hash，不用当前角色重算。
+- 历史按 actor/repo 名称、action/candidate、记录时模式、企业授权结果及本地日期时间筛选，最多100条/页。详情使用记录时的安全 snapshot、revision 和 condition hash，不用当前角色重算。
 - operation/observation 分开显示，包含协议64hex observation；native unknown/failed 不宣称确定 mismatch。系统历史可从受权历史候选中选择已删除仓库（辅助编号仅用于区分）查询，详情标记已删除仓库。
 
 页面时间自动按浏览器本地时区展示，日期控件同样使用该时区，页面显示检测到的时区。后台及 URL 查询保存标准时间点，旧 Unix 数值链接仍可打开，刷新/分页不会再次偏移。不需要手动输入时区或 Unix 秒。夏令时跳过的不存在时间会提示无效，未编辑的重复时段保留原时间点。关闭 JavaScript 时日期编辑禁用，已有标准筛选保留，避免误用服务器时区。终端时间显示沿用终端本地时区，不固定 UTC。
@@ -51,10 +51,24 @@
 
 新增 UI 是全局仅超管的 session 工作区。原 `/api/v1/.../enterprise/authz` 继续原 reqToken/scope/目标 authority 合同；合法 org/repo owner 使用合适 PAT 仍可调用原 API，UI 不对普通 owner 开放，也不要求超管输入 PAT。
 
-## 发布与仅 UI 回退
+## 初始 UI 交付的发布与仅 UI 回退
 
 - 服务端仅 Linux；发布后端和匹配模板/前端资源，沿用已验收 foundation 的 schema、八个 seed、配置与审计机制。
 - 本 UI 不新增 schema/migration、seed、默认权限、config、action、OpenFGA/Keycloak，也不更改生产 callback 关闭、登录刷新或定时完整同步。
 - 回退使用已安装的匹配 foundation 版本二进制和资源，只移除新增 UI。**不降 schema，不删除策略/历史，不恢复部分策略表，不改开关或 API 权限。**
 - 策略本身已真实维护，即使 shadow-only 也需要保留；撤销某次策略变更必须通过受权业务操作与 revision 控制显式完成。
 - 启用前仍执行 foundation 原有 readiness/migration 验收，不能用 UI 或手工回填掩盖缺失 seed。
+
+## Enforce 历史的追加合同
+
+`enforce-enterprise-authz-high-risk-actions` 在既有列表/详情追加四个 API 字段：`decision_mode`、`authorization_decision`、`authorization_reason`、`execution_started`。此扩展不改变原 UI/API authority、token scope、CSRF、登录或名称选择器，不增加配置开关。
+
+- 模式来自当时记录，不读取当前全局配置；升级前记录归为 `shadow/not_enforced`。Catalog v1/v2 的安全历史都可读取，未知版本或非法 mode/result/reason 返回安全失败，不展示 raw snapshot。
+- `shadow` 仅观察；`enforce` 的 `allow` 表示准入，**不是操作成功**。`deny/error` 明示未执行，原生结果为 `unknown`，不伪造原生拒绝。
+- `fallback` 明示按原生守卫继续，不能从候选权限推断角色已放行。`execution_started=true` 只说明执行开始，真实终态仍由 `native_outcome` 表示；`allow + unknown` 仍是未确认结果。
+- 只有可比较的 shadow 原生 success/denied 计算 mismatch；enforce、unknown、failed 不计算确定 mismatch。旧 shadow 的执行开始信息没有记录，不能从默认 false 推断未运行。
+- 原 API 追加 `mode=shadow|enforce` 和 `authorization=not_enforced|allow|deny|error|fallback` 筛选；非法、空值或重复 API 筛选拒绝。UI 空值表示不限，其他非法值和重复字段拒绝，分页保留筛选。已删除 repo 历史仍仅在系统受权范围读取。
+
+上节记录的是初始 UI-only 交付，不适用于新版 enforcement 的二进制/schema/seed 回退。新版需保留 additive 证据字段及 catalog v2 seed；不得仅回退到旧 foundation 二进制或手改 seed 来伪装兼容。完整 enforcement 配置、回退和 Linux 验收由对应 change 的运维手册/verification 管理。
+
+仓库 runner 注册 credential 的机器证据使用 actor0/source system/NativeOnly，仅限定 manage_ci，不归因 token 发行者或虚构人工 Owner。历史详情明确标记机器 credential，选择器用“anonymous or machine”表示 actor0；recorded native mode 仅说明凭据限定能力，不是人工管理 authority，内部 token reference 不展示。

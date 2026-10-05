@@ -4,8 +4,8 @@
 package repo
 
 import (
-	issues_model "gitea.dev/models/issues"
 	"gitea.dev/services/context"
+	issue_service "gitea.dev/services/issue"
 	notify_service "gitea.dev/services/notify"
 )
 
@@ -21,7 +21,7 @@ func IssueStartStopwatch(c *context.Context) {
 		return
 	}
 
-	if ok, err := issues_model.CreateIssueStopwatch(c, c.Doer, issue); err != nil {
+	if ok, err := issue_service.CreateIssueStopwatch(c, c.Doer, issue); err != nil {
 		c.ServerError("CreateIssueStopwatch", err)
 		return
 	} else if !ok {
@@ -45,7 +45,7 @@ func IssueStopStopwatch(c *context.Context) {
 		return
 	}
 
-	if ok, err := issues_model.FinishIssueStopwatch(c, c.Doer, issue); err != nil {
+	if ok, err := issue_service.FinishIssueStopwatch(c, c.Doer, issue); err != nil {
 		c.ServerError("FinishIssueStopwatch", err)
 		return
 	} else if !ok {
@@ -67,7 +67,7 @@ func CancelStopwatch(c *context.Context) {
 		return
 	}
 
-	if _, err := issues_model.CancelStopwatch(c, c.Doer, issue); err != nil {
+	if _, err := issue_service.CancelStopwatch(c, c.Doer, issue); err != nil {
 		c.ServerError("CancelStopwatch", err)
 		return
 	}

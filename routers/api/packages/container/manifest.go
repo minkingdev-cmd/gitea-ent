@@ -229,6 +229,9 @@ func processOciImageIndex(ctx context.Context, mci *manifestCreationInfo, buf *p
 }
 
 func createPackageAndVersion(ctx context.Context, mci *manifestCreationInfo, metadata *container_module.Metadata) (*packages_model.PackageVersion, error) {
+	if err := packages_service.RequirePackageNameWriteFeature(ctx, mci.Owner.ID, packages_model.TypeContainer, mci.Image); err != nil {
+		return nil, err
+	}
 	created := true
 	p := &packages_model.Package{
 		OwnerID:   mci.Owner.ID,
@@ -245,6 +248,9 @@ func createPackageAndVersion(ctx context.Context, mci *manifestCreationInfo, met
 		created = false
 	}
 
+	if err := packages_service.RequirePackageWriteFeature(ctx, p); err != nil {
+		return nil, err
+	}
 	if created {
 		if _, err := packages_model.InsertProperty(ctx, packages_model.PropertyTypePackage, p.ID, container_module.PropertyRepository, strings.ToLower(mci.Owner.LowerName+"/"+mci.Image)); err != nil {
 			log.Error("Error setting package property: %v", err)

@@ -243,7 +243,18 @@ func httpBase(ctx *context.Context, optGitService ...string) *serviceHandler {
 		}
 	}
 
+	if !isWiki {
+		if err := authz_service.RequireCargoIndexFeature(ctx, repo); err != nil {
+			ctx.PlainText(featureErrorStatus(err), "package index is unavailable")
+			return nil
+		}
+	}
+
 	if isWiki {
+		if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+			ctx.PlainText(featureErrorStatus(err), "repository wiki is disabled")
+			return nil
+		}
 		// Ensure the wiki is enabled before we allow access to it
 		if _, err := repo.GetUnit(ctx, unit.TypeWiki); err != nil {
 			if repo_model.IsErrUnitTypeNotExist(err) {

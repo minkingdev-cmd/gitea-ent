@@ -14,6 +14,9 @@ import (
 
 // ChangeContent changes issue content, as the given user.
 func ChangeContent(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, content string, contentVersion int) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	if err := issue.LoadRepo(ctx); err != nil {
 		return err
 	}

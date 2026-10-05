@@ -14,6 +14,7 @@ import (
 	system_model "gitea.dev/models/system"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/globallock"
@@ -23,6 +24,7 @@ import (
 	"gitea.dev/modules/util"
 	asymkey_service "gitea.dev/services/asymkey"
 	"gitea.dev/services/audit"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	repo_service "gitea.dev/services/repository"
 )
 
@@ -33,6 +35,9 @@ func getWikiWorkingLockKey(repoID int64) string {
 // InitWiki initializes a wiki for repository,
 // it does nothing when repository already has wiki.
 func InitWiki(ctx context.Context, repo *repo_model.Repository) error {
+	if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+		return err
+	}
 	// don't use HasWiki because the error should not be ignored.
 	if exist, err := git.IsRepositoryExist(ctx, repo.WikiStorageRepo()); err != nil {
 		return err
@@ -84,6 +89,9 @@ func prepareGitPath(ctx context.Context, gitRepo *git.Repository, defaultWikiBra
 
 // updateWikiPage adds a new page or edits an existing page in repository wiki.
 func updateWikiPage(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, oldWikiName, newWikiName WebPath, content, message string, isNew bool) (err error) {
+	if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+		return err
+	}
 	err = repo.MustNotBeArchived()
 	if err != nil {
 		return err
@@ -253,6 +261,9 @@ func EditWikiPage(ctx context.Context, doer *user_model.User, repo *repo_model.R
 
 // DeleteWikiPage deletes a wiki page identified by its path.
 func DeleteWikiPage(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, wikiName WebPath) (err error) {
+	if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+		return err
+	}
 	err = repo.MustNotBeArchived()
 	if err != nil {
 		return err
@@ -365,6 +376,9 @@ func DeleteWikiPage(ctx context.Context, doer *user_model.User, repo *repo_model
 
 // DeleteWiki removes the actual and local copy of repository wiki.
 func DeleteWiki(ctx context.Context, repo *repo_model.Repository) error {
+	if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+		return err
+	}
 	if err := repo_service.UpdateRepositoryUnits(ctx, repo, nil, []unit.Type{unit.TypeWiki}); err != nil {
 		return err
 	}
@@ -383,6 +397,9 @@ func DeleteWiki(ctx context.Context, repo *repo_model.Repository) error {
 }
 
 func ChangeDefaultWikiBranch(ctx context.Context, repo *repo_model.Repository, newBranch string) error {
+	if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+		return err
+	}
 	if !git.IsValidRefPattern(newBranch) {
 		return fmt.Errorf("invalid branch name: %s", newBranch)
 	}

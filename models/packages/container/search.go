@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/packages"
 	user_model "gitea.dev/models/user"
 	container_module "gitea.dev/modules/packages/container"
@@ -74,7 +75,7 @@ func (opts *BlobSearchOptions) toConds() builder.Cond {
 // GetContainerBlob gets the container blob matching the blob search options
 // If multiple matching blobs are found (manifests with the same digest) the first (according to the database) is selected.
 func GetContainerBlob(ctx context.Context, opts *BlobSearchOptions) (*packages.PackageFileDescriptor, error) {
-	pfds, err := getContainerBlobsLimit(ctx, opts, 1)
+	pfds, err := getContainerBlobsLimit(ctx, opts, 1, false)
 	if err != nil {
 		return nil, err
 	} else if len(pfds) == 0 {
@@ -85,15 +86,26 @@ func GetContainerBlob(ctx context.Context, opts *BlobSearchOptions) (*packages.P
 
 // GetContainerBlobs gets the container blobs matching the blob search options
 func GetContainerBlobs(ctx context.Context, opts *BlobSearchOptions) ([]*packages.PackageFileDescriptor, error) {
-	return getContainerBlobsLimit(ctx, opts, 0)
+	return getContainerBlobsLimit(ctx, opts, 0, false)
 }
 
-func getContainerBlobsLimit(ctx context.Context, opts *BlobSearchOptions, limit int) ([]*packages.PackageFileDescriptor, error) {
+func getContainerBlobsLimit(ctx context.Context, opts *BlobSearchOptions, limit int, cleanup bool) ([]*packages.PackageFileDescriptor, error) {
+	cond := opts.toConds()
+	if !cleanup {
+		packages.ObserveFeatureSession(ctx, opts.OwnerID, packages.TypeContainer, func(tx context.Context) db.Session {
+			return db.GetEngine(tx).Table("package_file").Join("INNER", "package_version", "package_version.id=package_file.version_id").Join("INNER", "package", "package.id=package_version.package_id").Where(opts.toConds())
+		})
+		featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cond = cond.And(featureCond)
+	}
 	pfs := make([]*packages.PackageFile, 0, limit)
 	sess := db.GetEngine(ctx).
 		Join("INNER", "package_version", "package_version.id = package_file.version_id").
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(opts.toConds())
+		Where(cond)
 
 	if limit > 0 {
 		sess = sess.Limit(limit)
@@ -108,7 +120,25 @@ func getContainerBlobsLimit(ctx context.Context, opts *BlobSearchOptions, limit 
 
 // GetManifestVersions gets all package versions representing the matching manifest
 func GetManifestVersions(ctx context.Context, opts *BlobSearchOptions) ([]*packages.PackageVersion, error) {
+	return getManifestVersions(ctx, opts, false)
+}
+
+func GetManifestVersionsForCleanup(ctx context.Context, opts *BlobSearchOptions) ([]*packages.PackageVersion, error) {
+	return getManifestVersions(ctx, opts, true)
+}
+
+func getManifestVersions(ctx context.Context, opts *BlobSearchOptions, cleanup bool) ([]*packages.PackageVersion, error) {
 	cond := opts.toConds().And(builder.Eq{"package_version.is_internal": false})
+	if !cleanup {
+		packages.ObserveFeatureSession(ctx, opts.OwnerID, packages.TypeContainer, func(tx context.Context) db.Session {
+			return db.GetEngine(tx).Table("package_version").Join("INNER", "package", "package.id=package_version.package_id").Join("INNER", "package_file", "package_file.version_id=package_version.id").Where(opts.toConds().And(builder.Eq{"package_version.is_internal": false}))
+		})
+		featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cond = cond.And(featureCond)
+	}
 
 	pvs := make([]*packages.PackageVersion, 0, 10)
 	return pvs, db.GetEngine(ctx).
@@ -121,6 +151,10 @@ func GetManifestVersions(ctx context.Context, opts *BlobSearchOptions) ([]*packa
 // GetImageTags gets a sorted list of the tags of an image
 // The result is suitable for the api call.
 func GetImageTags(ctx context.Context, ownerID int64, image string, n int, last string) ([]string, error) {
+	featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// Short circuit: n == 0 should return an empty list
 	if n == 0 {
 		return []string{}, nil
@@ -144,11 +178,14 @@ func GetImageTags(ctx context.Context, ownerID int64, image string, n int, last 
 		cond = cond.And(builder.Gt{"package_version.lower_version": strings.ToLower(last)})
 	}
 
+	packages.ObserveFeatureSession(ctx, ownerID, packages.TypeContainer, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_version").Join("INNER", "package", "package.id=package_version.package_id").Where(cond)
+	})
 	sess := db.GetEngine(ctx).
 		Table("package_version").
 		Select("package_version.lower_version").
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(cond).
+		Where(cond.And(featureCond)).
 		Asc("package_version.lower_version")
 
 	var tags []string
@@ -216,9 +253,16 @@ func (opts *ImageTagsSearchOptions) configureOrderBy(e db.Engine) {
 
 // SearchImageTags gets a sorted list of the tags of an image
 func SearchImageTags(ctx context.Context, opts *ImageTagsSearchOptions) ([]*packages.PackageVersion, int64, error) {
+	packages.ObserveFeatureSession(ctx, 0, packages.TypeContainer, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_version").Join("INNER", "package", "package.id=package_version.package_id").Where(opts.toConds())
+	})
+	featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
 	sess := db.GetEngine(ctx).
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(opts.toConds())
+		Where(opts.toConds().And(featureCond))
 
 	opts.configureOrderBy(sess)
 
@@ -250,6 +294,10 @@ func SearchExpiredUploadedBlobs(ctx context.Context, olderThan time.Duration) ([
 
 // GetRepositories gets a sorted list of all repositories
 func GetRepositories(ctx context.Context, actor *user_model.User, n int, last string) ([]string, error) {
+	featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cond builder.Cond = builder.Eq{
 		"package.type":              packages.TypeContainer,
 		"package_property.ref_type": packages.PropertyTypePackage,
@@ -273,15 +321,22 @@ func GetRepositories(ctx context.Context, actor *user_model.User, n int, last st
 
 	cond = cond.And(user_model.BuildCanSeeUserCondition(actor))
 
+	packages.ObserveFeatureSession(ctx, 0, packages.TypeContainer, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package").Join("INNER", "user", "`user`.id=package.owner_id").Join("INNER", "package_property", "package_property.ref_id=package.id").Where(cond)
+	})
 	sess := db.GetEngine(ctx).
 		Table("package").
 		Select("package_property.value").
 		Join("INNER", "user", "`user`.id = package.owner_id").
 		Join("INNER", "package_property", "package_property.ref_id = package.id").
-		Where(cond).
+		Where(cond.And(featureCond)).
 		Asc("package_property.value").
 		Limit(n)
 
 	repositories := make([]string, 0, n)
 	return repositories, sess.Find(&repositories)
+}
+
+func GetContainerBlobsForCleanup(ctx context.Context, opts *BlobSearchOptions) ([]*packages.PackageFileDescriptor, error) {
+	return getContainerBlobsLimit(ctx, opts, 0, true)
 }

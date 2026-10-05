@@ -10,13 +10,16 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/perm"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/container"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/optional"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 
 	"xorm.io/builder"
@@ -485,9 +488,15 @@ func applySubscribedCondition(sess db.Session, subscriberID int64) {
 
 // Issues returns a list of issues by given conditions.
 func Issues(ctx context.Context, opts *IssuesOptions) (IssueList, error) {
+	observeIssueOptions(ctx, opts)
+	featureCond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	sess := db.GetEngine(ctx).
 		Join("INNER", "repository", "`issue`.repo_id = `repository`.id")
 	applyLimit(sess, opts)
+	sess.And(featureCond)
 	applyConditions(sess, opts)
 	applySorts(sess, opts.SortType, opts.PriorityRepoID)
 
@@ -505,8 +514,14 @@ func Issues(ctx context.Context, opts *IssuesOptions) (IssueList, error) {
 
 // IssueIDs returns a list of issue ids by given conditions.
 func IssueIDs(ctx context.Context, opts *IssuesOptions, otherConds ...builder.Cond) ([]int64, int64, error) {
+	observeIssueOptions(ctx, opts, otherConds...)
+	featureCond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
 	sess := db.GetEngine(ctx).
 		Join("INNER", "repository", "`issue`.repo_id = `repository`.id")
+	sess.And(featureCond)
 	applyConditions(sess, opts)
 	for _, cond := range otherConds {
 		sess.And(cond)
@@ -522,4 +537,33 @@ func IssueIDs(ctx context.Context, opts *IssuesOptions, otherConds ...builder.Co
 	}
 
 	return res, total, nil
+}
+
+func issueFeatureEnabledCond(ctx context.Context) (builder.Cond, error) {
+	issueCond, err := authz_model.FeatureQueryCond(ctx, authz.FeatureIssues, "issue.repo_id")
+	if err != nil {
+		return nil, err
+	}
+	pullCond, err := authz_model.FeatureQueryCond(ctx, authz.FeaturePullRequests, "issue.repo_id")
+	if err != nil {
+		return nil, err
+	}
+	if !issueCond.IsValid() && !pullCond.IsValid() {
+		return builder.NewCond(), nil
+	}
+	return builder.Or(builder.And(builder.Eq{"issue.is_pull": false}, issueCond), builder.And(builder.Eq{"issue.is_pull": true}, pullCond)), nil
+}
+
+func IssueFeatureIDCond(ctx context.Context, issueIDSQL string) (builder.Cond, error) {
+	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		return builder.NewCond(), nil
+	}
+	cond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !cond.IsValid() {
+		return builder.NewCond(), nil
+	}
+	return builder.In(issueIDSQL, builder.Select("issue.id").From("issue").Where(cond)), nil
 }

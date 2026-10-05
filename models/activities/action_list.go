@@ -219,6 +219,12 @@ func GetFeeds(ctx context.Context, opts GetFeedsOptions) (ActionList, int64, err
 			FeedDateCond(opts),
 		)
 
+		featureCond, err := activityFeatureCond(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		cond = cond.And(featureCond)
+
 		if !opts.IncludeDeleted {
 			cond = cond.And(builder.Eq{"is_deleted": false})
 		}
@@ -236,6 +242,7 @@ func GetFeeds(ctx context.Context, opts GetFeedsOptions) (ActionList, int64, err
 		}
 	}
 
+	observeActivityQuery(ctx, cond)
 	actions := make([]*Action, 0, opts.PageSize)
 	var count int64
 	opts.SetDefaultValues()

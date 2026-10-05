@@ -74,13 +74,24 @@ func GetUIDsAndStopwatch(ctx context.Context) ([]*UserStopwatch, error) {
 
 // GetUserStopwatches return list of the user's all stopwatches
 func GetUserStopwatches(ctx context.Context, userID int64, listOptions db.ListOptions) ([]*Stopwatch, error) {
+	observeIssueReferenceQuery(ctx, "stopwatch.issue_id", func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("stopwatch").Where("stopwatch.user_id=?", userID)
+	})
+
 	sws := make([]*Stopwatch, 0, 8)
-	sess := db.GetEngine(ctx).Where("stopwatch.user_id = ?", userID)
+	cond, err := IssueFeatureIDCond(ctx, "stopwatch.issue_id")
+	if err != nil {
+		return nil, err
+	}
+	if cond.IsValid() {
+		cond = builder.Or(builder.Eq{"stopwatch.issue_id": 0}, cond)
+	}
+	sess := db.GetEngine(ctx).Where("stopwatch.user_id = ?", userID).And(cond)
 	if listOptions.Page > 0 {
 		db.SetSessionPagination(sess, &listOptions)
 	}
 
-	err := sess.Find(&sws)
+	err = sess.Find(&sws)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +100,18 @@ func GetUserStopwatches(ctx context.Context, userID int64, listOptions db.ListOp
 
 // CountUserStopwatches return count of the user's all stopwatches
 func CountUserStopwatches(ctx context.Context, userID int64) (int64, error) {
-	return db.GetEngine(ctx).Where("user_id = ?", userID).Count(&Stopwatch{})
+	observeIssueReferenceQuery(ctx, "stopwatch.issue_id", func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("stopwatch").Where("stopwatch.user_id=?", userID)
+	})
+
+	cond, err := IssueFeatureIDCond(ctx, "stopwatch.issue_id")
+	if err != nil {
+		return 0, err
+	}
+	if cond.IsValid() {
+		cond = builder.Or(builder.Eq{"stopwatch.issue_id": 0}, cond)
+	}
+	return db.GetEngine(ctx).Where("user_id = ?", userID).And(cond).Count(&Stopwatch{})
 }
 
 // StopwatchExists returns true if the stopwatch exists

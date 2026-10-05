@@ -51,6 +51,9 @@ var (
 )
 
 func markPullRequestStatusAsChecking(ctx context.Context, pr *issues_model.PullRequest) bool {
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return false
+	}
 	pr.Status = issues_model.PullRequestStatusChecking
 	_, err := pr.UpdateColsIfNotMerged(ctx, "status")
 	if err != nil {
@@ -141,6 +144,9 @@ const (
 //   - rebase, rebase-merge, squash: Gitea rewrites the commits and signs each, so only Gitea's
 //     signing ability is checked.
 func CheckPullMergeable(stdCtx context.Context, doer *user_model.User, perm *access_model.Permission, pr *issues_model.PullRequest, mergeCheckType MergeCheckType, mergeStyle repo_model.MergeStyle, forceMerge bool) (err error) {
+	if err := authz_service.RequireRepoFeature(stdCtx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	defer func() { observeMergeCheckFailure(stdCtx, doer, pr, err) }()
 	return db.WithTx(stdCtx, func(ctx context.Context) error {
 		if pr.HasMerged {
@@ -488,6 +494,11 @@ func checkPullRequestMergeable(id int64) {
 	pr, err := issues_model.GetPullRequestByID(ctx, id)
 	if err != nil {
 		log.Error("Unable to GetPullRequestByID[%d] for checkPullRequestMergeable: %v", id, err)
+		return
+	}
+
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		log.Trace("Pull request background check skipped by feature policy")
 		return
 	}
 

@@ -130,6 +130,19 @@ func (b *Indexer) Search(ctx context.Context, options *internal.SearchOptions) (
 		query.Must(q)
 	}
 
+	if len(options.CandidateRepoIDs) > 0 {
+		query.Must(es.TermsQuery("repo_id", es.ToAnySlice(options.CandidateRepoIDs)...))
+	}
+	for _, item := range []struct {
+		pull    bool
+		repoIDs []int64
+	}{{false, options.ExcludedIssueRepoIDs}, {true, options.ExcludedPullRepoIDs}} {
+		if len(item.repoIDs) == 0 {
+			continue
+		}
+		query.MustNot(es.NewBoolQuery().Must(es.TermQuery("is_pull", item.pull), es.TermsQuery("repo_id", es.ToAnySlice(item.repoIDs)...)))
+	}
+
 	if options.IsPull.Has() {
 		query.Must(es.TermQuery("is_pull", options.IsPull.Value()))
 	}

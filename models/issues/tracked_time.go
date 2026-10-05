@@ -147,13 +147,23 @@ func (opts *FindTrackedTimesOptions) toSession(e db.Engine) db.Engine {
 
 // GetTrackedTimes returns all tracked times that fit to the given options.
 func GetTrackedTimes(ctx context.Context, options *FindTrackedTimesOptions) (trackedTimes TrackedTimeList, err error) {
-	err = options.toSession(db.GetEngine(ctx)).Find(&trackedTimes)
+	observeTrackedTimeQuery(ctx, options)
+	cond, err := IssueFeatureIDCond(ctx, "tracked_time.issue_id")
+	if err != nil {
+		return nil, err
+	}
+	err = options.toSession(db.GetEngine(ctx)).Where(cond).Find(&trackedTimes)
 	return trackedTimes, err
 }
 
 // CountTrackedTimes returns count of tracked times that fit to the given options.
 func CountTrackedTimes(ctx context.Context, opts *FindTrackedTimesOptions) (int64, error) {
-	sess := db.GetEngine(ctx).Where(opts.ToConds())
+	observeTrackedTimeQuery(ctx, opts)
+	cond, err := IssueFeatureIDCond(ctx, "tracked_time.issue_id")
+	if err != nil {
+		return 0, err
+	}
+	sess := db.GetEngine(ctx).Where(opts.ToConds()).And(cond)
 	if opts.RepositoryID > 0 || opts.MilestoneID > 0 {
 		sess = sess.Join("INNER", "issue", "issue.id = tracked_time.issue_id")
 	}
@@ -162,7 +172,11 @@ func CountTrackedTimes(ctx context.Context, opts *FindTrackedTimesOptions) (int6
 
 // GetTrackedSeconds return sum of seconds
 func GetTrackedSeconds(ctx context.Context, opts FindTrackedTimesOptions) (trackedSeconds int64, err error) {
-	return opts.toSession(db.GetEngine(ctx)).SumInt(&TrackedTime{}, "time")
+	cond, err := IssueFeatureIDCond(ctx, "tracked_time.issue_id")
+	if err != nil {
+		return 0, err
+	}
+	return opts.toSession(db.GetEngine(ctx)).Where(cond).SumInt(&TrackedTime{}, "time")
 }
 
 // AddTime will add the given time (in seconds) to the issue
@@ -352,11 +366,23 @@ func getIssueTotalTrackedTimeChunk(ctx context.Context, opts *IssuesOptions, isC
 		return applyIssuesOptions(sess, opts, issueIDs)
 	}
 
+	observeIssueSession(ctx, func(tx context.Context) db.Session {
+		sess := db.GetEngine(tx).Table("tracked_time").Where("tracked_time.deleted=?", false).Join("INNER", "issue", "tracked_time.issue_id=issue.id")
+		applyIssuesOptions(sess, opts, issueIDs)
+		if isClosed.Has() {
+			sess.And("issue.is_closed=?", isClosed.Value())
+		}
+		return sess
+	})
 	type trackedTime struct {
 		Time int64
 	}
 
-	session := sumSession(opts, issueIDs)
+	cond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return 0, err
+	}
+	session := sumSession(opts, issueIDs).And(cond)
 	if isClosed.Has() {
 		session.And("issue.is_closed = ?", isClosed.Value())
 	}

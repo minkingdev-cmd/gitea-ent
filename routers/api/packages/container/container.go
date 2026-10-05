@@ -88,6 +88,7 @@ func jsonResponse(ctx *context.Context, status int, obj any) {
 }
 
 func apiError(ctx *context.Context, status int, err error) {
+	status = helper.ResolvePackageErrorStatus(status, err)
 	_ = helper.ProcessErrorForUser(ctx, status, err)
 	writeResponseHeaders(ctx.Resp, &containerHeaders{Status: status})
 }
@@ -680,7 +681,7 @@ func DeleteManifest(ctx *context.Context) {
 		return
 	}
 
-	pvs, err := container_model.GetManifestVersions(ctx, opts)
+	pvs, err := container_model.GetManifestVersionsForCleanup(ctx, opts)
 	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return

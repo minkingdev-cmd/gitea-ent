@@ -149,6 +149,8 @@ const (
 	RepositoryBroken                                  // repository is in a permanently broken state
 )
 
+const InternalUsageCargoIndex = "cargo-index"
+
 // Repository represents a git repository.
 type Repository struct {
 	ID                  int64 `xorm:"pk autoincr"`
@@ -163,6 +165,7 @@ type Repository struct {
 	OriginalURL         string             `xorm:"VARCHAR(2048)"`
 	DefaultBranch       string
 	DefaultWikiBranch   string
+	InternalUsage       string `xorm:"VARCHAR(32) NOT NULL DEFAULT ''"`
 
 	NumWatches          int
 	NumStars            int

@@ -28,6 +28,7 @@ import (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.JSON(status, map[string]string{
 		"Message": message,

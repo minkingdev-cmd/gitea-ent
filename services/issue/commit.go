@@ -108,6 +108,8 @@ func isSelfReference(ctx context.Context, issue *issues_model.Issue, commitSHA s
 	return issue.PullRequest.MergedCommitID == commitSHA
 }
 
+var errIssueReferenceFeatureUnavailable = errors.New("issue_reference_feature_unavailable")
+
 // getIssueFromRef returns the issue referenced by a ref. Returns a nil *Issue
 // if the provided ref references a non-existent issue.
 func getIssueFromRef(ctx context.Context, repo *repo_model.Repository, index int64) (*issues_model.Issue, error) {
@@ -117,6 +119,9 @@ func getIssueFromRef(ctx context.Context, repo *repo_model.Repository, index int
 			return nil, nil //nolint:nilnil // return nil to indicate that the object does not exist
 		}
 		return nil, err
+	}
+	if RequireFeature(ctx, issue) != nil {
+		return nil, errIssueReferenceFeatureUnavailable
 	}
 	return issue, nil
 }
@@ -150,6 +155,9 @@ func UpdateIssuesCommit(ctx context.Context, doer *user_model.User, repo *repo_m
 				refRepo = repo
 			}
 			if refIssue, err = getIssueFromRef(ctx, refRepo, ref.Index); err != nil {
+				if errors.Is(err, errIssueReferenceFeatureUnavailable) {
+					continue
+				}
 				return err
 			}
 			if refIssue == nil {

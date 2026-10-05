@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/organization"
 	packages_model "gitea.dev/models/packages"
 	"gitea.dev/models/perm"
@@ -35,9 +37,12 @@ func PackageAssignment() func(ctx *Context) {
 	return func(ctx *Context) {
 		errorFn := func(status int, msg string) {
 			err := fmt.Errorf("%s", msg)
-			if status == http.StatusNotFound {
+			switch status {
+			case http.StatusServiceUnavailable:
+				ctx.HTTPError(status, msg)
+			case http.StatusNotFound:
 				ctx.NotFound(err)
-			} else {
+			default:
 				ctx.ServerError("PackageAssignment", err)
 			}
 		}
@@ -73,10 +78,25 @@ func packageAssignment(ctx *packageAssignmentCtx, errCb func(int, string)) *Pack
 	}
 
 	version := ctx.PathParam("version")
+	cleanup := ctx.Req.Method == http.MethodDelete
+	if ctx.Req.Method == http.MethodPost {
+		path := strings.TrimPrefix(ctx.Req.URL.Path, setting.AppSubURL)
+		versionDeletePath := fmt.Sprintf("/%s/-/packages/%s/%s/%s", ctx.PathParam("username"), packageType, name, version)
+		settingsDeletePath := fmt.Sprintf("/%s/-/packages/settings/%s/%s", ctx.PathParam("username"), packageType, name)
+		cleanup = version != "" && path == versionDeletePath || path == settingsDeletePath && ctx.FormString("action") == "delete"
+	}
+	packageLoader := packages_model.GetPackageByName
+	versionLoader := packages_model.GetVersionByNameAndVersion
+	if cleanup {
+		packageLoader = packages_model.GetPackageByNameForCleanup
+		versionLoader = packages_model.GetVersionByNameAndVersionForCleanup
+	}
 	if version != "" {
-		pv, err := packages_model.GetVersionByNameAndVersion(ctx, pkg.Owner.ID, packages_model.Type(packageType), name, version)
+		pv, err := versionLoader(ctx, pkg.Owner.ID, packages_model.Type(packageType), name, version)
 		if err != nil {
-			if errors.Is(err, packages_model.ErrPackageNotExist) {
+			if errors.Is(err, authz_model.ErrFeatureQueryUnavailable) {
+				errCb(http.StatusServiceUnavailable, authz_model.ErrFeatureQueryUnavailable.Error())
+			} else if errors.Is(err, packages_model.ErrPackageNotExist) {
 				errCb(http.StatusNotFound, fmt.Sprintf("GetVersionByNameAndVersion: %v", err))
 			} else {
 				errCb(http.StatusInternalServerError, fmt.Sprintf("GetVersionByNameAndVersion: %v", err))
@@ -90,9 +110,11 @@ func packageAssignment(ctx *packageAssignmentCtx, errCb func(int, string)) *Pack
 			return pkg
 		}
 	} else {
-		p, err := packages_model.GetPackageByName(ctx, pkg.Owner.ID, packages_model.Type(packageType), name)
+		p, err := packageLoader(ctx, pkg.Owner.ID, packages_model.Type(packageType), name)
 		if err != nil {
-			if errors.Is(err, packages_model.ErrPackageNotExist) {
+			if errors.Is(err, authz_model.ErrFeatureQueryUnavailable) {
+				errCb(http.StatusServiceUnavailable, authz_model.ErrFeatureQueryUnavailable.Error())
+			} else if errors.Is(err, packages_model.ErrPackageNotExist) {
 				errCb(http.StatusNotFound, fmt.Sprintf("GetPackageByName: %v", err))
 			} else {
 				errCb(http.StatusInternalServerError, fmt.Sprintf("GetPackageByName: %v", err))

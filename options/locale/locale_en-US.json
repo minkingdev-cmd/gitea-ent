@@ -4243,7 +4243,7 @@
   "admin.enterprise_authz.action.repo.manage_ci": "Manage CI settings",
   "admin.enterprise_authz.action.repo.manage_access": "Manage repository access",
   "admin.enterprise_authz.action.repo.manage_secret": "Manage repository secrets",
-  "admin.enterprise_authz.action.repo.manage_feature_grant": "Manage feature grant (catalog and diagnostic only)",
+  "admin.enterprise_authz.action.repo.manage_feature_grant": "Manage feature grants (authority, action and revision required)",
   "admin.enterprise_authz.action.repo.migrate": "Migrate into an existing local repository",
   "admin.enterprise_authz.action.repo.transfer": "Transfer repository",
   "admin.enterprise_authz.action.repo.archive": "Archive repository",

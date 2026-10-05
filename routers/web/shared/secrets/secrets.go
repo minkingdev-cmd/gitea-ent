@@ -21,8 +21,11 @@ import (
 )
 
 func SetSecretsContext(ctx *context.Context, ownerID, repoID int64) {
-	secrets, err := db.Find[secret_model.Secret](ctx, secret_model.FindSecretsOptions{OwnerID: ownerID, RepoID: repoID})
+	secrets, _, err := secret_service.ListManagementSecrets(ctx, &secret_model.FindSecretsOptions{OwnerID: ownerID, RepoID: repoID})
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.ServerError("FindSecrets", err)
 		return
 	}

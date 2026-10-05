@@ -28,6 +28,7 @@ import (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.PlainText(status, message)
 }
@@ -265,7 +266,7 @@ func DeletePackageFile(webctx *context.Context) {
 	var pd *packages_model.PackageDescriptor
 
 	err := db.WithTx(webctx, func(ctx stdctx.Context) error {
-		pv, err := packages_model.GetVersionByNameAndVersion(ctx,
+		pv, err := packages_model.GetVersionByNameAndVersionForCleanup(ctx,
 			webctx.Package.Owner.ID,
 			packages_model.TypeRpm,
 			name,
@@ -319,7 +320,9 @@ func DeletePackageFile(webctx *context.Context) {
 		notify_service.PackageDelete(webctx, webctx.Doer, pd)
 	}
 
-	if err := rpm_service.BuildSpecificRepositoryFiles(webctx, webctx.Package.Owner.ID, group); err != nil {
+	if err := packages_service.RebuildIndexAfterPackageCleanup(webctx, webctx.Package.Owner.ID, packages_model.TypeRpm, func(indexCtx stdctx.Context) error {
+		return rpm_service.BuildSpecificRepositoryFiles(indexCtx, webctx.Package.Owner.ID, group)
+	}); err != nil {
 		apiError(webctx, http.StatusInternalServerError, err)
 		return
 	}
@@ -457,7 +460,7 @@ func UploadErrata(ctx *context.Context) {
 	}
 
 	pv.MetadataJSON = string(vmBytes)
-	if err := packages_model.UpdateVersion(ctx, pv); err != nil {
+	if err := packages_service.UpdatePackageVersionMetadata(ctx, pv); err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
 	}

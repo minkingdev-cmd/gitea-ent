@@ -39,6 +39,7 @@ var versionMatcher = regexp.MustCompile(`\Av?` +
 	`\z`)
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.PlainText(status, message)
 }

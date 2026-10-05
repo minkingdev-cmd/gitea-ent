@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	authz_model "gitea.dev/models/enterpriseauthz"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/log"
@@ -22,6 +23,7 @@ import (
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web/middleware"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // RedirectToUser redirect to a differently-named user
@@ -175,6 +177,16 @@ func (ctx *Context) ServerError(logMsg string, logErr error) {
 }
 
 func (ctx *Context) serverErrorInternal(skip int, logMsg string, logErr error) {
+	if denial, ok := errors.AsType[*authz_service.ExecutionError](logErr); ok {
+		ctx.HTTPError(denial.Status, denial.Reason)
+		return
+	}
+
+	if errors.Is(logErr, authz_model.ErrFeatureQueryUnavailable) {
+		ctx.HTTPError(http.StatusServiceUnavailable, "feature_policy_unavailable")
+		return
+	}
+
 	if logErr != nil {
 		logLevel := util.Iif(httplib.IsClientOrNetworkError(ctx, logErr), log.DEBUG, log.ERROR)
 		log.Log(skip+1, logLevel, "%s: %v", logMsg, logErr)

@@ -228,8 +228,15 @@ func (opts *PackageFileSearchOptions) toConds() builder.Cond {
 
 // SearchFiles gets all files of packages matching the search options
 func SearchFiles(ctx context.Context, opts *PackageFileSearchOptions) ([]*PackageFile, int64, error) {
+	ObserveFeatureSession(ctx, opts.OwnerID, opts.PackageType, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_file").Join("INNER", "package_version", "package_version.id=package_file.version_id").Join("INNER", "package", "package.id=package_version.package_id").Where(opts.toConds())
+	})
+	featureCond, err := packageFileFeatureCond(ctx, opts)
+	if err != nil {
+		return nil, 0, err
+	}
 	sess := db.GetEngine(ctx).
-		Where(opts.toConds())
+		Where(opts.toConds().And(featureCond))
 
 	if opts.Paginator != nil {
 		db.SetSessionPagination(sess, opts)
@@ -242,7 +249,14 @@ func SearchFiles(ctx context.Context, opts *PackageFileSearchOptions) ([]*Packag
 
 // HasFiles tests if there are files of packages matching the search options
 func HasFiles(ctx context.Context, opts *PackageFileSearchOptions) (bool, error) {
-	return db.Exist[PackageFile](ctx, opts.toConds())
+	ObserveFeatureSession(ctx, opts.OwnerID, opts.PackageType, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_file").Join("INNER", "package_version", "package_version.id=package_file.version_id").Join("INNER", "package", "package.id=package_version.package_id").Where(opts.toConds())
+	})
+	featureCond, err := packageFileFeatureCond(ctx, opts)
+	if err != nil {
+		return false, err
+	}
+	return db.Exist[PackageFile](ctx, opts.toConds().And(featureCond))
 }
 
 // CalculateFileSize sums up all blob sizes matching the search options.
@@ -253,4 +267,25 @@ func CalculateFileSize(ctx context.Context, opts *PackageFileSearchOptions) (int
 		Where(opts.toConds()).
 		Join("INNER", "package_blob", "package_blob.id = package_file.blob_id").
 		SumInt(new(PackageBlob), "size")
+}
+
+func packageFileFeatureCond(ctx context.Context, opts *PackageFileSearchOptions) (builder.Cond, error) {
+	cond, err := FeatureQueryCond(ctx, opts.OwnerID, opts.PackageType)
+	if err != nil {
+		return nil, err
+	}
+	if !cond.IsValid() {
+		return builder.NewCond(), nil
+	}
+	return builder.In("package_file.version_id", builder.Select("package_version.id").From("package_version").InnerJoin("package", "package.id=package_version.package_id").Where(cond)), nil
+}
+
+func SearchFilesForCleanup(ctx context.Context, opts *PackageFileSearchOptions) ([]*PackageFile, int64, error) {
+	sess := db.GetEngine(ctx).Where(opts.toConds())
+	if opts.Paginator != nil {
+		db.SetSessionPagination(sess, opts)
+	}
+	files := make([]*PackageFile, 0, 10)
+	count, err := sess.FindAndCount(&files)
+	return files, count, err
 }

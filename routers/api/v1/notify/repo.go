@@ -9,7 +9,6 @@ import (
 	"time"
 
 	activities_model "gitea.dev/models/activities"
-	"gitea.dev/models/db"
 	"gitea.dev/modules/structs"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
@@ -109,13 +108,13 @@ func ListRepoNotifications(ctx *context.APIContext) {
 	}
 	opts.RepoID = ctx.Repo.Repository.ID
 
-	totalCount, err := db.Count[activities_model.Notification](ctx, opts)
+	totalCount, err := activities_model.CountNotifications(ctx, opts)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 		return
 	}
 
-	nl, err := db.Find[activities_model.Notification](ctx, opts)
+	nl, err := activities_model.FindNotifications(ctx, opts)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 		return
@@ -202,7 +201,7 @@ func ReadRepoNotifications(ctx *context.APIContext) {
 		statuses := ctx.FormStrings("status-types")
 		opts.Status = statusStringsToNotificationStatuses(statuses, []string{"unread"})
 	}
-	nl, err := db.Find[activities_model.Notification](ctx, opts)
+	nl, err := activities_model.FindNotifications(ctx, opts)
 	if err != nil {
 		ctx.APIErrorInternal(err)
 		return

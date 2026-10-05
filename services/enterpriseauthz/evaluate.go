@@ -18,6 +18,7 @@ import (
 	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/setting"
+	api "gitea.dev/modules/structs"
 
 	"xorm.io/builder"
 )
@@ -49,24 +50,25 @@ type Decision struct {
 }
 
 type roleSnapshot struct {
-	CatalogVersion int                  `json:"catalog_version"`
-	ActorID        int64                `json:"actor_id"`
-	RepoID         int64                `json:"repo_id"`
-	OwnerID        int64                `json:"owner_id"`
-	TargetOwnerID  int64                `json:"target_owner_id,omitzero"`
-	IntentHash     string               `json:"intent_hash,omitempty"`
-	Archived       bool                 `json:"archived"`
-	NativeMode     int                  `json:"native_mode"`
-	UnitModes      []unitSnapshot       `json:"unit_modes"`
-	Credential     CredentialCeiling    `json:"credential"`
-	RoleEligible   bool                 `json:"role_eligible"`
-	BranchKnown    bool                 `json:"branch_known"`
-	PathsComplete  bool                 `json:"paths_complete"`
-	PathCount      int                  `json:"path_count"`
-	NativeActions  []authz.Action       `json:"native_actions"`
-	Definitions    []definitionSnapshot `json:"definitions"`
-	Bindings       []bindingSnapshot    `json:"bindings"`
-	Roles          []roleResult         `json:"roles"`
+	Features       []api.EnterpriseFeatureSnapshot `json:"features,omitempty"`
+	CatalogVersion int                             `json:"catalog_version"`
+	ActorID        int64                           `json:"actor_id"`
+	RepoID         int64                           `json:"repo_id"`
+	OwnerID        int64                           `json:"owner_id"`
+	TargetOwnerID  int64                           `json:"target_owner_id,omitzero"`
+	IntentHash     string                          `json:"intent_hash,omitempty"`
+	Archived       bool                            `json:"archived"`
+	NativeMode     int                             `json:"native_mode"`
+	UnitModes      []unitSnapshot                  `json:"unit_modes"`
+	Credential     CredentialCeiling               `json:"credential"`
+	RoleEligible   bool                            `json:"role_eligible"`
+	BranchKnown    bool                            `json:"branch_known"`
+	PathsComplete  bool                            `json:"paths_complete"`
+	PathCount      int                             `json:"path_count"`
+	NativeActions  []authz.Action                  `json:"native_actions"`
+	Definitions    []definitionSnapshot            `json:"definitions"`
+	Bindings       []bindingSnapshot               `json:"bindings"`
+	Roles          []roleResult                    `json:"roles"`
 }
 
 type unitSnapshot struct {
@@ -153,7 +155,34 @@ func evaluate(ctx context.Context, input EvaluateInput, inSnapshot bool) (Decisi
 
 	var policyErr error
 	var native []authz.Action
-	read := func(snapshotCtx context.Context) error {
+	read := func(snapshotCtx context.Context) (readErr error) {
+		defer func() {
+			key := featureForAction(input.Action)
+			if readErr != nil || decision.Snapshot == "" || key == "" {
+				return
+			}
+			policy, err := featurePolicy(snapshotCtx, key, authz_model.Scope{Type: authz_model.ScopeRepo, ID: input.Repo.ID})
+			if err != nil {
+				policyErr = errors.New("policy_read_failed")
+				readErr = policyErr
+				return
+			}
+			var snapshot roleSnapshot
+			if json.Unmarshal([]byte(decision.Snapshot), &snapshot) != nil {
+				policyErr = errors.New("policy_read_failed")
+				readErr = policyErr
+				return
+			}
+			snapshot.Features = []api.EnterpriseFeatureSnapshot{featureSnapshot(policy)}
+			data, err := json.Marshal(snapshot)
+			if err != nil || len(data) > authz.MaxSnapshotBytes {
+				policyErr = errors.New("snapshot_limit_exceeded")
+				readErr = policyErr
+				return
+			}
+			decision.Snapshot = string(data)
+		}()
+
 		currentRepo, exists, err := db.GetByID[repo_model.Repository](snapshotCtx, input.Repo.ID)
 		if err != nil || !exists {
 			policyErr = errors.New("policy_read_failed")

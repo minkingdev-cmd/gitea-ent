@@ -4,6 +4,7 @@
 package alpine
 
 import (
+	stdctx "context"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
@@ -25,6 +26,7 @@ import (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.PlainText(status, message)
 }
@@ -251,7 +253,7 @@ func DownloadPackageFile(ctx *context.Context) {
 func DeletePackageFile(ctx *context.Context) {
 	branch, repository, architecture := ctx.PathParam("branch"), ctx.PathParam("repository"), ctx.PathParam("architecture")
 
-	pfs, _, err := packages_model.SearchFiles(ctx, &packages_model.PackageFileSearchOptions{
+	pfs, _, err := packages_model.SearchFilesForCleanup(ctx, &packages_model.PackageFileSearchOptions{
 		OwnerID:      ctx.Package.Owner.ID,
 		PackageType:  packages_model.TypeAlpine,
 		Query:        ctx.PathParam("filename"),
@@ -275,7 +277,9 @@ func DeletePackageFile(ctx *context.Context) {
 		return
 	}
 
-	if err := alpine_service.BuildSpecificRepositoryFiles(ctx, ctx.Package.Owner.ID, branch, repository, architecture); err != nil {
+	if err := packages_service.RebuildIndexAfterPackageCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeAlpine, func(indexCtx stdctx.Context) error {
+		return alpine_service.BuildSpecificRepositoryFiles(indexCtx, ctx.Package.Owner.ID, branch, repository, architecture)
+	}); err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
 	}

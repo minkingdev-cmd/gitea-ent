@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/packages"
 	cran_module "gitea.dev/modules/packages/cran"
 
@@ -59,13 +60,20 @@ func (opts *SearchOptions) toConds() builder.Cond {
 }
 
 func SearchLatestVersions(ctx context.Context, opts *SearchOptions) ([]*packages.PackageVersion, error) {
+	packages.ObserveFeatureSession(ctx, opts.OwnerID, packages.TypeCran, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_version").Join("LEFT", "package_version pv2", builder.Expr("package_version.package_id=pv2.package_id AND pv2.is_internal=? AND (package_version.created_unix<pv2.created_unix OR (package_version.created_unix=pv2.created_unix AND package_version.id<pv2.id))", false)).Join("INNER", "package", "package.id=package_version.package_id").Join("INNER", "package_file", "package_file.version_id=package_version.id").Where(opts.toConds().And(builder.Expr("pv2.id IS NULL")))
+	})
+	featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	sess := db.GetEngine(ctx).
 		Table("package_version").
 		Select("package_version.*").
 		Join("LEFT", "package_version pv2", builder.Expr("package_version.package_id = pv2.package_id AND pv2.is_internal = ? AND (package_version.created_unix < pv2.created_unix OR (package_version.created_unix = pv2.created_unix AND package_version.id < pv2.id))", false)).
 		Join("INNER", "package", "package.id = package_version.package_id").
 		Join("INNER", "package_file", "package_file.version_id = package_version.id").
-		Where(opts.toConds().And(builder.Expr("pv2.id IS NULL"))).
+		Where(opts.toConds().And(builder.Expr("pv2.id IS NULL")).And(featureCond)).
 		Asc("package.name")
 
 	pvs := make([]*packages.PackageVersion, 0, 10)

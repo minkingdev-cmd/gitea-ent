@@ -9,10 +9,11 @@ import (
 	"sync"
 
 	activities_model "gitea.dev/models/activities"
-	"gitea.dev/models/db"
 	issues_model "gitea.dev/models/issues"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // StopwatchTmplInfo is a view on a stopwatch specifically for template rendering
@@ -40,6 +41,14 @@ func getActiveStopwatch(ctx *context.Context) *StopwatchTmplInfo {
 		return nil
 	}
 
+	key := authz.FeatureIssues
+	if issue.IsPull {
+		key = authz.FeaturePullRequests
+	}
+	if authz_service.RequireRepoFeature(ctx, issue.RepoID, key) != nil {
+		return nil
+	}
+
 	return &StopwatchTmplInfo{
 		issue.Link(),
 		issue.Repo.FullName(),
@@ -52,7 +61,7 @@ func notificationUnreadCount(ctx *context.Context) int64 {
 	if ctx.Doer == nil {
 		return 0
 	}
-	count, err := db.Count[activities_model.Notification](ctx, activities_model.FindNotificationOptions{
+	count, err := activities_model.CountNotifications(ctx, &activities_model.FindNotificationOptions{
 		UserID: ctx.Doer.ID,
 		Status: []activities_model.NotificationStatus{activities_model.NotificationStatusUnread},
 	})

@@ -92,6 +92,8 @@ func apiError(ctx *context.APIContext, err error) {
 		ctx.APIErrorNotFound()
 	case errors.Is(err, authz_service.ErrInvalidPolicy):
 		ctx.APIError(http.StatusUnprocessableEntity, "invalid_policy")
+	case errors.Is(err, authz_service.ErrFeatureParentLocked):
+		ctx.APIError(http.StatusConflict, "feature_parent_locked")
 	case errors.Is(err, authz_service.ErrRevisionConflict):
 		ctx.APIError(http.StatusConflict, "revision_conflict")
 	case errors.Is(err, authz_service.ErrBuiltinImmutable):

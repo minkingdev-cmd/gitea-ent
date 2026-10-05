@@ -5,6 +5,7 @@
 package setting
 
 import (
+	gocontext "context"
 	"errors"
 	"html/template"
 	"net/http"
@@ -26,6 +27,7 @@ import (
 	"gitea.dev/modules/lfs"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/markup"
+	"gitea.dev/modules/reqctx"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/structs"
 	"gitea.dev/modules/templates"
@@ -614,13 +616,6 @@ func handleSettingsPostAdvanced(ctx *context.Context) {
 		}
 	}
 
-	if form.DefaultWikiBranch != "" {
-		if err := wiki_service.ChangeDefaultWikiBranch(ctx, repo, form.DefaultWikiBranch); err != nil {
-			log.Error("ChangeDefaultWikiBranch failed, err: %v", err)
-			ctx.Flash.Warning(ctx.Tr("repo.settings.failed_to_change_default_wiki_branch")) // skip the error, continue, and reload page
-		}
-	}
-
 	if form.EnableExternalTracker && !unit_model.TypeExternalTracker.UnitGlobalDisabled() {
 		if (!form.EnableInternalTracker || form.ExternalTrackerURL != "") && !validation.IsValidURL(form.ExternalTrackerURL) {
 			ctx.JSONError(ctx.Tr("repo.settings.external_tracker_url_error"))
@@ -707,17 +702,33 @@ func handleSettingsPostAdvanced(ctx *context.Context) {
 		return
 	}
 
-	if err := repo_service.UpdateRepositoryUnits(ctx, repo, units, deleteUnitTypes); err != nil {
-		ctx.ServerError("UpdateRepositoryUnits", err)
+	original := ctx.RequestContext
+	err := authz_service.WithRepoFeatureConfiguration(original, repo.ID, units, deleteUnitTypes, func(tx gocontext.Context) error {
+		ctx.RequestContext = reqctx.FromContext(tx)
+		defer func() { ctx.RequestContext = original }()
+		if err := repo_service.UpdateRepositoryUnits(ctx, repo, units, deleteUnitTypes); err != nil {
+			return err
+		}
+		if repoChanged {
+			if err := repo_service.UpdateRepository(ctx, repo, false); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if !common.WriteExecutionError(ctx.Base, err) {
+			ctx.ServerError("UpdateRepositoryUnits", err)
+		}
 		return
 	}
-	if repoChanged {
-		if err := repo_service.UpdateRepository(ctx, repo, false); err != nil {
-			ctx.ServerError("UpdateRepository", err)
-			return
+
+	if form.DefaultWikiBranch != "" {
+		if err := wiki_service.ChangeDefaultWikiBranch(ctx, repo, form.DefaultWikiBranch); err != nil {
+			log.Error("ChangeDefaultWikiBranch failed, err: %v", err)
+			ctx.Flash.Warning(ctx.Tr("repo.settings.failed_to_change_default_wiki_branch")) // skip the error, continue, and reload page
 		}
 	}
-
 	ctx.Flash.Success(ctx.Tr("repo.settings.update_settings_success"))
 	ctx.JSONRedirect("")
 }

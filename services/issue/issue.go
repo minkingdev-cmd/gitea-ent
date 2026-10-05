@@ -23,6 +23,9 @@ import (
 
 // NewIssue creates new issue with labels for repository.
 func NewIssue(ctx context.Context, repo *repo_model.Repository, issue *issues_model.Issue, labelIDs []int64, uuids []string, assigneeIDs, projectIDs []int64) error {
+	if err := requireRepoFeature(ctx, repo.ID, issue.IsPull); err != nil {
+		return err
+	}
 	if err := issue.LoadPoster(ctx); err != nil {
 		return err
 	}
@@ -85,6 +88,9 @@ func NewIssue(ctx context.Context, repo *repo_model.Repository, issue *issues_mo
 
 // ChangeTitle changes the title of this issue, as the given user.
 func ChangeTitle(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, title string) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	oldTitle := issue.Title
 	issue.Title = title
 
@@ -127,6 +133,9 @@ func ChangeTitle(ctx context.Context, issue *issues_model.Issue, doer *user_mode
 
 // ChangeTimeEstimate changes the time estimate of this issue, as the given user.
 func ChangeTimeEstimate(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, timeEstimate int64) (err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	issue.TimeEstimate = timeEstimate
 
 	return issues_model.ChangeIssueTimeEstimate(ctx, issue, doer, timeEstimate)
@@ -134,6 +143,9 @@ func ChangeTimeEstimate(ctx context.Context, issue *issues_model.Issue, doer *us
 
 // ChangeIssueRef changes the branch of this issue, as the given user.
 func ChangeIssueRef(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, ref string) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	oldRef := issue.Ref
 	issue.Ref = ref
 
@@ -148,6 +160,9 @@ func ChangeIssueRef(ctx context.Context, issue *issues_model.Issue, doer *user_m
 
 // DeleteIssue deletes an issue
 func DeleteIssue(ctx context.Context, doer *user_model.User, issue *issues_model.Issue) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	// load issue before deleting it
 	if err := issue.LoadAttributes(ctx); err != nil {
 		return err

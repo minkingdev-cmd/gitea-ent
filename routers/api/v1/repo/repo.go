@@ -5,6 +5,7 @@
 package repo
 
 import (
+	gocontext "context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	"gitea.dev/modules/markup"
 	"gitea.dev/modules/optional"
 	repo_module "gitea.dev/modules/repository"
+	"gitea.dev/modules/reqctx"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
@@ -661,12 +663,32 @@ func Edit(ctx *context.APIContext) {
 	}
 	defer finishExecution()
 
-	if err := updateBasicProperties(ctx, opts); err != nil {
+	units, deleteUnitTypes, err := prepareRepoUnits(ctx, opts)
+	if err != nil {
+		ctx.APIErrorAuto(err)
 		return
 	}
-
-	if err := updateRepoUnits(ctx, opts); err != nil {
-		ctx.APIErrorAuto(err)
+	original := ctx.RequestContext
+	err = authz_service.WithRepoFeatureConfiguration(original, ctx.Repo.Repository.ID, units, deleteUnitTypes, func(tx gocontext.Context) error {
+		ctx.RequestContext = reqctx.FromContext(tx)
+		defer func() { ctx.RequestContext = original }()
+		if err := updateBasicProperties(ctx, opts); err != nil {
+			return err
+		}
+		if len(units)+len(deleteUnitTypes) > 0 {
+			if err := repo_service.UpdateRepositoryUnits(ctx, ctx.Repo.Repository, units, deleteUnitTypes); err != nil {
+				return err
+			}
+			if opts.HasActions != nil && !unit_model.TypeActions.UnitGlobalDisabled() {
+				common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if !ctx.Written() && !common.WriteExecutionError(ctx.Base, err) {
+			ctx.APIErrorAuto(err)
+		}
 		return
 	}
 
@@ -803,8 +825,8 @@ func updateBasicProperties(ctx *context.APIContext, opts api.EditRepoOption) err
 	return nil
 }
 
-// updateRepoUnits updates repo units: Issue settings, Wiki settings, PR settings
-func updateRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) error {
+// prepareRepoUnits validates and builds the final repository unit update.
+func prepareRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) ([]repo_model.RepoUnit, []unit_model.Type, error) {
 	repo := ctx.Repo.Repository
 
 	var units []repo_model.RepoUnit
@@ -813,13 +835,13 @@ func updateRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) error {
 	if opts.HasIssues != nil && *opts.HasIssues {
 		if opts.ExternalTracker != nil && !unit_model.TypeExternalTracker.UnitGlobalDisabled() {
 			if (opts.InternalTracker == nil || opts.ExternalTracker.ExternalTrackerURL != "") && !validation.IsValidURL(opts.ExternalTracker.ExternalTrackerURL) {
-				return util.ErrorWrap(util.ErrUnprocessableContent, "external tracker URL not valid")
+				return nil, nil, util.ErrorWrap(util.ErrUnprocessableContent, "external tracker URL not valid")
 			}
 			if opts.InternalTracker != nil && (opts.ExternalTracker.ExternalTrackerStyle == "" || opts.ExternalTracker.ExternalTrackerStyle == markup.IssueNameStyleNumeric) {
-				return util.ErrorWrap(util.ErrUnprocessableContent, "external tracker style Numeric is only used for internal tracker")
+				return nil, nil, util.ErrorWrap(util.ErrUnprocessableContent, "external tracker style Numeric is only used for internal tracker")
 			}
 			if opts.ExternalTracker.ExternalTrackerFormat != "" && !validation.IsValidExternalTrackerURLFormat(opts.ExternalTracker.ExternalTrackerFormat) {
-				return util.ErrorWrap(util.ErrUnprocessableContent, "External tracker URL format not valid")
+				return nil, nil, util.ErrorWrap(util.ErrUnprocessableContent, "External tracker URL format not valid")
 			}
 
 			units = append(units, repo_model.RepoUnit{
@@ -874,7 +896,7 @@ func updateRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) error {
 		if *opts.HasWiki && opts.ExternalWiki != nil && !unit_model.TypeExternalWiki.UnitGlobalDisabled() {
 			// Check that values are valid
 			if !validation.IsValidURL(opts.ExternalWiki.ExternalWikiURL) {
-				return util.ErrorWrap(util.ErrUnprocessableContent, "external wiki URL not valid")
+				return nil, nil, util.ErrorWrap(util.ErrUnprocessableContent, "external wiki URL not valid")
 			}
 
 			units = append(units, repo_model.RepoUnit{
@@ -925,7 +947,7 @@ func updateRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) error {
 			// so we get the config settings and then set them if those settings were provided in the opts.
 			unit, err := repo.GetUnit(ctx, unit_model.TypePullRequests)
 			if err != nil && !errors.Is(err, util.ErrNotExist) {
-				return err
+				return nil, nil, err
 			}
 			if unit == nil {
 				// Unit doesn't exist yet but is being enabled, create with defaults
@@ -952,7 +974,7 @@ func updateRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) error {
 			// so unrelated PATCH calls don't reject historical configs.
 			if opts.AllowMergeUpdate != nil || opts.AllowRebaseUpdate != nil || opts.DefaultUpdateStyle != nil {
 				if err := config.ValidateUpdateSettings(); err != nil {
-					return err
+					return nil, nil, err
 				}
 			}
 			if *changed || mustInsertPullRequestUnit {
@@ -1024,15 +1046,7 @@ func updateRepoUnits(ctx *context.APIContext, opts api.EditRepoOption) error {
 		}
 	}
 
-	if len(units)+len(deleteUnitTypes) > 0 {
-		if err := repo_service.UpdateRepositoryUnits(ctx, repo, units, deleteUnitTypes); err != nil {
-			return err
-		}
-		if opts.HasActions != nil && !unit_model.TypeActions.UnitGlobalDisabled() {
-			common.MarkRepoSettingSuccess(ctx.Base, authz.ManageCI)
-		}
-	}
-	return nil
+	return units, deleteUnitTypes, nil
 }
 
 // updateRepoArchivedState updates repo's archive state

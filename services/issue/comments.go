@@ -25,6 +25,9 @@ import (
 
 // CreateRefComment creates a commit reference comment to issue.
 func CreateRefComment(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, issue *issues_model.Issue, content, commitSHA string) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	if len(commitSHA) == 0 {
 		return errors.New("cannot create reference with empty commit SHA")
 	}
@@ -60,6 +63,9 @@ func CreateRefComment(ctx context.Context, doer *user_model.User, repo *repo_mod
 
 // CreateIssueComment creates a plain issue comment.
 func CreateIssueComment(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, issue *issues_model.Issue, content string, attachments []string) (*issues_model.Comment, error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return nil, err
+	}
 	if user_model.IsUserBlockedBy(ctx, doer, issue.PosterID, repo.OwnerID) {
 		if !access_model.IsUserRepoAdmin(ctx, repo, doer) {
 			return nil, user_model.ErrBlockedUser
@@ -96,6 +102,9 @@ func CreateIssueComment(ctx context.Context, doer *user_model.User, repo *repo_m
 
 // UpdateComment updates information of comment.
 func UpdateComment(ctx context.Context, c *issues_model.Comment, contentVersion int, doer *user_model.User, oldContent string) error {
+	if err := requireCommentFeature(ctx, c); err != nil {
+		return err
+	}
 	if err := c.LoadIssue(ctx); err != nil {
 		return err
 	}
@@ -141,6 +150,9 @@ func UpdateComment(ctx context.Context, c *issues_model.Comment, contentVersion 
 
 // DeleteComment deletes the comment
 func DeleteComment(ctx context.Context, doer *user_model.User, comment *issues_model.Comment) error {
+	if err := requireCommentFeature(ctx, comment); err != nil {
+		return err
+	}
 	err := db.WithTx(ctx, func(ctx context.Context) error {
 		return issues_model.DeleteComment(ctx, comment)
 	})

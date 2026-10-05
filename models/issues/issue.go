@@ -516,8 +516,17 @@ func isPullToCond(isPull optional.Option[bool]) builder.Cond {
 }
 
 func FindLatestUpdatedIssues(ctx context.Context, repoID int64, isPull optional.Option[bool], pageSize int) (IssueList, error) {
+	observeIssueSession(ctx, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("issue").Where("repo_id=?", repoID).And(isPullToCond(isPull))
+	})
+
+	featureCond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	issues := make([]*Issue, 0, pageSize)
-	err := db.GetEngine(ctx).Where("repo_id = ?", repoID).
+	err = db.GetEngine(ctx).Where("repo_id = ?", repoID).
+		And(featureCond).
 		And(isPullToCond(isPull)).
 		OrderBy("updated_unix DESC").
 		Limit(pageSize).
@@ -526,6 +535,10 @@ func FindLatestUpdatedIssues(ctx context.Context, repoID int64, isPull optional.
 }
 
 func FindIssuesSuggestionByKeyword(ctx context.Context, repoID int64, keyword string, isPull optional.Option[bool], excludedID int64, pageSize int) (IssueList, error) {
+	featureCond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	cond := builder.NewCond()
 	if excludedID > 0 {
 		cond = cond.And(builder.Neq{"`id`": excludedID})
@@ -537,8 +550,12 @@ func FindIssuesSuggestionByKeyword(ctx context.Context, repoID int64, keyword st
 	// So now (https://github.com/go-gitea/gitea/pull/33538) it only searches "name(title)", leave the improvements to the future.
 	cond = cond.And(db.BuildCaseInsensitiveLike("`name`", keyword))
 
+	observeIssueSession(ctx, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("issue").Where("repo_id=?", repoID).And(isPullToCond(isPull), cond)
+	})
 	issues := make([]*Issue, 0, pageSize)
-	err := db.GetEngine(ctx).Where("repo_id = ?", repoID).
+	err = db.GetEngine(ctx).Where("repo_id = ?", repoID).
+		And(featureCond).
 		And(isPullToCond(isPull)).
 		And(cond).
 		OrderBy("updated_unix DESC, `index` DESC").
@@ -670,11 +687,20 @@ func (issue *Issue) GetParticipantIDsByIssue(ctx context.Context) ([]int64, erro
 
 // BlockedByDependencies finds all Dependencies an issue is blocked by
 func (issue *Issue) BlockedByDependencies(ctx context.Context, opts db.ListOptions) (issueDeps []*DependencyInfo, total int64, err error) {
+	observeIssueSession(ctx, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("issue").Join("INNER", "repository", "repository.id=issue.repo_id").Join("INNER", "issue_dependency", "issue_dependency.dependency_id=issue.id").Where("issue_dependency.issue_id=?", issue.ID)
+	})
+
+	cond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
 	sess := db.GetEngine(ctx).
 		Table("issue").
 		Join("INNER", "repository", "repository.id = issue.repo_id").
 		Join("INNER", "issue_dependency", "issue_dependency.dependency_id = issue.id").
 		Where("issue_id = ?", issue.ID).
+		And(cond).
 		// sort by repo id then created date, with the issues of the same repo at the beginning of the list
 		OrderBy("CASE WHEN issue.repo_id = ? THEN 0 ELSE issue.repo_id END, issue.created_unix DESC", issue.RepoID)
 	if opts.Page > 0 {
@@ -691,11 +717,20 @@ func (issue *Issue) BlockedByDependencies(ctx context.Context, opts db.ListOptio
 
 // BlockingDependencies returns all blocking dependencies, aka all other issues a given issue blocks
 func (issue *Issue) BlockingDependencies(ctx context.Context) (issueDeps []*DependencyInfo, err error) {
+	observeIssueSession(ctx, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("issue").Join("INNER", "repository", "repository.id=issue.repo_id").Join("INNER", "issue_dependency", "issue_dependency.issue_id=issue.id").Where("issue_dependency.dependency_id=?", issue.ID)
+	})
+
+	cond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	err = db.GetEngine(ctx).
 		Table("issue").
 		Join("INNER", "repository", "repository.id = issue.repo_id").
 		Join("INNER", "issue_dependency", "issue_dependency.issue_id = issue.id").
 		Where("dependency_id = ?", issue.ID).
+		And(cond).
 		// sort by repo id then created date, with the issues of the same repo at the beginning of the list
 		OrderBy("CASE WHEN issue.repo_id = ? THEN 0 ELSE issue.repo_id END, issue.created_unix DESC", issue.RepoID).
 		Find(&issueDeps)

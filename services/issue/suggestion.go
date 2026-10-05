@@ -31,6 +31,9 @@ func GetSuggestion(ctx context.Context, repo *repo_model.Repository, isPull opti
 			if err != nil && !issues_model.IsErrIssueNotExist(err) {
 				return nil, err
 			}
+			if issueByIndex != nil && RequireFeature(ctx, issueByIndex) != nil {
+				issueByIndex = nil
+			}
 			if issueByIndex != nil {
 				excludedID = issueByIndex.ID
 				pageSize--

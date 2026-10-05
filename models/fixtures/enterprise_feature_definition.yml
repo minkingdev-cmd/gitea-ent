@@ -1,0 +1,142 @@
+-
+  id: 1
+  key: feature.issues
+  description: Issue 功能
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: enabled
+  capability_kind: native_gate
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 2
+  key: feature.pull_requests
+  description: Pull Request 功能
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: enabled
+  capability_kind: native_gate
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 3
+  key: feature.packages
+  description: Package registry
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: enabled
+  capability_kind: native_gate
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 4
+  key: feature.wiki
+  description: Wiki 功能
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: enabled
+  capability_kind: native_gate
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 5
+  key: feature.webhooks
+  description: Webhook 功能
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: enabled
+  capability_kind: native_gate
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 6
+  key: feature.ci_secret_management
+  description: CI secret 管理
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: enabled
+  capability_kind: native_gate
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 7
+  key: feature.required_status_checks
+  description: Required status checks 管理
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: enabled
+  capability_kind: native_gate
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 8
+  key: feature.woodpecker_ci
+  description: Woodpecker CI 策略
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: disabled
+  capability_kind: policy_only
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 9
+  key: feature.sonarqube_quality_gate
+  description: SonarQube 质量策略
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: disabled
+  capability_kind: policy_only
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 10
+  key: feature.semgrep_scan
+  description: Semgrep 安全扫描策略
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: disabled
+  capability_kind: policy_only
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 11
+  key: feature.gitleaks_scan
+  description: Gitleaks 密钥扫描策略
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: disabled
+  capability_kind: policy_only
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 12
+  key: feature.trivy_scan
+  description: Trivy 扫描策略
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: disabled
+  capability_kind: policy_only
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1
+
+-
+  id: 13
+  key: feature.ai_review
+  description: AI review 策略
+  supported_scopes_json: '["global","org","repo"]'
+  default_state: disabled
+  capability_kind: policy_only
+  config_schema_version: 1
+  catalog_version: 1
+  policy_revision: 1

@@ -53,7 +53,7 @@ func cleanupExpiredUploadedBlobs(ctx context.Context, olderThan time.Duration) e
 		}
 	}
 
-	pvs, _, err := packages_model.SearchVersions(ctx, &packages_model.PackageSearchOptions{
+	pvs, _, err := packages_model.SearchVersionsForCleanup(ctx, &packages_model.PackageSearchOptions{
 		Type: packages_model.TypeContainer,
 		Version: packages_model.SearchValue{
 			ExactMatch: true,
@@ -88,7 +88,7 @@ func ShouldBeSkipped(ctx context.Context, pcr *packages_model.PackageCleanupRule
 	// Check if the version is a digest (or untagged)
 	if digest.Digest(pv.LowerVersion).Validate() == nil {
 		// Check if there is another manifest referencing this version
-		has, err := packages_model.ExistVersion(ctx, &packages_model.PackageSearchOptions{
+		has, err := packages_model.ExistVersionForCleanup(ctx, &packages_model.PackageSearchOptions{
 			PackageID: p.ID,
 			Properties: map[string]string{
 				container_module.PropertyManifestReference: pv.LowerVersion,

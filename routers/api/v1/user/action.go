@@ -14,6 +14,7 @@ import (
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/shared"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
@@ -48,11 +49,18 @@ func CreateOrUpdateSecret(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	opt := web.GetForm[*api.CreateOrUpdateSecretOption](ctx)
 
 	s, created, err := secret_service.CreateOrUpdateSecret(ctx, ctx.Doer.ID, 0, ctx.PathParam("secretname"), opt.Data, opt.Description)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorAuto(err)
 		return
 	}

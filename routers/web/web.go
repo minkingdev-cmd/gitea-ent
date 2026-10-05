@@ -966,11 +966,21 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	m.Post("/{username}", reqSignIn, context.UserAssignmentWeb(), user.ActionUserFollow)
 
 	reqRepoAdmin := repo.ObserveRepoMutationGuard(context.RequireRepoAdmin())
-	reqRepoCodeWriter := context.RequireUnitWriter(unit.TypeCode)
+	reqRepoCodeWriter := func(ctx *context.Context) {
+		context.RequireUnitWriter(unit.TypeCode)(ctx)
+		if !ctx.Written() {
+			context.MustAllowCargoIndex(ctx)
+		}
+	}
 	reqRepoReleaseWriter := context.RequireUnitWriter(unit.TypeReleases)
 	reqRepoReleaseReader := context.RequireUnitReader(unit.TypeReleases)
 	reqRepoIssuesOrPullsWriter := context.RequireUnitWriter(unit.TypeIssues, unit.TypePullRequests)
-	reqRepoIssuesOrPullsReader := context.RequireUnitReader(unit.TypeIssues, unit.TypePullRequests)
+	reqRepoIssuesOrPullsReader := func(ctx *context.Context) {
+		context.RequireUnitReader(unit.TypeIssues, unit.TypePullRequests)(ctx)
+		if !ctx.Written() {
+			repo.MustAllowIssueOrPullFeature(ctx)
+		}
+	}
 	reqRepoProjectsReader := context.RequireUnitReader(unit.TypeProjects)
 	reqRepoProjectsWriter := context.RequireUnitWriter(unit.TypeProjects)
 	reqRepoActionsReader := context.RequireUnitReader(unit.TypeActions)
@@ -979,9 +989,24 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 	// the legacy names "reqRepoXxx" should be renamed to the correct name "reqUnitXxx", these permissions are for units, not repos
 	reqUnitsWithMarkdown := context.RequireUnitReader(unit.TypeCode, unit.TypeIssues, unit.TypePullRequests, unit.TypeReleases, unit.TypeWiki)
 	reqUnitsWithMentions := context.RequireUnitReader(unit.TypeIssues, unit.TypePullRequests, unit.TypeReleases, unit.TypeWiki, unit.TypeProjects)
-	reqUnitCodeReader := context.RequireUnitReader(unit.TypeCode)
-	reqUnitIssuesReader := context.RequireUnitReader(unit.TypeIssues)
-	reqUnitPullsReader := context.RequireUnitReader(unit.TypePullRequests)
+	reqUnitCodeReader := func(ctx *context.Context) {
+		context.RequireUnitReader(unit.TypeCode)(ctx)
+		if !ctx.Written() {
+			context.MustAllowCargoIndex(ctx)
+		}
+	}
+	reqUnitIssuesReader := func(ctx *context.Context) {
+		context.RequireUnitReader(unit.TypeIssues)(ctx)
+		if !ctx.Written() {
+			repo.MustAllowIssueFeature(ctx)
+		}
+	}
+	reqUnitPullsReader := func(ctx *context.Context) {
+		context.RequireUnitReader(unit.TypePullRequests)(ctx)
+		if !ctx.Written() {
+			repo.MustAllowPullFeature(ctx)
+		}
+	}
 	reqUnitWikiReader := context.RequireUnitReader(unit.TypeWiki)
 	reqUnitWikiWriter := context.RequireUnitWriter(unit.TypeWiki)
 
@@ -1458,7 +1483,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Post("/move_pin", reqRepoAdmin, repo.IssuePinMove)
 		}
 		// FIXME: many "pulls" requests are sent to "issues" endpoints incorrectly, so the issue endpoints have to tolerate pull request permissions at the moment
-		m.Group("/{type:issues}", addIssuesPullsUpdateRoutes, context.RequireUnitReader(unit.TypeIssues, unit.TypePullRequests), context.RepoMustNotBeArchived())
+		m.Group("/{type:issues}", addIssuesPullsUpdateRoutes, context.RequireUnitReader(unit.TypeIssues, unit.TypePullRequests), repo.MustAllowIssueOrPullFeature, context.RepoMustNotBeArchived())
 		m.Group("/{type:pulls}", addIssuesPullsUpdateRoutes, reqUnitPullsReader, context.RepoMustNotBeArchived())
 
 		m.Group("/comments/{id}", func() {

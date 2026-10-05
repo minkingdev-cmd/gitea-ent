@@ -195,6 +195,29 @@ func (b *Indexer) Search(ctx context.Context, options *internal.SearchOptions) (
 		queries = append(queries, bleve.NewDisjunctionQuery(repoQueries...))
 	}
 
+	if len(options.CandidateRepoIDs) > 0 {
+		var repos []query.Query
+		for _, id := range options.CandidateRepoIDs {
+			repos = append(repos, inner_bleve.NumericEqualityQuery(id, "repo_id"))
+		}
+		queries = append(queries, bleve.NewDisjunctionQuery(repos...))
+	}
+	for _, item := range []struct {
+		pull    bool
+		repoIDs []int64
+	}{{false, options.ExcludedIssueRepoIDs}, {true, options.ExcludedPullRepoIDs}} {
+		if len(item.repoIDs) == 0 {
+			continue
+		}
+		var repoQueries []query.Query
+		for _, repoID := range item.repoIDs {
+			repoQueries = append(repoQueries, inner_bleve.NumericEqualityQuery(repoID, "repo_id"))
+		}
+		q := bleve.NewBooleanQuery()
+		q.AddMustNot(bleve.NewConjunctionQuery(inner_bleve.BoolFieldQuery(item.pull, "is_pull"), bleve.NewDisjunctionQuery(repoQueries...)))
+		queries = append(queries, q)
+	}
+
 	if options.IsPull.Has() {
 		queries = append(queries, inner_bleve.BoolFieldQuery(options.IsPull.Value(), "is_pull"))
 	}

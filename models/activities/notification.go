@@ -197,10 +197,15 @@ func updateIssueNotification(ctx context.Context, userID, issueID, commentID, up
 
 // GetIssueNotification return the notification about an issue
 func GetIssueNotification(ctx context.Context, userID, issueID int64) (*Notification, error) {
+	observeNotificationQuery(ctx, builder.Eq{"notification.user_id": userID, "notification.issue_id": issueID})
+	featureCond, err := notificationFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	notification := new(Notification)
-	_, err := db.GetEngine(ctx).
+	_, err = db.GetEngine(ctx).
 		Where("user_id = ?", userID).
-		And("issue_id = ?", issueID).
+		And("issue_id = ?", issueID).And(featureCond).
 		Get(notification)
 	return notification, err
 }
@@ -391,9 +396,14 @@ func SetNotificationStatus(ctx context.Context, notificationID int64, user *user
 
 // GetNotificationByID return notification by ID
 func GetNotificationByID(ctx context.Context, notificationID int64) (*Notification, error) {
+	observeNotificationQuery(ctx, builder.Eq{"notification.id": notificationID})
+	featureCond, err := notificationFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	notification := new(Notification)
 	ok, err := db.GetEngine(ctx).
-		Where("id = ?", notificationID).
+		Where("id = ?", notificationID).And(featureCond).
 		Get(notification)
 	if err != nil {
 		return nil, err
@@ -407,8 +417,13 @@ func GetNotificationByID(ctx context.Context, notificationID int64) (*Notificati
 }
 
 func GetNotificationsByIDs(ctx context.Context, ids []int64, userID int64) (ret NotificationList, _ error) {
-	err := db.GetEngine(ctx).
-		Where("user_id = ?", userID).And(builder.In("id", ids)).
+	observeNotificationQuery(ctx, builder.Eq{"notification.user_id": userID}.And(builder.In("notification.id", ids)))
+	featureCond, err := notificationFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = db.GetEngine(ctx).
+		Where("user_id = ?", userID).And(builder.In("id", ids)).And(featureCond).
 		Find(&ret)
 	return ret, err
 }

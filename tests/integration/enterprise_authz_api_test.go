@@ -101,7 +101,7 @@ func TestEnterpriseAuthzAPIScopesAndDiagnostics(t *testing.T) {
 			enforced = append(enforced, action.Key)
 		}
 	}
-	require.ElementsMatch(t, []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete"}, enforced)
+	require.ElementsMatch(t, []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete", "repo.manage_feature_grant"}, enforced)
 	MakeRequest(t, NewRequest(t, "GET", "/api/v1/orgs/org3/enterprise/authz/roles").AddTokenAuth(ownerToken), http.StatusOK)
 	self := MakeRequest(t, NewRequest(t, "GET", base+"/effective-permissions").AddTokenAuth(readerToken), http.StatusOK)
 	var effective api.EnterpriseAuthzEffectivePermissions

@@ -66,23 +66,37 @@ func (opts *PackageSearchOptions) toCond() builder.Cond {
 
 // ExistPackages tests if there are packages matching the search options
 func ExistPackages(ctx context.Context, opts *PackageSearchOptions) (bool, error) {
+	packages.ObserveFeatureSession(ctx, opts.OwnerID, packages.TypeDebian, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_file").Join("INNER", "package_version", "package_version.id=package_file.version_id").Join("INNER", "package", "package.id=package_version.package_id").Where(opts.toCond())
+	})
+	featureCond, err := packages.FeatureQueryCond(ctx, opts.OwnerID, packages.TypeDebian)
+	if err != nil {
+		return false, err
+	}
 	return db.GetEngine(ctx).
 		Table("package_file").
 		Join("INNER", "package_version", "package_version.id = package_file.version_id").
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(opts.toCond()).
+		Where(opts.toCond().And(featureCond)).
 		Exist(new(packages.PackageFile))
 }
 
 // SearchPackages gets the packages matching the search options
 func SearchPackages(ctx context.Context, opts *PackageSearchOptions) ([]*packages.PackageFileDescriptor, error) {
+	packages.ObserveFeatureSession(ctx, opts.OwnerID, packages.TypeDebian, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_file").Join("INNER", "package_version", "package_version.id=package_file.version_id").Join("INNER", "package", "package.id=package_version.package_id").Where(opts.toCond())
+	})
+	featureCond, err := packages.FeatureQueryCond(ctx, opts.OwnerID, packages.TypeDebian)
+	if err != nil {
+		return nil, err
+	}
 	var pkgFiles []*packages.PackageFile
-	err := db.GetEngine(ctx).
+	err = db.GetEngine(ctx).
 		Table("package_file").
 		Select("package_file.*").
 		Join("INNER", "package_version", "package_version.id = package_file.version_id").
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(opts.toCond()).
+		Where(opts.toCond().And(featureCond)).
 		Asc("package.lower_name", "package_version.created_unix").Find(&pkgFiles)
 	if err != nil {
 		return nil, err

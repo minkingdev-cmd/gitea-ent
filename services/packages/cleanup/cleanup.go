@@ -34,7 +34,7 @@ func CleanupTask(ctx context.Context, olderThan time.Duration) error {
 
 func executeCleanupOneRulePackage(ctx context.Context, pcr *packages_model.PackageCleanupRule, p *packages_model.Package) (versionDeleted bool, err error) {
 	olderThan := time.Now().AddDate(0, 0, -pcr.RemoveDays)
-	pvs, _, err := packages_model.SearchVersions(ctx, &packages_model.PackageSearchOptions{
+	pvs, _, err := packages_model.SearchVersionsForCleanup(ctx, &packages_model.PackageSearchOptions{
 		PackageID:  p.ID,
 		IsInternal: optional.Some(false),
 		Sort:       packages_model.SortCreatedDesc,
@@ -112,7 +112,9 @@ func executeCleanupOneRule(ctx context.Context, pcr *packages_model.PackageClean
 				if err != nil {
 					return fmt.Errorf("GetUserByID failed: %w", err)
 				}
-				if err := cargo_service.UpdatePackageIndexIfExists(ctx, owner, owner, p.ID); err != nil {
+				if err := packages_service.RebuildIndexAfterPackageCleanup(ctx, pcr.OwnerID, pcr.Type, func(ctx context.Context) error {
+					return cargo_service.UpdatePackageIndexIfExists(ctx, owner, owner, p.ID)
+				}); err != nil {
 					return fmt.Errorf("CleanupRule [%d]: cargo.UpdatePackageIndexIfExists failed: %w", pcr.ID, err)
 				}
 			}
@@ -120,30 +122,33 @@ func executeCleanupOneRule(ctx context.Context, pcr *packages_model.PackageClean
 	}
 
 	if anyVersionDeleted {
-		switch pcr.Type {
-		case packages_model.TypeDebian:
-			if err := debian_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
-				return fmt.Errorf("CleanupRule [%d]: debian.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
-			}
-		case packages_model.TypeAlpine:
-			if err := alpine_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
-				return fmt.Errorf("CleanupRule [%d]: alpine.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
-			}
-		case packages_model.TypeRpm:
-			if err := rpm_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
-				return fmt.Errorf("CleanupRule [%d]: rpm.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
-			}
-		case packages_model.TypeArch:
-			release, err := arch_service.AcquireRegistryLock(ctx, pcr.OwnerID)
-			if err != nil {
-				return err
-			}
-			defer release()
+		return packages_service.RebuildIndexAfterPackageCleanup(ctx, pcr.OwnerID, pcr.Type, func(ctx context.Context) error {
+			switch pcr.Type {
+			case packages_model.TypeDebian:
+				if err := debian_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
+					return fmt.Errorf("CleanupRule [%d]: debian.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
+				}
+			case packages_model.TypeAlpine:
+				if err := alpine_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
+					return fmt.Errorf("CleanupRule [%d]: alpine.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
+				}
+			case packages_model.TypeRpm:
+				if err := rpm_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
+					return fmt.Errorf("CleanupRule [%d]: rpm.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
+				}
+			case packages_model.TypeArch:
+				release, err := arch_service.AcquireRegistryLock(ctx, pcr.OwnerID)
+				if err != nil {
+					return err
+				}
+				defer release()
 
-			if err := arch_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
-				return fmt.Errorf("CleanupRule [%d]: arch.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
+				if err := arch_service.BuildAllRepositoryFiles(ctx, pcr.OwnerID); err != nil {
+					return fmt.Errorf("CleanupRule [%d]: arch.BuildAllRepositoryFiles failed: %w", pcr.ID, err)
+				}
 			}
-		}
+			return nil
+		})
 	}
 	return nil
 }

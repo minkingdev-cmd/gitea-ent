@@ -13,8 +13,10 @@ import (
 	"strings"
 	"time"
 
+	packages_model "gitea.dev/models/packages"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	repo_module "gitea.dev/modules/repository"
@@ -366,7 +368,12 @@ func (t *TemporaryUploadRepository) Push(ctx context.Context, doer *user_model.U
 	}
 	// Because calls hooks we need to pass in the environment
 	env := repo_module.PushingEnvironment(doer, t.repo)
-	env = repo_module.WithAuthzOperation(env, string(fileMutationTicket(ctx, t.repo.ID, doer.ID, strings.TrimSpace(branch))))
+	ticket := fileMutationTicket(ctx, t.repo.ID, doer.ID, strings.TrimSpace(branch))
+	if ticket == "" && setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && admission != nil && len(input) == 1 && t.repo.InternalUsage == repo_model.InternalUsageCargoIndex && packages_model.CleanupIndexReadAllowed(executionCtx, t.repo.OwnerID, packages_model.TypeCargo) {
+		prepared := input[0]
+		ticket = authz_service.NewHookOperationTicket(executionCtx, authz_service.EvaluateInput{Actor: prepared.Actor, Repo: prepared.Repo, Credential: prepared.Credential, Action: authz.PushBranch, ConditionContext: authz.ConditionContext{Source: prepared.Source}}, nil)
+	}
+	env = repo_module.WithAuthzOperation(env, string(ticket))
 	lease := ""
 	if len(input) == 1 {
 		lease = string(input[0].Ref) + ":" + input[0].OldCommitID

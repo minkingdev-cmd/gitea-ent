@@ -15,7 +15,6 @@ import (
 
 	packages_model "gitea.dev/models/packages"
 	"gitea.dev/modules/json"
-	"gitea.dev/modules/log"
 	"gitea.dev/modules/optional"
 	packages_module "gitea.dev/modules/packages"
 	swift_module "gitea.dev/modules/packages/swift"
@@ -72,6 +71,7 @@ func setResponseHeaders(resp http.ResponseWriter, h *headers) {
 
 // https://github.com/swiftlang/swift-package-manager/blob/main/Documentation/PackageRegistry/Registry.md#33-error-handling
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	// https://www.rfc-editor.org/rfc/rfc7807
 	type Problem struct {
 		Status int    `json:"status"`
@@ -409,9 +409,10 @@ func UploadPackageFile(ctx *context.Context) {
 	}
 
 	for _, url := range pck.RepositoryURLs {
-		_, err = packages_model.InsertProperty(ctx, packages_model.PropertyTypeVersion, pv.ID, swift_module.PropertyRepositoryURL, url)
+		err = packages_service.InsertPackageVersionProperty(ctx, pv, swift_module.PropertyRepositoryURL, url)
 		if err != nil {
-			log.Error("InsertProperty failed: %v", err)
+			apiError(ctx, http.StatusInternalServerError, err)
+			return
 		}
 	}
 

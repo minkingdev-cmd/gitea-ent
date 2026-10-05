@@ -1,6 +1,6 @@
 # 企业仓库授权 shadow 运维手册
 
-> 本文保留 foundation/shadow 交付时的配置与 seed 时间线，不覆盖其历史边界。后续高风险 enforce 版本的上线、降级与恢复使用 [enforce 运维手册](authz-enforce-runbook.md)。
+> 本文保留 foundation/shadow 交付时的配置与 seed 时间线，不覆盖其历史边界。后续高风险 enforce 版本的上线、降级与恢复使用 [enforce 运维手册](authz-enforce-runbook.md)，功能授权版本使用 [功能授权手册](feature-grants-runbook.md)。本文以下“此版本”仍特指 foundation/shadow 历史版本，不适用于判断当前新版是否支持功能管理。
 
 ## 1. 发布边界
 
@@ -87,3 +87,11 @@ Additive migration 不代表旧版本能读新 schema；旧版会拒绝较新 ve
 若目标旧二进制/备份或完整存储不可得，则不能声称已完成降级；保持停写并上报明确缺口。隔离演练结果不代替生产恢复审批或真实企微联调。
 
 本 change 的实跑证据位于 `openspec/changes/add-enterprise-authz-foundation-shadow/verification.md`；其中区分 PostgreSQL/SQLite、macOS 开发验证与 Linux 运行验证，不宣称未测数据库或 Windows 服务端兼容。
+
+## 2026-10-05：当前新版的 feature shadow 补充
+
+`add-enterprise-feature-grants` 在 enabled/shadow 下可通过受权 API 管理 13-key 的 global/org/repo 策略；`repo.manage_feature_grant` 已有真实操作，不再只诊断。管理权限与凭据 ceiling 不因 shadow 放松；实际原生业务仍不因候选 feature deny/error 拒绝，诊断/有效查询也不变成执行票据。default/四态锁、CAS、reader/raw 隔离及 native availability/pending 见 [功能授权手册](feature-grants-runbook.md)。六个外部 key 仅 policy_only，required 不代表扫描执行或新 merge gate。
+
+新版 migration 363 后 DB version 364，enabled readiness 包含功能 schema/seed 与 Cargo 索引真实用途预检。先完成旧 mail queue 的全实例停机、备份及仅 mail 队列隔离，再统一升级；旧邮件没有可信 IssueID，不能靠 shadow 观测自动补回。Cargo 索引旧仓库的认领需要真实系统 authority 核实稳定 ID、用途及完整 Git 历史，disabled 离线维护和数据库审计；必须提供完整可重复 `--source-repo-id` 或互斥的 `--confirm-no-linked-history`，不能只看现存包或按名字自动标记。migration 同时建立 `enterprise_cargo_index_source` 唯一来源 pair；Git commit 前永久追加来源，删除/unlink 不清理，读取按各来源当前 repo 策略判定，来源删除/未知拒绝。marked index 禁止 owner transfer，rename 保留稳定 ID；disabled 的未标记同名上游 lookup 不赋 marker，enabled 不将其认作索引。disabled 无 feature DB 查询，但不能代替这些上线门槛。
+
+以上仅同步新版运维边界，未执行的停机、认领、队列处置和完整备份恢复不标成已完成；前序 change verification 保持原状。

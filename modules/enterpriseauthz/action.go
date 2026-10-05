@@ -61,7 +61,7 @@ var actions = []ActionMetadata{
 	{ManageCI, "管理 CI 设置", []string{"code", "actions"}, "high", true, true, true, true},
 	{ManageSecret, "管理仓库 secret", []string{"actions"}, "high", true, true, false, true},
 	{ManageAccess, "管理仓库访问授权", nil, "high", true, true, false, true},
-	{ManageFeatureGrant, "管理功能授权（仅目录和诊断）", nil, "high", true, false, false, false},
+	{ManageFeatureGrant, "管理功能授权", nil, "high", true, true, false, true},
 	{Migrate, "迁移到已创建的本地仓库", nil, "high", true, true, false, false},
 	{Transfer, "转移仓库", nil, "high", true, true, false, true},
 	{Archive, "归档仓库", nil, "high", true, true, false, true},

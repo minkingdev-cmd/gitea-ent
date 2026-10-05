@@ -17,6 +17,7 @@ import (
 
 	asymkey_model "gitea.dev/models/asymkey"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
@@ -26,6 +27,7 @@ import (
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/cache"
 	"gitea.dev/modules/cachegroup"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/httplib"
 	code_indexer "gitea.dev/modules/indexer/code"
@@ -35,6 +37,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	asymkey_service "gitea.dev/services/asymkey"
+	authz_service "gitea.dev/services/enterpriseauthz"
 
 	"github.com/editorconfig/editorconfig-core-go/v2"
 )
@@ -608,13 +611,17 @@ func repoAssignmentPrepareRepo(ctx *Context, data *repoAssignmentPrepareDataStru
 
 func repoAssignmentPrepareTemplateData(ctx *Context, data *repoAssignmentPrepareDataStruct) {
 	repo := data.repo
+	for key, field := range map[authz.FeatureKey]string{authz.FeatureIssues: "IssuesFeatureDisabled", authz.FeaturePullRequests: "PullsFeatureDisabled", authz.FeatureWiki: "WikiFeatureDisabled", authz.FeaturePackages: "PackagesFeatureDisabled"} {
+		visible, _ := authz_model.RepoFeatureVisible(ctx, key, repo.ID, repo.OwnerID, repo.Owner.IsOrganization())
+		ctx.Data[field] = !visible
+	}
 	ctx.Repo.RepoLink = repo.Link()
 	ctx.Data["RepoLink"] = ctx.Repo.RepoLink
 	ctx.Data["FeedURL"] = ctx.Repo.RepoLink
 	ctx.Data["CloneButtonOriginLink"] = repo.CloneLink(ctx, ctx.Doer) // CloneButtonOriginLink may be rewritten to the WikiCloneLink by the router middleware
 
 	unit, err := ctx.Repo.Repository.GetUnit(ctx, unit_model.TypeExternalTracker)
-	if err == nil {
+	if err == nil && ctx.Data["IssuesFeatureDisabled"] != true {
 		ctx.Data["RepoExternalIssuesLink"] = unit.ExternalTrackerConfig().ExternalTrackerURL
 	}
 
@@ -643,8 +650,8 @@ func repoAssignmentPrepareTemplateData(ctx *Context, data *repoAssignmentPrepare
 	ctx.Data["Repository"] = repo
 	ctx.Data["Owner"] = ctx.Repo.Repository.Owner
 	ctx.Data["CanWriteCode"] = ctx.Repo.Permission.CanWrite(unit_model.TypeCode)
-	ctx.Data["CanWriteIssues"] = ctx.Repo.Permission.CanWrite(unit_model.TypeIssues)
-	ctx.Data["CanWritePulls"] = ctx.Repo.Permission.CanWrite(unit_model.TypePullRequests)
+	ctx.Data["CanWriteIssues"] = ctx.Data["IssuesFeatureDisabled"] != true && ctx.Repo.Permission.CanWrite(unit_model.TypeIssues)
+	ctx.Data["CanWritePulls"] = ctx.Data["PullsFeatureDisabled"] != true && ctx.Repo.Permission.CanWrite(unit_model.TypePullRequests)
 	ctx.Data["CanWriteActions"] = ctx.Repo.Permission.CanWrite(unit_model.TypeActions)
 
 	canSignedUserFork, err := repo_module.CanUserForkRepo(ctx, ctx.Doer, ctx.Repo.Repository)
@@ -937,6 +944,10 @@ func repoRefFullName(typ git.RefType, shortName string) git.RefName {
 
 func RepoRefByDefaultBranch() func(*Context) {
 	return func(ctx *Context) {
+		MustAllowCargoIndex(ctx)
+		if ctx.Written() {
+			return
+		}
 		ctx.Repo.RefFullName = git.RefNameFromBranch(ctx.Repo.Repository.DefaultBranch)
 		ctx.Repo.BranchName = ctx.Repo.Repository.DefaultBranch
 		ctx.Repo.Commit, _ = ctx.Repo.GitRepo.GetBranchCommit(ctx, ctx.Repo.BranchName)
@@ -951,6 +962,10 @@ func RepoRefByDefaultBranch() func(*Context) {
 // of repository reference
 func RepoRefByType(detectRefType git.RefType) func(*Context) {
 	return func(ctx *Context) {
+		MustAllowCargoIndex(ctx)
+		if ctx.Written() {
+			return
+		}
 		var err error
 		refType := detectRefType
 		if ctx.Repo.Repository.IsBeingCreated() || ctx.Repo.Repository.IsBroken() {
@@ -1121,4 +1136,10 @@ func canWriteAsMaintainer(ctx *Context) bool {
 		return issues_model.CanMaintainerWriteToBranch(ctx, ctx.Repo.Permission, branchName, ctx.Doer)
 	})
 	return len(branchName) > 0
+}
+
+func MustAllowCargoIndex(ctx *Context) {
+	if err := authz_service.RequireCargoIndexFeature(ctx, ctx.Repo.Repository); err != nil {
+		ctx.ServerError("RequireCargoIndexFeature", err)
+	}
 }

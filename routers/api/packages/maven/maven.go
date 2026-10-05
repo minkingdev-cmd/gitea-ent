@@ -50,6 +50,7 @@ var (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	// Maven client doesn't present the error message to end users; site admin can check the server logs that outputted by ProcessErrorForUser
 	ctx.PlainText(status, message)
@@ -380,7 +381,7 @@ func UploadPackageFile(ctx *context.Context) {
 					return
 				}
 				pv.MetadataJSON = string(raw)
-				if err := packages_model.UpdateVersion(ctx, pv); err != nil {
+				if err := packages_service.UpdatePackageVersionMetadata(ctx, pv); err != nil {
 					apiError(ctx, http.StatusInternalServerError, err)
 					return
 				}

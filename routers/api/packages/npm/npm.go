@@ -19,6 +19,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/json"
 	"gitea.dev/modules/optional"
@@ -27,6 +28,7 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/routers/api/packages/helper"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	packages_service "gitea.dev/services/packages"
 
 	"github.com/hashicorp/go-version"
@@ -36,6 +38,7 @@ import (
 var errInvalidTagName = errors.New("The tag name is invalid")
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.JSON(status, map[string]string{
 		"error": message,
@@ -229,6 +232,10 @@ func UploadPackage(ctx *context.Context) {
 			apiError(ctx, http.StatusForbidden, "no permission to upload this package")
 			return
 		}
+		if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeaturePackages); err != nil {
+			apiError(ctx, http.StatusForbidden, err)
+			return
+		}
 	}
 
 	buf, err := packages_module.CreateHashedBufferFromReader(bytes.NewReader(npmPackage.Data))
@@ -284,9 +291,16 @@ func UploadPackage(ctx *context.Context) {
 	}
 
 	if repo != nil {
-		if err := packages_model.SetRepositoryLink(ctx, pv.PackageID, repo.ID); err != nil {
+		pkg, err := packages_model.GetPackageByID(ctx, pv.PackageID)
+		if err != nil {
 			apiError(ctx, http.StatusInternalServerError, err)
 			return
+		}
+		if pkg.RepoID != repo.ID {
+			if err := packages_service.SetRepositoryAssociation(ctx, pkg.ID, repo.ID); err != nil {
+				apiError(ctx, http.StatusInternalServerError, err)
+				return
+			}
 		}
 	}
 
@@ -336,7 +350,7 @@ func deprecatePackage(ctx *context.Context, dep *npm_module.PackageDeprecation) 
 			}
 			pv.MetadataJSON = string(raw)
 
-			if err := packages_model.UpdateVersion(txCtx, pv); err != nil {
+			if err := packages_service.UpdatePackageVersionMetadata(txCtx, pv); err != nil {
 				return err
 			}
 		}
@@ -381,7 +395,7 @@ func DeletePackageVersion(ctx *context.Context) {
 func DeletePackage(ctx *context.Context) {
 	packageName := packageNameFromParams(ctx)
 
-	pvs, err := packages_model.GetVersionsByPackageName(ctx, ctx.Package.Owner.ID, packages_model.TypeNpm, packageName)
+	pvs, err := packages_model.GetVersionsByPackageNameForCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeNpm, packageName)
 	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
@@ -469,7 +483,7 @@ func AddPackageTag(ctx *context.Context) {
 func DeletePackageTag(ctx *context.Context) {
 	packageName := packageNameFromParams(ctx)
 
-	pvs, err := packages_model.GetVersionsByPackageName(ctx, ctx.Package.Owner.ID, packages_model.TypeNpm, packageName)
+	pvs, err := packages_model.GetVersionsByPackageNameForCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeNpm, packageName)
 	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
@@ -497,7 +511,20 @@ func setPackageTag(ctx std_ctx.Context, tag string, pv *packages_model.PackageVe
 	}
 
 	return db.WithTx(ctx, func(ctx std_ctx.Context) error {
-		pvs, _, err := packages_model.SearchVersions(ctx, &packages_model.PackageSearchOptions{
+		if !deleteOnly {
+			pkg, err := packages_model.GetPackageByID(ctx, pv.PackageID)
+			if err != nil {
+				return err
+			}
+			if err := packages_service.RequirePackageWriteFeature(ctx, pkg); err != nil {
+				return err
+			}
+		}
+		searchVersions := packages_model.SearchVersions
+		if deleteOnly {
+			searchVersions = packages_model.SearchVersionsForCleanup
+		}
+		pvs, _, err := searchVersions(ctx, &packages_model.PackageSearchOptions{
 			PackageID: pv.PackageID,
 			Properties: map[string]string{
 				npm_module.TagProperty: tag,

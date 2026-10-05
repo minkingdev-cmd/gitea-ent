@@ -148,6 +148,22 @@ func (b *Indexer) Search(ctx context.Context, options *internal.SearchOptions) (
 		query.And(q)
 	}
 
+	if len(options.CandidateRepoIDs) > 0 {
+		query.And(inner_meilisearch.NewFilterIn("repo_id", options.CandidateRepoIDs...))
+	}
+	for _, item := range []struct {
+		pull    bool
+		repoIDs []int64
+	}{{false, options.ExcludedIssueRepoIDs}, {true, options.ExcludedPullRepoIDs}} {
+		if len(item.repoIDs) == 0 {
+			continue
+		}
+		q := &inner_meilisearch.FilterAnd{}
+		q.And(inner_meilisearch.NewFilterEq("is_pull", item.pull))
+		q.And(inner_meilisearch.NewFilterIn("repo_id", item.repoIDs...))
+		query.And(inner_meilisearch.NewFilterNot(q))
+	}
+
 	if options.IsPull.Has() {
 		query.And(inner_meilisearch.NewFilterEq("is_pull", options.IsPull.Value()))
 	}

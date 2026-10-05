@@ -45,6 +45,9 @@ import (
 
 // getMergeMessage composes the message used when merging a pull request.
 func getMergeMessage(ctx context.Context, baseGitRepo *git.Repository, pr *issues_model.PullRequest, mergeStyle repo_model.MergeStyle, extraVars map[string]string) (message, body string, err error) {
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return "", "", err
+	}
 	if err := pr.LoadBaseRepo(ctx); err != nil {
 		return "", "", err
 	}
@@ -261,6 +264,9 @@ func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *use
 	if pr == nil || doer == nil {
 		return util.ErrInvalidArgument
 	}
+	if err := authz_service.RequireRepoFeature(operationCtx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	ctx := authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), operationCtx) // don't abort the git operation even if the user's request is canceled
 	execution := new(mergeExecution)
 	defer func() { execution.finish(err) }()
@@ -397,6 +403,9 @@ func handleCloseCrossReferences(ctx context.Context, pr *issues_model.PullReques
 
 // doMergeAndPush performs the merge operation without changing any pull information in database and pushes it up to the base repository
 func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, mergeStyle repo_model.MergeStyle, expectedHeadCommitID, message string, pushTrigger repo_module.PushTrigger, execution *mergeExecution) (string, error) { //nolint:unparam // non-error result is never used
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return "", err
+	}
 	// Clone base repo.
 	mergeCtx, cancel, err := createTemporaryRepoForMerge(ctx, pr, doer, expectedHeadCommitID)
 	if err != nil {
@@ -715,6 +724,9 @@ func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *use
 }
 
 func mergedManuallyLocked(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string, automatic bool) (err error) {
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	execution := new(mergeExecution)
 	defer func() { execution.finish(err) }()
 	actorID, repoID := doer.ID, pr.BaseRepoID

@@ -208,3 +208,89 @@ func TestPostCommitEffectsDoNotRunWhenNestedFailureIsIgnored(t *testing.T) {
 	require.Error(t, err)
 	require.Zero(t, count)
 }
+
+func TestPostRollbackEffectsOnlyRunAfterOutermostClose(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	count := 0
+	require.NoError(t, db.WithTx(t.Context(), func(ctx context.Context) error {
+		db.AfterRollback(ctx, func() { count++ })
+		return nil
+	}))
+	require.Zero(t, count)
+	err := db.WithTx(t.Context(), func(ctx context.Context) error {
+		_ = db.WithTx(ctx, func(ctx context.Context) error {
+			db.AfterRollback(ctx, func() {
+				count++
+				require.NoError(t, db.WithIndependentTx(ctx, func(context.Context) error { return nil }))
+			})
+			return context.Canceled
+		})
+		require.Zero(t, count)
+		return nil
+	})
+	require.Error(t, err)
+	require.Equal(t, 1, count)
+}
+
+func TestSavepointKeepsOuterTransactionUsable(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	require.NoError(t, db.WithTx(t.Context(), func(ctx context.Context) error {
+		err := db.WithSavepoint(ctx, func(tx context.Context) error {
+			_, err := db.Exec(tx, "UPDATE repository SET description=? WHERE id=1", "must-be-rolled-back")
+			require.NoError(t, err)
+			_, err = db.Exec(tx, "SELECT * FROM missing_observation_table")
+			return err
+		})
+		require.Error(t, err)
+		rows, err := db.GetEngine(ctx).Query("SELECT description FROM repository WHERE id=1")
+		require.NoError(t, err)
+		require.NotEqual(t, "must-be-rolled-back", string(rows[0]["description"]))
+		_, err = db.Exec(ctx, "UPDATE repository SET description=? WHERE id=1", "native-committed")
+		return err
+	}))
+	rows, err := db.GetEngine(t.Context()).Query("SELECT description FROM repository WHERE id=1")
+	require.NoError(t, err)
+	require.Equal(t, "native-committed", string(rows[0]["description"]))
+	require.NoError(t, db.WithIndependentReadTx(t.Context(), func(ctx context.Context) error {
+		require.True(t, db.IsReadOnly(ctx))
+		return nil
+	}))
+	require.False(t, db.IsReadOnly(t.Context()))
+}
+
+func TestReadOnlyMarkerDoesNotLeakIntoNewWriteTransaction(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	var closed context.Context
+	require.NoError(t, db.WithIndependentReadTx(t.Context(), func(ctx context.Context) error {
+		closed = ctx
+		require.True(t, db.IsReadOnly(ctx))
+		return nil
+	}))
+	for _, open := range []func(context.Context, func(context.Context) error) error{db.WithTx, db.WithIndependentTx} {
+		require.NoError(t, open(closed, func(ctx context.Context) error {
+			require.False(t, db.IsReadOnly(ctx))
+			return nil
+		}))
+	}
+}
+
+func TestNestedSavepointCancellationPreservesNativeCommit(t *testing.T) {
+	require.NoError(t, unittest.PrepareTestDatabase())
+	committed := false
+	require.NoError(t, db.WithTx(t.Context(), func(tx context.Context) error {
+		db.AfterCommit(tx, func() { committed = true })
+		bounded, cancel := context.WithCancel(tx)
+		defer cancel()
+		err := db.WithSavepoint(bounded, func(outer context.Context) error {
+			return db.WithSavepoint(outer, func(context.Context) error {
+				cancel()
+				return context.Canceled
+			})
+		})
+		require.ErrorIs(t, err, context.Canceled)
+		require.NotErrorIs(t, err, db.ErrObservationTransactionUnavailable)
+		_, err = db.Exec(tx, "UPDATE repository SET description = ? WHERE id = ?", "nested observation survived", 1)
+		return err
+	}))
+	require.True(t, committed)
+}

@@ -691,6 +691,8 @@ func CreateBranchProtection(ctx *context.APIContext) {
 	//     "$ref": "#/responses/validationError"
 	//   "423":
 	//     "$ref": "#/responses/repoArchivedError"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	form := web.GetForm[*api.CreateBranchProtectionOption](ctx)
 	if form.EnableStatusCheck || len(form.StatusCheckContexts) > 0 {
@@ -949,6 +951,10 @@ func EditBranchProtection(ctx *context.APIContext) {
 		ctx.APIErrorNotFound()
 		return
 	}
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	if form.EnablePush != nil {
 		if !*form.EnablePush {
@@ -1321,6 +1327,10 @@ func DeleteBranchProtection(ctx *context.APIContext) {
 	//     "$ref": "#/responses/empty"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	repo := ctx.Repo.Repository
 	bpName := ctx.PathParam("*")
@@ -1394,8 +1404,21 @@ func UpdateBranchProtectionPriories(ctx *context.APIContext) {
 	//     "$ref": "#/responses/repoArchivedError"
 	form := web.GetForm[*api.UpdateBranchProtectionPriories](ctx)
 	repo := ctx.Repo.Repository
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
-	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageBranchProtection, "priority")
+	checksChanged, err := pull_service.RequiredChecksPriorityChanged(ctx, ctx.Repo.Repository.ID, form.IDs)
+	if err != nil {
+		ctx.APIErrorInternal(err)
+		return
+	}
+	var additionalActions []authz.Action
+	if checksChanged {
+		additionalActions = append(additionalActions, authz.ManageCI)
+	}
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "api", authz.ManageBranchProtection, "priority", additionalActions...)
 	if !allowed {
 		return
 	}

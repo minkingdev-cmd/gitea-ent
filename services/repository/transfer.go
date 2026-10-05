@@ -14,6 +14,7 @@ import (
 	actions_model "gitea.dev/models/actions"
 	audit_model "gitea.dev/models/audit"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/perm"
@@ -76,6 +77,9 @@ func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, d
 	if err != nil {
 		return err
 	}
+	if repo.InternalUsage != "" {
+		return &authz_service.ExecutionError{Reason: "internal_repository_transfer_forbidden", Status: 403}
+	}
 	repoTransfer, err := repo_model.GetPendingRepositoryTransfer(ctx, repo)
 	if err != nil {
 		return err
@@ -99,6 +103,9 @@ func AcceptTransferOwnership(ctx context.Context, repo *repo_model.Repository, d
 	}
 	defer func() { finishLifecycleExecution(ctx, admission, err) }()
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
+		if err := lockTransferPurpose(ctx, doer, repo, repoTransfer.RecipientID); err != nil {
+			return err
+		}
 		if err := repoTransfer.LoadAttributes(ctx); err != nil {
 			return err
 		}
@@ -509,6 +516,9 @@ func StartRepositoryTransfer(ctx context.Context, doer, newOwner *user_model.Use
 	if err != nil {
 		return err
 	}
+	if repo.InternalUsage != "" {
+		return &authz_service.ExecutionError{Reason: "internal_repository_transfer_forbidden", Status: 403}
+	}
 	if err = checkLifecycleDangerZone(ctx, doer, repo); err != nil {
 		return err
 	}
@@ -541,6 +551,9 @@ func StartRepositoryTransfer(ctx context.Context, doer, newOwner *user_model.Use
 	oldOwnerName := repo.OwnerName
 
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
+		if err := lockTransferPurpose(ctx, doer, repo, newOwner.ID); err != nil {
+			return err
+		}
 		// Admin is always allowed to transfer || user transfer repo back to his account,
 		// then it will transfer directly without acceptance.
 		if doer.IsAdmin || doer.ID == newOwner.ID {
@@ -802,4 +815,31 @@ func requireTransferExecution(ctx context.Context, repo *repo_model.Repository) 
 		return &authz_service.ExecutionError{Reason: "invalid_execution_context", Status: 403}
 	}
 	return authz_service.RequireExecutionTarget(ctx, repo, authz.Transfer, boundary.intent)
+}
+
+func lockTransferPurpose(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, targetOwnerID int64) error {
+	ids := []int64{repo.OwnerID, targetOwnerID}
+	if doer.ID > 0 {
+		ids = append(ids, doer.ID)
+	}
+	slices.Sort(ids)
+	for _, id := range slices.Compact(ids) {
+		if err := authz_model.LockSubject(ctx, authz_model.SubjectUser, id); err != nil {
+			return err
+		}
+	}
+	if err := authz_model.LockScope(ctx, authz_model.Scope{Type: authz_model.ScopeRepo, ID: repo.ID}); err != nil {
+		return err
+	}
+	fresh, err := repo_model.GetRepositoryByID(ctx, repo.ID)
+	if err != nil {
+		return err
+	}
+	if fresh.OwnerID != repo.OwnerID {
+		return &authz_service.ExecutionError{Reason: "invalid_execution_context", Status: 403}
+	}
+	if fresh.InternalUsage != "" {
+		return &authz_service.ExecutionError{Reason: "internal_repository_transfer_forbidden", Status: 403}
+	}
+	return nil
 }

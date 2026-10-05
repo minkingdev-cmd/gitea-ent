@@ -102,6 +102,9 @@ func IsPullCommitStatusPass(ctx context.Context, pr *issues_model.PullRequest) (
 
 // GetPullRequestCommitStatusState returns pull request merged commit status state
 func GetPullRequestCommitStatusState(ctx context.Context, pr *issues_model.PullRequest) (commitstatus.CommitStatusState, error) {
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return "", err
+	}
 	// Ensure HeadRepo is loaded
 	if err := pr.LoadHeadRepo(ctx); err != nil {
 		return "", fmt.Errorf("LoadHeadRepo: %w", err)

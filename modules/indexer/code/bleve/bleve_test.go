@@ -4,6 +4,7 @@
 package bleve
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -56,4 +57,33 @@ func searchResultIDs(result []*internal.SearchResult) []int64 {
 		ids = append(ids, hit.RepoID)
 	}
 	return ids
+}
+
+func TestExcludedRepositoriesBeforePaginationAndFacets(t *testing.T) {
+	idx := NewIndexer(t.TempDir())
+	_, err := idx.Init(t.Context())
+	require.NoError(t, err)
+	t.Cleanup(idx.Close)
+	batch := inner_bleve.NewFlushingBatch(idx.inner.Indexer, maxBatchSize)
+	for id, language := range map[int64]string{1: "Rust", 2: "Go", 3: "Python"} {
+		batch.Index(strconv.FormatInt(id, 10)+"_file.txt", &RepoIndexerData{RepoID: id, Content: "needle", Language: language, CommitID: "commit", UpdatedAt: time.Now()})
+	}
+	require.NoError(t, batch.Flush())
+	for _, language := range []string{"", "Go"} {
+		for _, page := range []int{1, 2} {
+			opts := &internal.SearchOptions{Keyword: "needle", Language: language, Paginator: &db.ListOptions{Page: page, PageSize: 1}}
+			opts.ExcludedRepoIDs = []int64{1, 3}
+			total, hits, languages, err := idx.Search(t.Context(), opts)
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, total)
+			if page == 1 {
+				assert.Equal(t, []int64{2}, searchResultIDs(hits))
+			} else {
+				assert.Empty(t, hits)
+			}
+			require.Len(t, languages, 1)
+			assert.Equal(t, "Go", languages[0].Language)
+			assert.Equal(t, 1, languages[0].Count)
+		}
+	}
 }

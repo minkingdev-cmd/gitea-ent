@@ -23,6 +23,7 @@ var (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.PlainText(status, message)
 }
@@ -163,7 +164,7 @@ func DeletePackage(ctx *context.Context) {
 // DeletePackageFile deletes the specific file of a generic package.
 func DeletePackageFile(ctx *context.Context) {
 	pv, pf, err := func() (*packages_model.PackageVersion, *packages_model.PackageFile, error) {
-		pv, err := packages_model.GetVersionByNameAndVersion(ctx, ctx.Package.Owner.ID, packages_model.TypeGeneric, ctx.PathParam("packagename"), ctx.PathParam("packageversion"))
+		pv, err := packages_model.GetVersionByNameAndVersionForCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeGeneric, ctx.PathParam("packagename"), ctx.PathParam("packageversion"))
 		if err != nil {
 			return nil, nil, err
 		}

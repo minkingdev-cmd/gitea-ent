@@ -7,11 +7,17 @@ import (
 	"bytes"
 	"context"
 	"html/template"
+	"slices"
 	"strings"
 
+	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/highlight"
 	"gitea.dev/modules/indexer/code/internal"
 	"gitea.dev/modules/timeutil"
+
+	"xorm.io/builder"
 )
 
 // Result a search result to display
@@ -135,7 +141,14 @@ func PerformSearch(ctx context.Context, opts *SearchOptions) (int64, []*Result, 
 		return 0, nil, nil, nil
 	}
 
-	total, results, resultLanguages, err := (*globalIndexer.Load()).Search(ctx, opts)
+	observeCargoIndexSearch(ctx, opts)
+	excluded, err := authz_model.DeniedCargoIndexRepositoryIDs(ctx)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	options := *opts
+	options.ExcludedRepoIDs = append(slices.Clone(opts.ExcludedRepoIDs), excluded...)
+	total, results, resultLanguages, err := (*globalIndexer.Load()).Search(ctx, &options)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -150,4 +163,24 @@ func PerformSearch(ctx context.Context, opts *SearchOptions) (int64, []*Result, 
 		}
 	}
 	return total, displayResults, resultLanguages, nil
+}
+
+func observeCargoIndexSearch(ctx context.Context, opts *SearchOptions) {
+	authz_model.ObserveFeatureQuery(ctx, authz.FeaturePackages, authz_model.RepoFeatureCandidateCond(ctx, authz.FeaturePackages, "repository.id"), func(tx context.Context, _ builder.Cond) (bool, error) {
+		ids, err := authz_model.CandidateDeniedCargoIndexRepositoryIDs(tx)
+		if err != nil {
+			return false, err
+		}
+		if len(opts.RepoIDs) > 0 {
+			ids = slices.DeleteFunc(ids, func(id int64) bool { return !slices.Contains(opts.RepoIDs, id) })
+		}
+		if len(ids) == 0 {
+			return false, nil
+		}
+		candidate := *opts
+		candidate.RepoIDs = ids
+		candidate.Paginator = &db.ListOptions{Page: 1, PageSize: 1}
+		_, hits, _, err := (*globalIndexer.Load()).Search(tx, &candidate)
+		return len(hits) > 0, err
+	})
 }

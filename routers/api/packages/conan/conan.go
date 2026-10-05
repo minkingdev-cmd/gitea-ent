@@ -59,6 +59,7 @@ func jsonResponse(ctx *context.Context, status int, obj any) {
 }
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	jsonResponse(ctx, status, map[string]string{
 		"message": message,
@@ -413,7 +414,7 @@ func uploadFile(ctx *context.Context, fileFilter container.Set[string], fileKey 
 					return
 				}
 				pv.MetadataJSON = string(raw)
-				if err := packages_model.UpdateVersion(ctx, pv); err != nil {
+				if err := packages_service.UpdatePackageVersionMetadata(ctx, pv); err != nil {
 					apiError(ctx, http.StatusInternalServerError, err)
 					return
 				}
@@ -633,7 +634,7 @@ func deleteRecipeOrPackage(apictx *context.Context, rref *conan_module.RecipeRef
 	versionDeleted := false
 
 	err := db.WithTx(apictx, func(ctx std_ctx.Context) error {
-		pv, err := packages_model.GetVersionByNameAndVersion(ctx, apictx.Package.Owner.ID, packages_model.TypeConan, rref.Name, rref.Version)
+		pv, err := packages_model.GetVersionByNameAndVersionForCleanup(ctx, apictx.Package.Owner.ID, packages_model.TypeConan, rref.Name, rref.Version)
 		if err != nil {
 			return err
 		}
@@ -657,7 +658,7 @@ func deleteRecipeOrPackage(apictx *context.Context, rref *conan_module.RecipeRef
 			}
 		}
 
-		pfs, _, err := packages_model.SearchFiles(ctx, &packages_model.PackageFileSearchOptions{
+		pfs, _, err := packages_model.SearchFilesForCleanup(ctx, &packages_model.PackageFileSearchOptions{
 			VersionID:  pv.ID,
 			Properties: filter,
 		})

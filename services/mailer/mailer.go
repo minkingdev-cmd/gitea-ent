@@ -7,11 +7,14 @@ package mailer
 import (
 	"context"
 
+	issues_model "gitea.dev/models/issues"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/queue"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/templates"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	sender_service "gitea.dev/services/mailer/sender"
 	notify_service "gitea.dev/services/notify"
 )
@@ -47,6 +50,10 @@ func NewContext(ctx context.Context) {
 
 	mailQueue = queue.CreateSimpleQueue(graceful.GetManager().ShutdownContext(), "mail", func(items ...*sender_service.Message) []*sender_service.Message {
 		for _, msg := range items {
+			if err := requireMailFeature(ctx, msg); err != nil {
+				log.Warn("Issue notification mail skipped: feature policy rejected delivery")
+				continue
+			}
 			gomailMsg := msg.ToMessage()
 			log.Trace("New e-mail sending request %s: %s", gomailMsg.GetGenHeader("To"), msg.Info)
 			if err := sender_service.Send(sender, msg); err != nil {
@@ -77,4 +84,19 @@ func sendAsync(msgs ...*sender_service.Message) {
 			_ = mailQueue.Push(msg)
 		}
 	}()
+}
+
+func requireMailFeature(ctx context.Context, msg *sender_service.Message) error {
+	if msg.IssueID == 0 || !setting.EnterpriseAuthz.Enabled {
+		return nil
+	}
+	issue, err := issues_model.GetIssueByID(ctx, msg.IssueID)
+	if err != nil {
+		return err
+	}
+	key := authz.FeatureIssues
+	if issue.IsPull {
+		key = authz.FeaturePullRequests
+	}
+	return authz_service.RequireRepoFeature(ctx, issue.RepoID, key)
 }

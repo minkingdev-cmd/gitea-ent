@@ -15,6 +15,9 @@ import (
 
 // CloseIssue close an issue.
 func CloseIssue(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, commitID string) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	var comment *issues_model.Comment
 	var stopwatchFinished bool
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
@@ -48,6 +51,9 @@ func CloseIssue(ctx context.Context, issue *issues_model.Issue, doer *user_model
 // ReopenIssue reopen an issue.
 // FIXME: If some issues dependent this one are closed, should we also reopen them?
 func ReopenIssue(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, commitID string) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	comment, err := issues_model.ReopenIssue(ctx, issue, doer)
 	if err != nil {
 		return err

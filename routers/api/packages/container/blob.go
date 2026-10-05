@@ -46,6 +46,13 @@ func saveAsPackageBlobInternal(ctx context.Context, hsr packages_module.HashedSi
 	}
 
 	err = db.WithTx(ctx, func(ctx context.Context) error {
+		pkg, err := packages_model.GetPackageByID(ctx, uploadVersion.PackageID)
+		if err != nil {
+			return err
+		}
+		if err := packages_service.RequirePackageWriteFeature(ctx, pkg); err != nil {
+			return err
+		}
 		if err := packages_service.CheckSizeQuotaExceeded(ctx, pci.Creator, pci.Owner, packages_model.TypeContainer, hsr.Size()); err != nil {
 			return err
 		}
@@ -84,6 +91,9 @@ func containerGlobalLockKey(piOwnerID int64, piName, usage string) string {
 }
 
 func getOrCreateUploadVersion(ctx context.Context, pi *packages_service.PackageInfo) (*packages_model.PackageVersion, error) {
+	if err := packages_service.RequirePackageFeature(ctx, &packages_model.Package{OwnerID: pi.Owner.ID}); err != nil {
+		return nil, err
+	}
 	releaser, err := globallock.Lock(ctx, containerGlobalLockKey(pi.Owner.ID, pi.Name, "package"))
 	if err != nil {
 		return nil, err
@@ -91,6 +101,9 @@ func getOrCreateUploadVersion(ctx context.Context, pi *packages_service.PackageI
 	defer releaser()
 
 	return db.WithTx2(ctx, func(ctx context.Context) (*packages_model.PackageVersion, error) {
+		if err := packages_service.RequirePackageNameWriteFeature(ctx, pi.Owner.ID, packages_model.TypeContainer, pi.Name); err != nil {
+			return nil, err
+		}
 		created := true
 		p := &packages_model.Package{
 			OwnerID:   pi.Owner.ID,
@@ -107,6 +120,9 @@ func getOrCreateUploadVersion(ctx context.Context, pi *packages_service.PackageI
 			created = false
 		}
 
+		if err := packages_service.RequirePackageWriteFeature(ctx, p); err != nil {
+			return nil, err
+		}
 		if created {
 			if _, err := packages_model.InsertProperty(ctx, packages_model.PropertyTypePackage, p.ID, container_module.PropertyRepository, strings.ToLower(pi.Owner.LowerName+"/"+pi.Name)); err != nil {
 				log.Error("Error setting package property: %v", err)
@@ -133,6 +149,13 @@ func getOrCreateUploadVersion(ctx context.Context, pi *packages_service.PackageI
 }
 
 func createFileForBlob(ctx context.Context, pv *packages_model.PackageVersion, pb *packages_model.PackageBlob) error {
+	pkg, err := packages_model.GetPackageByID(ctx, pv.PackageID)
+	if err != nil {
+		return err
+	}
+	if err := packages_service.RequirePackageWriteFeature(ctx, pkg); err != nil {
+		return err
+	}
 	filename := strings.ToLower("sha256_" + pb.HashSHA256)
 
 	pf := &packages_model.PackageFile{
@@ -142,7 +165,6 @@ func createFileForBlob(ctx context.Context, pv *packages_model.PackageVersion, p
 		LowerName:    filename,
 		CompositeKey: packages_model.EmptyFileKey,
 	}
-	var err error
 	if pf, err = packages_model.TryInsertFile(ctx, pf); err != nil {
 		if errors.Is(err, packages_model.ErrDuplicatePackageFile) {
 			return nil
@@ -167,7 +189,7 @@ func deleteBlob(ctx context.Context, ownerID int64, image string, digest digest.
 	defer releaser()
 
 	return db.WithTx(ctx, func(ctx context.Context) error {
-		pfds, err := container_model.GetContainerBlobs(ctx, &container_model.BlobSearchOptions{
+		pfds, err := container_model.GetContainerBlobsForCleanup(ctx, &container_model.BlobSearchOptions{
 			OwnerID: ownerID,
 			Image:   image,
 			Digest:  string(digest),

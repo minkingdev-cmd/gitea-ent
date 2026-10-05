@@ -4,6 +4,7 @@
 package cargo
 
 import (
+	stdctx "context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,6 +38,7 @@ type StatusMessage struct {
 }
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.JSON(status, StatusResponse{
 		OK: false,
@@ -267,7 +269,11 @@ func UnyankPackage(ctx *context.Context) {
 }
 
 func yankPackage(ctx *context.Context, yank bool) {
-	pv, err := packages_model.GetVersionByNameAndVersion(ctx, ctx.Package.Owner.ID, packages_model.TypeCargo, ctx.PathParam("package"), ctx.PathParam("version"))
+	getVersion := packages_model.GetVersionByNameAndVersion
+	if yank {
+		getVersion = packages_model.GetVersionByNameAndVersionForCleanup
+	}
+	pv, err := getVersion(ctx, ctx.Package.Owner.ID, packages_model.TypeCargo, ctx.PathParam("package"), ctx.PathParam("version"))
 	if err != nil {
 		if errors.Is(err, packages_model.ErrPackageNotExist) {
 			apiError(ctx, http.StatusNotFound, err)
@@ -290,12 +296,25 @@ func yankPackage(ctx *context.Context, yank bool) {
 	pp := pps[0]
 	pp.Value = strconv.FormatBool(yank)
 
-	if err := packages_model.UpdateProperty(ctx, pp); err != nil {
+	if yank {
+		err = packages_service.YankCargoVersionForCleanup(ctx, pv.ID)
+	} else {
+		err = packages_service.UpdatePackageVersionProperty(ctx, pv, pp)
+	}
+	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
 	}
 
-	if err := cargo_service.UpdatePackageIndexIfExists(ctx, ctx.Doer, ctx.Package.Owner, pv.PackageID); err != nil {
+	rebuild := func(indexCtx stdctx.Context) error {
+		return cargo_service.UpdatePackageIndexIfExists(indexCtx, ctx.Doer, ctx.Package.Owner, pv.PackageID)
+	}
+	if yank {
+		err = packages_service.RebuildIndexAfterPackageCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeCargo, rebuild)
+	} else {
+		err = rebuild(ctx)
+	}
+	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
 	}

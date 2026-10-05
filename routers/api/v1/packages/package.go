@@ -13,6 +13,7 @@ import (
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
 	packages_service "gitea.dev/services/packages"
@@ -402,6 +403,9 @@ func LinkPackage(ctx *context.APIContext) {
 
 	err = packages_service.LinkToRepository(ctx, pkg, repo, ctx.Doer)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, util.ErrInvalidArgument):
 			ctx.APIError(http.StatusBadRequest, err.Error())
@@ -454,6 +458,9 @@ func UnlinkPackage(ctx *context.APIContext) {
 
 	err = packages_service.UnlinkFromRepository(ctx, pkg, ctx.Doer)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, util.ErrPermissionDenied):
 			ctx.APIError(http.StatusForbidden, err.Error())

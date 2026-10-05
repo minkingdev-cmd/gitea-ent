@@ -1133,6 +1133,11 @@ func parseCompareInfo(ctx *context.APIContext, compareParam string) (result *git
 		return nil, nil
 	}
 
+	if err := authz_service.RequireCargoIndexFeature(ctx, headRepo); err != nil {
+		ctx.APIErrorInternal(err)
+		return nil, nil
+	}
+
 	isSameRepo := baseRepo.ID == headRepo.ID
 
 	var headGitRepo *git.Repository

@@ -25,6 +25,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/container"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/globallock"
@@ -33,6 +34,7 @@ import (
 	repo_module "gitea.dev/modules/repository"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	git_service "gitea.dev/services/git"
 	issue_service "gitea.dev/services/issue"
 	notify_service "gitea.dev/services/notify"
@@ -56,6 +58,12 @@ type NewPullRequestOptions struct {
 
 // NewPullRequest creates new pull request with labels for repository.
 func NewPullRequest(ctx context.Context, opts *NewPullRequestOptions) error {
+	if err := authz_service.RequireRepoFeature(ctx, opts.Repo.ID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
+	if err := requirePullCodeFeatures(ctx, opts.PullRequest); err != nil {
+		return err
+	}
 	repo, issue, labelIDs, uuids, pr, assigneeIDs := opts.Repo, opts.Issue, opts.LabelIDs, opts.AttachmentUUIDs, opts.PullRequest, opts.AssigneeIDs
 	if err := issue.LoadPoster(ctx); err != nil {
 		return err
@@ -223,6 +231,9 @@ func (err ErrPullRequestHasMerged) Error() string {
 
 // ChangeTargetBranch changes the target branch of this pull request, as the given user.
 func ChangeTargetBranch(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, targetBranch string) (err error) {
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	releaser, err := globallock.Lock(ctx, getPullWorkingLockKey(pr.ID))
 	if err != nil {
 		log.Error("lock.Lock(): %v", err)
@@ -560,6 +571,12 @@ func checkIfPRContentChanged(ctx context.Context, pr *issues_model.PullRequest, 
 // corresponding branches of base repository.
 // FIXME: Only push branches that are actually updates?
 func PushToBaseRepo(ctx context.Context, pr *issues_model.PullRequest) error {
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return err
+	}
 	log.Trace("PushToBaseRepo[%d]: pushing commits to base repo '%s'", pr.BaseRepoID, pr.GetGitHeadRefName())
 
 	if err := pr.LoadHeadRepo(ctx); err != nil {
@@ -611,6 +628,12 @@ func UpdatePullsRefs(ctx context.Context, repo *repo_model.Repository, update *r
 
 // UpdateRef update refs/pull/id/head directly for agit flow pull request
 func UpdateRef(ctx context.Context, pr *issues_model.PullRequest) (err error) {
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return err
+	}
 	log.Trace("UpdateRef[%d]: upgate pull request ref in base repo '%s'", pr.ID, pr.GetGitHeadRefName())
 	if err := pr.LoadBaseRepo(ctx); err != nil {
 		log.Error("Unable to load base repository for PR[%d] Error: %v", pr.ID, err)
@@ -752,6 +775,9 @@ func CloseRepoBranchesPulls(ctx context.Context, doer *user_model.User, repo *re
 
 // GetSquashMergeCommitMessages returns the commit messages between head and merge base (if there is one)
 func GetSquashMergeCommitMessages(ctx context.Context, pr *issues_model.PullRequest) (_ string, err error) {
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return "", err
+	}
 	if err := pr.LoadIssue(ctx); err != nil {
 		return "", err
 	}
@@ -973,6 +999,9 @@ func getAllCommitStatus(ctx context.Context, doer *user_model.User, gitRepo *git
 
 // IsHeadEqualWithBranch returns if the commits of branchName are available in pull request head
 func IsHeadEqualWithBranch(ctx context.Context, pr *issues_model.PullRequest, branchName string) (bool, error) {
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return false, err
+	}
 	var err error
 	if err = pr.LoadBaseRepo(ctx); err != nil {
 		return false, err

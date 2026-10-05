@@ -6,17 +6,21 @@ package repository
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 )
 
@@ -65,11 +69,61 @@ func GenerateProtectedBranch(ctx context.Context, templateRepo, generateRepo *re
 		templateBranch.CreatedUnix = 0
 		newBranches = append(newBranches, templateBranch)
 	}
-	return db.Insert(ctx, newBranches)
+	for _, rule := range newBranches {
+		if rule.EnableStatusCheck || len(rule.StatusCheckContexts) > 0 {
+			if err := authz_service.RequireRepoFeature(ctx, generateRepo.ID, authz.FeatureRequiredStatusChecks); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return db.WithTx(ctx, func(ctx context.Context) error {
+		if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+			if err := authz_model.LockScope(ctx, authz_model.Scope{Type: authz_model.ScopeRepo, ID: generateRepo.ID}); err != nil {
+				if rejection := authz_service.FeatureGuardError(err); rejection != nil {
+					return rejection
+				}
+			}
+			if err := authz_model.LockFeatures(ctx, []authz.FeatureKey{authz.FeatureRequiredStatusChecks}); err != nil {
+				if rejection := authz_service.FeatureGuardError(err); rejection != nil {
+					return rejection
+				}
+			}
+			for _, rule := range newBranches {
+				if !rule.EnableStatusCheck && len(rule.StatusCheckContexts) == 0 {
+					continue
+				}
+				policy, err := authz_service.GetFeaturePolicy(ctx, authz.FeatureRequiredStatusChecks, authz_model.Scope{Type: authz_model.ScopeRepo, ID: generateRepo.ID})
+				if err != nil {
+					if rejection := authz_service.FeatureGuardError(err); rejection != nil {
+						return rejection
+					}
+					break
+				}
+				if policy.Effective.State == authz.FeatureDisabled {
+					return &authz_service.ExecutionError{Reason: "feature_status_checks_locked", Status: 403}
+				}
+				if policy.Effective.State == authz.FeatureRequired {
+					for _, mandatory := range policy.Effective.Config.CheckContexts {
+						if !rule.EnableStatusCheck || !slices.Contains(rule.StatusCheckContexts, mandatory) {
+							return &authz_service.ExecutionError{Reason: "feature_status_checks_locked", Status: 403}
+						}
+					}
+				}
+			}
+		}
+		return db.Insert(ctx, newBranches)
+	})
 }
 
 // GenerateRepository generates a repository from a template
 func GenerateRepository(ctx context.Context, doer, owner *user_model.User, templateRepo *repo_model.Repository, opts GenerateRepoOptions) (_ *repo_model.Repository, err error) {
+	if opts.GitContent {
+		if err := authz_service.RequireCargoIndexFeature(ctx, templateRepo); err != nil {
+			return nil, err
+		}
+	}
+
 	createOpts := CreateRepoOptions{Name: opts.Name, IsPrivate: opts.Private}
 	if err := enforceEnterpriseRepoCreationGovernance(ctx, doer, owner, &createOpts); err != nil {
 		return nil, err

@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	"gitea.dev/models/perm"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
@@ -143,6 +145,22 @@ func innerToRepo(ctx context.Context, repo *repo_model.Repository, permissionInR
 		return nil
 	}
 
+	issuesVisible, _ := authz_model.RepoFeatureVisible(ctx, authz.FeatureIssues, repo.ID, repo.OwnerID, repo.Owner.IsOrganization())
+	pullsVisible, _ := authz_model.RepoFeatureVisible(ctx, authz.FeaturePullRequests, repo.ID, repo.OwnerID, repo.Owner.IsOrganization())
+	wikiVisible, _ := authz_model.RepoFeatureVisible(ctx, authz.FeatureWiki, repo.ID, repo.OwnerID, repo.Owner.IsOrganization())
+	packagesVisible, _ := authz_model.RepoFeatureVisible(ctx, authz.FeaturePackages, repo.ID, repo.OwnerID, repo.Owner.IsOrganization())
+	hasPackages = hasPackages && packagesVisible
+	openIssues, openPulls := repo.NumOpenIssues, repo.NumOpenPulls
+	if !issuesVisible {
+		hasIssues, externalTracker, internalTracker, openIssues = false, nil, nil, 0
+	}
+	if !pullsVisible {
+		hasPullRequests, openPulls = false, 0
+	}
+	if !wikiVisible {
+		hasWiki, externalWiki = false, nil
+	}
+
 	numReleases, _ := db.Count[repo_model.Release](ctx, repo_model.FindReleasesOptions{
 		IncludeDrafts: false,
 		IncludeTags:   false,
@@ -218,8 +236,8 @@ func innerToRepo(ctx context.Context, repo *repo_model.Repository, permissionInR
 		Forks:                         repo.NumForks,
 		Watchers:                      repo.NumWatches,
 		BranchCount:                   int(branchCount),
-		OpenIssues:                    repo.NumOpenIssues,
-		OpenPulls:                     repo.NumOpenPulls,
+		OpenIssues:                    openIssues,
+		OpenPulls:                     openPulls,
 		Releases:                      int(numReleases),
 		DefaultBranch:                 repo.DefaultBranch,
 		Created:                       repo.CreatedUnix.AsTime(),

@@ -14,6 +14,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/optional"
 	"gitea.dev/modules/util"
+	issue_service "gitea.dev/services/issue"
 
 	"xorm.io/builder"
 )
@@ -25,6 +26,10 @@ var ErrIssueNotInProject = util.ErrorWrap(util.ErrUnprocessableContent, "all iss
 // AddIssueToColumn assigns the issue to the column's project if needed, then places it in
 // the column. One transaction, so a failure cannot strand it in the default column.
 func AddIssueToColumn(ctx context.Context, doer *user_model.User, issue *issues_model.Issue, column *project_model.Column) error {
+	if err := issue_service.RequireFeature(ctx, issue); err != nil {
+		return err
+	}
+
 	return db.WithTx(ctx, func(ctx context.Context) error {
 		projectIDs, err := issue.ProjectIDs(ctx)
 		if err != nil {
@@ -43,6 +48,10 @@ func AddIssueToColumn(ctx context.Context, doer *user_model.User, issue *issues_
 // MoveIssueToColumn places an issue already in the project into a column, appending it
 // when sorting is absent.
 func MoveIssueToColumn(ctx context.Context, doer *user_model.User, issue *issues_model.Issue, column *project_model.Column, sorting optional.Option[int64]) error {
+	if err := issue_service.RequireFeature(ctx, issue); err != nil {
+		return err
+	}
+
 	return db.WithTx(ctx, func(ctx context.Context) error {
 		position := sorting.Value()
 		if !sorting.Has() {
@@ -59,6 +68,10 @@ func MoveIssueToColumn(ctx context.Context, doer *user_model.User, issue *issues
 // RemoveIssueFromColumn detaches the issue from the column's project, reporting a
 // not-exist error when it is not in that column.
 func RemoveIssueFromColumn(ctx context.Context, doer *user_model.User, issue *issues_model.Issue, column *project_model.Column) error {
+	if err := issue_service.RequireFeature(ctx, issue); err != nil {
+		return err
+	}
+
 	return db.WithTx(ctx, func(ctx context.Context) error {
 		exists, err := project_model.IsIssueInColumn(ctx, issue.ID, column)
 		if err != nil {
@@ -97,6 +110,11 @@ func MoveIssuesOnProjectColumn(ctx context.Context, doer *user_model.User, colum
 		issues, err := issues_model.GetIssuesByIDs(ctx, issueIDs)
 		if err != nil {
 			return err
+		}
+		for _, issue := range issues {
+			if err := issue_service.RequireFeature(ctx, issue); err != nil {
+				return err
+			}
 		}
 		if _, err := issues.LoadRepositories(ctx); err != nil {
 			return err
@@ -156,10 +174,14 @@ func MoveIssuesOnProjectColumn(ctx context.Context, doer *user_model.User, colum
 }
 
 func LoadIssuesAssigneesForProject(ctx context.Context, projectID int64) (users []*user_model.User, _ error) {
+	cond, err := issues_model.IssueFeatureIDCond(ctx, "project_issue.issue_id")
+	if err != nil {
+		return nil, err
+	}
 	sub := builder.Select("distinct issue_assignees.assignee_id").
 		From("project_issue").Join("INNER", "issue_assignees", "project_issue.issue_id=issue_assignees.issue_id").
-		Where(builder.Eq{"project_issue.project_id": projectID})
-	err := db.GetEngine(ctx).Table("`user`").Where(builder.In("id", sub)).Find(&users)
+		Where(builder.Eq{"project_issue.project_id": projectID}).And(cond)
+	err = db.GetEngine(ctx).Table("`user`").Where(builder.In("id", sub)).Find(&users)
 	if err != nil {
 		return nil, err
 	}
@@ -210,9 +232,14 @@ func LoadIssuesFromProject(ctx context.Context, project *project_model.Project, 
 
 // NumClosedIssues return counter of closed issues assigned to a project
 func loadNumClosedIssues(ctx context.Context, p *project_model.Project) error {
+	cond, err := issues_model.IssueFeatureIDCond(ctx, "project_issue.issue_id")
+	if err != nil {
+		return err
+	}
 	cnt, err := db.GetEngine(ctx).Table("project_issue").
 		Join("INNER", "issue", "project_issue.issue_id=issue.id").
 		Where("project_issue.project_id=? AND issue.is_closed=?", p.ID, true).
+		And(cond).
 		Cols("issue_id").
 		Count()
 	if err != nil {
@@ -224,9 +251,14 @@ func loadNumClosedIssues(ctx context.Context, p *project_model.Project) error {
 
 // NumOpenIssues return counter of open issues assigned to a project
 func loadNumOpenIssues(ctx context.Context, p *project_model.Project) error {
+	cond, err := issues_model.IssueFeatureIDCond(ctx, "project_issue.issue_id")
+	if err != nil {
+		return err
+	}
 	cnt, err := db.GetEngine(ctx).Table("project_issue").
 		Join("INNER", "issue", "project_issue.issue_id=issue.id").
 		Where("project_issue.project_id=? AND issue.is_closed=?", p.ID, false).
+		And(cond).
 		Cols("issue_id").
 		Count()
 	if err != nil {

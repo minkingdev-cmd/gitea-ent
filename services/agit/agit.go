@@ -14,6 +14,7 @@ import (
 	issues_model "gitea.dev/models/issues"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/log"
@@ -106,6 +107,10 @@ func ProcReceive(ctx context.Context, repo *repo_model.Repository, gitRepo *git.
 				OriginalRef:  opts.RefFullNames[i],
 			})
 			continue
+		}
+
+		if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeaturePullRequests); err != nil {
+			return nil, err
 		}
 
 		baseBranchName, currentTopicBranch, err := GetAgitBranchInfo(ctx, repo.ID, opts.RefFullNames[i].ForBranchName())

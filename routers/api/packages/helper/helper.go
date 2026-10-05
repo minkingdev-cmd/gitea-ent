@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/url"
 
+	authz_model "gitea.dev/models/enterpriseauthz"
 	packages_model "gitea.dev/models/packages"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // PackageErrorStatus returns the status to report for a package lookup error
@@ -22,7 +24,21 @@ func PackageErrorStatus(err error) int {
 	if errors.Is(err, util.ErrNotExist) {
 		return http.StatusNotFound
 	}
-	return http.StatusInternalServerError
+	return ResolvePackageErrorStatus(http.StatusInternalServerError, err)
+}
+
+func ResolvePackageErrorStatus(status int, obj any) int {
+	err, ok := obj.(error)
+	if !ok {
+		return status
+	}
+	if executionErr, ok := errors.AsType[*authz_service.ExecutionError](err); ok {
+		return executionErr.Status
+	}
+	if errors.Is(err, authz_model.ErrFeatureQueryUnavailable) {
+		return http.StatusServiceUnavailable
+	}
+	return status
 }
 
 // ProcessErrorForUser logs the error and returns a user-error message for the end user.

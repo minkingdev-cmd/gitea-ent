@@ -26,6 +26,7 @@ import (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	type Error struct {
 		ErrorMessages []string `json:"error_messages"`
 	}
@@ -380,7 +381,7 @@ func DeletePackageVersion(ctx *context.Context) {
 
 // https://github.com/chef/chef/blob/main/knife/lib/chef/knife/supermarket_unshare.rb
 func DeletePackage(ctx *context.Context) {
-	pvs, err := packages_model.GetVersionsByPackageName(ctx, ctx.Package.Owner.ID, packages_model.TypeChef, ctx.PathParam("name"))
+	pvs, err := packages_model.GetVersionsByPackageNameForCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeChef, ctx.PathParam("name"))
 	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return

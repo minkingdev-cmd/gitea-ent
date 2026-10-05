@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"gitea.dev/models/db"
 	packages_model "gitea.dev/models/packages"
 	"gitea.dev/modules/globallock"
 	"gitea.dev/modules/log"
@@ -31,6 +32,7 @@ const (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.PlainText(status, message)
 }
@@ -194,7 +196,7 @@ func DeleteStateBySerial(ctx *context.Context) {
 	defer release()
 
 	serial := ctx.PathParam("serial")
-	pv, err := packages_model.GetVersionByNameAndVersion(ctx, ctx.Package.Owner.ID, packages_model.TypeTerraformState, ctx.PathParam("name"), serial)
+	pv, err := packages_model.GetVersionByNameAndVersionForCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeTerraformState, ctx.PathParam("name"), serial)
 	if errors.Is(err, packages_model.ErrPackageNotExist) {
 		apiError(ctx, http.StatusNotFound, err)
 		return
@@ -237,7 +239,7 @@ func DeleteState(ctx *context.Context) {
 	}
 	defer release()
 
-	p, err := packages_model.GetPackageByName(ctx, ctx.Package.Owner.ID, packages_model.TypeTerraformState, packageName)
+	p, err := packages_model.GetPackageByNameForCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeTerraformState, packageName)
 	if err != nil {
 		if errors.Is(err, packages_model.ErrPackageNotExist) {
 			apiError(ctx, http.StatusNotFound, err)
@@ -257,7 +259,7 @@ func DeleteState(ctx *context.Context) {
 		return
 	}
 
-	pvs, _, err := packages_model.SearchVersions(ctx, &packages_model.PackageSearchOptions{
+	pvs, _, err := packages_model.SearchVersionsForCleanup(ctx, &packages_model.PackageSearchOptions{
 		PackageID:  p.ID,
 		IsInternal: optional.None[bool](),
 	})
@@ -312,17 +314,28 @@ func LockState(ctx *context.Context) {
 	}
 	defer release()
 
-	p, err := packages_model.GetPackageByName(ctx, ctx.Package.Owner.ID, packages_model.TypeTerraformState, packageName)
+	dbCtx, committer, err := db.TxContext(ctx)
+	if err != nil {
+		apiError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	defer committer.Close()
+
+	p, err := packages_model.GetPackageByNameForCleanup(dbCtx, ctx.Package.Owner.ID, packages_model.TypeTerraformState, packageName)
 	if err != nil {
 		// If the package doesn't exist, allocate it for the lock.
 		if errors.Is(err, packages_model.ErrPackageNotExist) {
+			if err := packages_service.RequirePackageWriteFeature(dbCtx, &packages_model.Package{OwnerID: ctx.Package.Owner.ID}); err != nil {
+				apiError(ctx, http.StatusInternalServerError, err)
+				return
+			}
 			p = &packages_model.Package{
 				OwnerID:   ctx.Package.Owner.ID,
 				Type:      packages_model.TypeTerraformState,
 				Name:      packageName,
 				LowerName: strings.ToLower(packageName),
 			}
-			if p, err = packages_model.TryInsertPackage(ctx, p); err != nil {
+			if p, err = packages_model.TryInsertPackage(dbCtx, p); err != nil {
 				apiError(ctx, http.StatusInternalServerError, err)
 				return
 			}
@@ -332,7 +345,11 @@ func LockState(ctx *context.Context) {
 		}
 	}
 
-	currentLock, err := terraform_module.GetLock(ctx, p.ID)
+	if err := packages_service.RequirePackageWriteFeature(dbCtx, p); err != nil {
+		apiError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	currentLock, err := terraform_module.GetLock(dbCtx, p.ID)
 	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
@@ -343,12 +360,16 @@ func LockState(ctx *context.Context) {
 		return
 	}
 
-	err = terraform_module.SetLock(ctx, p.ID, reqLockInfo)
+	err = terraform_module.SetLock(dbCtx, p.ID, reqLockInfo)
 	if err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
 	}
 
+	if err := committer.Commit(); err != nil {
+		apiError(ctx, http.StatusInternalServerError, err)
+		return
+	}
 	ctx.Status(http.StatusOK)
 }
 

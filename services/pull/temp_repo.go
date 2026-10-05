@@ -47,6 +47,9 @@ func (ctx *prTmpRepoContext) PrepareGitCmd(cmd *gitcmd.Command) *gitcmd.Command 
 // createTemporaryRepoForPR creates a temporary repo with "base" for pr.BaseBranch and "tracking" for  pr.HeadBranch
 // it also create a second base branch called "original_base"
 func createTemporaryRepoForPR(ctx context.Context, pr *issues_model.PullRequest) (prCtx *prTmpRepoContext, cancel context.CancelFunc, retErr error) {
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return nil, nil, err
+	}
 	defer func() {
 		if retErr != nil && cancel != nil {
 			cancel()

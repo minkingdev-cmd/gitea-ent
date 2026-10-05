@@ -10,8 +10,10 @@ import (
 	"gitea.dev/models/db"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/webhook"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
+	authz_service "gitea.dev/services/enterpriseauthz"
 
 	"xorm.io/builder"
 )
@@ -85,6 +87,9 @@ func GenerateGitHooks(ctx context.Context, templateRepo, generateRepo *repo_mode
 
 // GenerateWebhooks generates webhooks from a template repository
 func GenerateWebhooks(ctx context.Context, templateRepo, generateRepo *repo_model.Repository) error {
+	if err := authz_service.RequireRepoFeature(ctx, generateRepo.ID, authz.FeatureWebhooks); err != nil {
+		return err
+	}
 	templateWebhooks, err := db.Find[webhook.Webhook](ctx, webhook.ListWebhookOptions{RepoID: templateRepo.ID})
 	if err != nil {
 		return err

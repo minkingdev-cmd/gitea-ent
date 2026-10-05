@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEnterpriseAuthzEnforceMigrationRegistered(t *testing.T) {
+func TestEnterpriseAuthzFeatureMigrationRegistered(t *testing.T) {
 	migrations := prepareMigrationTasks()
-	require.EqualValues(t, 362, migrations[len(migrations)-1].idNumber)
-	require.EqualValues(t, 363, ExpectedDBVersion())
+	require.EqualValues(t, 363, migrations[len(migrations)-1].idNumber)
+	require.EqualValues(t, 364, ExpectedDBVersion())
 }

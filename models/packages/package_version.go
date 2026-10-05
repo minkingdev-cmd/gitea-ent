@@ -308,21 +308,31 @@ func searchVersionsBySession(sess db.Session, opts *PackageSearchOptions) ([]*Pa
 
 // SearchVersions gets all versions of packages matching the search options
 func SearchVersions(ctx context.Context, opts *PackageSearchOptions) ([]*PackageVersion, int64, error) {
+	observeVersionQuery(ctx, opts)
+	featureCond, err := packageSearchFeatureCond(ctx, opts)
+	if err != nil {
+		return nil, 0, err
+	}
 	sess := db.GetEngine(ctx).
 		Select("package_version.*").
 		Table("package_version").
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(opts.ToConds())
+		Where(opts.ToConds().And(featureCond))
 	return searchVersionsBySession(sess, opts)
 }
 
 // SearchLatestVersions gets the latest version of every package matching the search options
 func SearchLatestVersions(ctx context.Context, opts *PackageSearchOptions) ([]*PackageVersion, int64, error) {
+	observeVersionQuery(ctx, opts)
+	featureCond, err := packageSearchFeatureCond(ctx, opts)
+	if err != nil {
+		return nil, 0, err
+	}
 	in := builder.
 		Select("MAX(package_version.id)").
 		From("package_version").
 		InnerJoin("package", "package.id = package_version.package_id").
-		Where(opts.ToConds()).
+		Where(opts.ToConds().And(featureCond)).
 		GroupBy("package_version.package_id")
 
 	sess := db.GetEngine(ctx).
@@ -336,8 +346,13 @@ func SearchLatestVersions(ctx context.Context, opts *PackageSearchOptions) ([]*P
 
 // ExistVersion checks if a version matching the search options exist
 func ExistVersion(ctx context.Context, opts *PackageSearchOptions) (bool, error) {
+	observeVersionQuery(ctx, opts)
+	featureCond, err := packageSearchFeatureCond(ctx, opts)
+	if err != nil {
+		return false, err
+	}
 	return db.GetEngine(ctx).
-		Where(opts.ToConds()).
+		Where(opts.ToConds().And(featureCond)).
 		Table("package_version").
 		Join("INNER", "package", "package.id = package_version.package_id").
 		Exist(new(PackageVersion))
@@ -345,9 +360,43 @@ func ExistVersion(ctx context.Context, opts *PackageSearchOptions) (bool, error)
 
 // CountVersions counts all versions of packages matching the search options
 func CountVersions(ctx context.Context, opts *PackageSearchOptions) (int64, error) {
+	observeVersionQuery(ctx, opts)
+	featureCond, err := packageSearchFeatureCond(ctx, opts)
+	if err != nil {
+		return 0, err
+	}
 	return db.GetEngine(ctx).
-		Where(opts.ToConds()).
+		Where(opts.ToConds().And(featureCond)).
 		Table("package_version").
 		Join("INNER", "package", "package.id = package_version.package_id").
 		Count(new(PackageVersion))
+}
+
+func CountVersionsForQuota(ctx context.Context, opts *PackageSearchOptions) (int64, error) {
+	return db.GetEngine(ctx).Where(opts.ToConds()).Table("package_version").Join("INNER", "package", "package.id = package_version.package_id").Count(new(PackageVersion))
+}
+
+func GetVersionByNameAndVersionForCleanup(ctx context.Context, ownerID int64, packageType Type, name, version string) (*PackageVersion, error) {
+	versions, _, err := SearchVersionsForCleanup(ctx, &PackageSearchOptions{OwnerID: ownerID, Type: packageType, Name: SearchValue{Value: name, ExactMatch: true}, Version: SearchValue{Value: version, ExactMatch: true}, IsInternal: optional.Some(false), Paginator: db.NewAbsoluteListOptions(0, 1)})
+	if err != nil {
+		return nil, err
+	}
+	if len(versions) == 0 {
+		return nil, ErrPackageNotExist
+	}
+	return versions[0], nil
+}
+
+func SearchVersionsForCleanup(ctx context.Context, opts *PackageSearchOptions) ([]*PackageVersion, int64, error) {
+	sess := db.GetEngine(ctx).Select("package_version.*").Table("package_version").Join("INNER", "package", "package.id=package_version.package_id").Where(opts.ToConds())
+	return searchVersionsBySession(sess, opts)
+}
+
+func GetVersionsByPackageNameForCleanup(ctx context.Context, ownerID int64, packageType Type, name string) ([]*PackageVersion, error) {
+	versions, _, err := SearchVersionsForCleanup(ctx, &PackageSearchOptions{OwnerID: ownerID, Type: packageType, Name: SearchValue{Value: name, ExactMatch: true}, IsInternal: optional.Some(false)})
+	return versions, err
+}
+
+func ExistVersionForCleanup(ctx context.Context, opts *PackageSearchOptions) (bool, error) {
+	return db.GetEngine(ctx).Where(opts.ToConds()).Table("package_version").Join("INNER", "package", "package.id=package_version.package_id").Exist(new(PackageVersion))
 }

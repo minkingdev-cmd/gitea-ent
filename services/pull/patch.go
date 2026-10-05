@@ -53,6 +53,9 @@ func DownloadDiffOrPatch(ctx context.Context, pr *issues_model.PullRequest, w io
 }
 
 func checkPullRequestBranchMergeable(ctx context.Context, pr *issues_model.PullRequest) error {
+	if err := requirePullCodeFeatures(ctx, pr); err != nil {
+		return err
+	}
 	ctx, _, finished := process.GetManager().AddContext(ctx, fmt.Sprintf("checkPullRequestBranchMergeable: %s", pr))
 	defer finished()
 

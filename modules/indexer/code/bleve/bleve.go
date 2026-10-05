@@ -296,6 +296,17 @@ func (b *Indexer) Search(ctx context.Context, opts *internal.SearchOptions) (int
 		indexerQuery = keywordQuery
 	}
 
+	if len(opts.ExcludedRepoIDs) > 0 {
+		repoQueries := make([]query.Query, 0, len(opts.ExcludedRepoIDs))
+		for _, repoID := range opts.ExcludedRepoIDs {
+			repoQueries = append(repoQueries, inner_bleve.NumericEqualityQuery(repoID, "RepoID"))
+		}
+		restricted := bleve.NewBooleanQuery()
+		restricted.AddMust(indexerQuery)
+		restricted.AddMustNot(bleve.NewDisjunctionQuery(repoQueries...))
+		indexerQuery = restricted
+	}
+
 	// Save for reuse without language filter
 	facetQuery := indexerQuery
 	if len(opts.Language) > 0 {

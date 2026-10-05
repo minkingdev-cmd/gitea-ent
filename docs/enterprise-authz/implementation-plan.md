@@ -412,28 +412,30 @@ GET 仅返回当前配置 CorpID/AgentID/ManagedOrgID 内 `origin=generated` 的
 
 ### `enterprise_feature_definition`
 
-登记平台能力。
+当前 `add-enterprise-feature-grants` 的固定版本化目录；不开放任意定义 CRUD。
 
 | 字段 | 说明 |
 | --- | --- |
-| `key` | 如 `feature.ai_review`。 |
-| `description` | 功能说明。 |
-| `supported_scopes` | JSON，允许的作用域。 |
-| `default_state` | 默认状态。 |
+| `key` / `description` | 唯一稳定 key 与功能说明，固定 13 项。 |
+| `supported_scopes_json` | 仅 global/org/repo；内部 global 映射 system。 |
+| `default_state` / `capability_kind` | 七个 native_gate 默认 enabled，六个 policy_only 默认 disabled。 |
+| `config_schema_version` / `catalog_version` | 配置 schema 与 immutable seed 版本。 |
+| `policy_revision` | 可变策略版本，独立于 seed/catalog 版本。 |
 | `created_unix` / `updated_unix` | 时间戳。 |
 
 ### `enterprise_feature_grant`
 
-记录功能授权状态。
-
 | 字段 | 说明 |
 | --- | --- |
-| `feature_key` | 功能 key。 |
-| `scope_type` / `scope_id` | `global`、`org`、`repo`、`team`、`user`、`branch`。 |
-| `state` | `disabled`、`enabled`、`required`、`inherited`。 |
-| `config_json` | 功能特定配置，如 required check context。 |
-| `created_by` | 操作者。 |
+| `feature_key` | 固定功能 key。 |
+| `scope_type` / `scope_id` | 内部 system（ID=0）、org、repo；拒绝 team/user/branch/role。 |
+| `state` | disabled、enabled、required、inherited。 |
+| `config_json` | canonical 空配置或经校验 check_contexts，不存凭据/URL/命令字段。 |
+| `revision` | expected_revision CAS；reset 保留 inherited 行，避免 ABA。 |
+| `created_by` / `updated_by` | 当前本地操作者。 |
 | `created_unix` / `updated_unix` | 时间戳。 |
+
+唯一键为 `(feature_key, scope_type, scope_id)`。grant/revision/policy revision 与成功审计原子提交，不允许管理事务 fail-open。正式 migration 363 后 DB version 364，含 hook task 可信来源、repository InternalUsage 与 `enterprise_cargo_index_source` 唯一 `(index_repo_id, source_repo_id)` pair；不自动补 unit 或覆盖管理员 grant。
 
 ### `enterprise_policy_template`
 
@@ -522,34 +524,27 @@ GET 仅返回当前配置 CorpID/AgentID/ManagedOrgID 内 `origin=generated` 的
 
 ## 功能授权模型
 
-### 状态优先级
+本节以当前 `add-enterprise-feature-grants` 合同为准；模板、敏感路径和完整 merge gate 仍是后续独立范围。详细 13-key 清单、真实协议/worker、API 与运维风险见 [功能授权手册](feature-grants-runbook.md)。
 
-功能状态从上到下解析：
+### 状态与作用域
 
-```text
-global -> org -> repo -> team/user/branch override
-```
+仅 `global → 当前 owner 为组织时的 org → repo`，个人仓库跳过 org；没有 team/user/branch/role override。缺记录/inherited 不贡献本层配置，default 仅兜底且不锁下级；无锁用最近显式状态/完整配置。自根向下首个显式 disabled/required 锁获胜，下级不得开启 disabled 或关闭 required。旧下级冲突原样保留并明确投影，不按更新时间选胜者。required contexts 取有效 required 层并集并保留最近非冲突显式补充；inherited 必须空配置。
 
-建议规则：
+### 与原生配置及执行的关系
 
-1. 任一上级为 `disabled` 时，下级不能自行开启，除非该 feature 显式允许 lower-scope override。
-2. 任一上级为 `required` 时，下级不能关闭，只能补充配置。
-3. `enabled` 表示允许使用，但不强制作为合并门禁。
-4. `inherited` 表示继续向上查找。
-5. 未配置时使用 `enterprise_feature_definition.default_state`。
-
-### 与 repo unit 的关系
-
-| 功能 | 与现有 repo unit 的关系 |
+| 功能 | 本轮真实边界 |
 | --- | --- |
-| `feature.issues` | 控制 Issues unit 是否可开启；最终读写仍走 Issues unit 权限。 |
-| `feature.pull_requests` | 控制 Pull Requests unit 是否可开启；合并仍走 merge gate。 |
-| `feature.packages` | 控制 Packages unit 是否可开启。 |
-| `feature.wiki` | 控制 Wiki unit 是否可开启。 |
-| `feature.woodpecker_ci` | 不替换 Gitea Actions；以 webhook/status check/外链形式接入。 |
-| `feature.required_status_checks` | 决定是否允许管理 required checks，以及是否强制模板检查。 |
-| `feature.ai_review` | 决定是否触发 AI 审计、是否作为 required check、读取范围。 |
-| `feature.protected_file_patterns` | 决定敏感路径规则是否生效。 |
+| Issues/PR/Wiki/Packages | 最终 unit intent、内容/协议/聚合/shared service；disabled 阻止对应业务，required 防关闭，不提升 unit/资源权限。 |
+| Webhooks | 管理、test/redelivery、入队与发送；repo-origin 的 org/system hook 同样尊重真实 repo 策略。 |
+| CI secret management | 管理读取/新增/更新/复制受控；受权删除/吊销与正常 runner 消费保留。 |
+| Required status checks | checks old/new、删除及优先级完整意图防降级；不改 checks 的其他字段可原生编辑。 |
+| 六个外部 CI/扫描/AI key | policy_only 授权与 contexts 输出，不执行任务、不造 status、不新增 merge deny，不代表 Gitea Actions 总开关。 |
+
+required 不补建 unit/hook/secret/check rule/adapter；查看 native_available/pending，不冒充已满足。普通 repo rename/transfer 保留稳定 ID grant，按新 owner 立即重算；marked Cargo index 禁止 owner transfer，rename 保留稳定用途与来源；repo/org 删除只清理对应 live grant，保留历史。disabled 无 feature DB 查询，shadow 不改变原生 deny/allow 或副作用，enforce 默认 fail-closed；显式 infra-only fallback 不得覆盖明确 deny 或管理事务。
+
+Cargo Git index 的实际关联来源在每次更新/rebuild 的 Git commit 前永久追加，包删除/unlink 不清除；读取按全部历史来源 repo 的当前 packages 策略与当前 owner 解析，来源删除/未知拒绝。旧索引由真实系统 authority 离线核实完整 Git 历史，通过 `--confirm-index-purpose` 加完整可重复 `--source-repo-id` 或互斥 `--confirm-no-linked-history` 明确认领；不得仅看现存包、按名称猜用途或 rewrite 历史。未标记同名仓库 disabled 保留上游 lookup 而不赋 marker，enabled 不认作索引。
+
+DB 配置/授权先锁资源后统一排序锁 definition，并在首副作用前校验完整最终 intent；PR 单项配置隐式创建 unit 也必须进入复合检查。清理仅原生受权删除/停用/吊销，以及固定派生索引身份的窄内部维护能力；不存在客户端 system/cleanup 通用旁路。
 
 ## 统一授权 evaluator
 
@@ -701,8 +696,8 @@ mapping group 保留 `tokenRequiresScopes(Admin)`、`reqToken()`、`reqSiteAdmin
 | --- | --- |
 | `GET /api/v1/enterprise/authz/roles` | site admin 或 platform admin。 |
 | `POST /api/v1/enterprise/authz/roles` | site admin 或 platform admin。 |
-| `GET /api/v1/enterprise/authz/features` | site admin 或 platform admin。 |
-| `PUT /api/v1/enterprise/authz/features/{key}/grants/global` | platform admin。 |
+| `GET /api/v1/enterprise/authz/features` | admin read scope + 当前可信系统管理 authority；企业 Platform Admin 角色不能委派 authority。 |
+| `GET/PUT/DELETE /api/v1/enterprise/authz/features/{key}/grants/global` | admin read/write scope + 当前可信系统管理 authority。 |
 | `GET /api/v1/enterprise/authz/audit` | site admin、platform admin、auditor。 |
 
 ### 组织级 API
@@ -711,8 +706,8 @@ mapping group 保留 `tokenRequiresScopes(Admin)`、`reqToken()`、`reqSiteAdmin
 | --- | --- |
 | `GET /api/v1/orgs/{org}/enterprise/authz/roles` | org owner 或授权管理员。 |
 | `POST /api/v1/orgs/{org}/enterprise/authz/roles` | org owner。 |
-| `GET /api/v1/orgs/{org}/enterprise/authz/features` | org owner 或授权管理员。 |
-| `PUT /api/v1/orgs/{org}/enterprise/authz/features/{key}` | org owner 或 `repo.manage_feature_grant` 等价组织权限。 |
+| `GET /api/v1/orgs/{org}/enterprise/authz/features` | organization read scope + 当前 org owner 或可信系统管理 authority。 |
+| `GET/PUT/DELETE /api/v1/orgs/{org}/enterprise/authz/features/{key}` | organization read/write scope + 同一 org authority；repo action 不委派 org authority。 |
 | `POST /api/v1/orgs/{org}/enterprise/authz/templates/apply` | org owner。 |
 
 ### 仓库级 API
@@ -720,8 +715,9 @@ mapping group 保留 `tokenRequiresScopes(Admin)`、`reqToken()`、`reqSiteAdmin
 | API | 权限 |
 | --- | --- |
 | `GET /api/v1/repos/{owner}/{repo}/enterprise/authz/effective-permissions` | repo admin 或查询自己。 |
-| `GET /api/v1/repos/{owner}/{repo}/enterprise/authz/features` | repo admin。 |
-| `PUT /api/v1/repos/{owner}/{repo}/enterprise/authz/features/{key}` | `repo.manage_feature_grant`。 |
+| `GET /api/v1/repos/{owner}/{repo}/enterprise/authz/features[/{key}]` | 已认证原生 reader + repository read scope/credential ceiling，仅无敏感 effective 投影。 |
+| `GET /api/v1/repos/{owner}/{repo}/enterprise/authz/features/{key}/grant` | repository read scope + 当前 repo 授权管理 authority，返回 raw 管理投影。 |
+| `PUT/DELETE /api/v1/repos/{owner}/{repo}/enterprise/authz/features/{key}` | repository write scope/credential ceiling + 当前 repo 授权管理 authority + `repo.manage_feature_grant`，shadow 同样检查。 |
 | `POST /api/v1/repos/{owner}/{repo}/enterprise/authz/templates/apply` | Owner 或 `repo.manage_feature_grant`。 |
 | `GET /api/v1/repos/{owner}/{repo}/enterprise/merge-gate/{index}` | repo reader + PR reader。 |
 
@@ -867,7 +863,7 @@ secret、token、私钥和外部系统凭据不得写入 metadata 明文。
 
 - [ ] 新增 `enterprise_feature_definition`、`enterprise_feature_grant`。
 - [ ] 实现 feature state 继承解析。
-- [ ] 接入 Issues、PR、Wiki、Packages、Webhooks、Actions/CI、AI review 等首批功能。
+- [ ] 接入七个 native_gate 的真实业务/配置/worker/protocol；六个外部 CI/扫描/AI key 仅 policy_only 输出，不执行任务或新增 merge gate。
 - [ ] 禁止仓库关闭上级 `required` 功能。
 - [ ] 增加 API、service 和集成测试。
 
@@ -1019,3 +1015,11 @@ secret、token、私钥和外部系统凭据不得写入 metadata 明文。
 上文第三阶段的 action enforce/403 和第五阶段的 merge gate 验收仍属于后续独立提案，不因本次 shadow 实施完成而自动完成。feature grant、策略模板、offboarding 和授权 UI 同样未实现。本次无 Windows 服务端验收，callback 持续关闭，采用合法登录刷新与定时完整同步。
 
 配置/管理/查询/容量/关闭与成套恢复见 [shadow 运维手册](authz-shadow-runbook.md)。当前验证结果及未通过项统一记在本 change 的 `verification.md`，不以本文替代测试或生产上线 gate；没有提交、推送或归档。
+
+## 2026-10-05：Proposal 4 当前实施与上线前置条件
+
+当前实现提供固定 13-key global/org/repo 功能策略、四态上级锁、strict config、CAS/reset、受权 API/安全投影、真实 native_gate 与原子审计；不增加功能 UI。迁移 363 后 DB version 364，feature catalog v1；已有 action catalog v2 和前序历史解释保持独立。实施完成度与 Linux SQLite/PostgreSQL 实跑证据由 `openspec/changes/add-enterprise-feature-grants/tasks.md` / `verification.md` 管理，上文长期阶段清单不替代本 change 验收。
+
+新 Cargo 索引写 InternalUsage=cargo-index；旧同名仓库不按名字自动认领。enabled preflight 的 cargo_index_purpose_unresolved 必须经用途/稳定 ID 核实、disabled 离线维护及审计 DB CLI 认领，实际普通代码仓库则原生受权重命名解除冲突。旧 mail 队列没有可信 IssueID，必须停全部生产者/实例/worker，备份并仅隔离 mail 队列，禁止删 common 共享目录；旧 hook 不能恢复可信来源则 enforce fail-closed。完整操作与积压处置风险见 [功能授权手册](feature-grants-runbook.md)。
+
+同版 shadow/disabled 回退保留政策/历史；旧 binary 不降 schema，必须 DB+Git/Wiki+storage+queue+配置完整匹配恢复。没有生产部署、队列处置或完整恢复实跑证据时不得宣称完成；前序 change 验收文档不改写。

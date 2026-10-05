@@ -15,6 +15,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	unit_model "gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/lfs"
@@ -24,9 +25,13 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 func cloneWiki(ctx context.Context, repo *repo_model.Repository, opts migration.MigrateOptions, migrateTimeout time.Duration) (string, error) {
+	if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+		return "", err
+	}
 	wikiRemoteURL := repo_module.WikiRemoteURL(ctx, opts.CloneAddr)
 	if wikiRemoteURL == "" {
 		return "", nil

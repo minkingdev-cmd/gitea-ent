@@ -172,7 +172,7 @@ Subject + Resource + Action + Condition => Decision
 
 ### `add-enterprise-feature-grants`：目标
 
-实现平台功能授权，控制某项能力在 global、org、repo 等维度是否可用、必选或禁用。
+实现平台功能授权，仅控制 global、org、repo 三层的可用、必选或禁用；个人仓库跳过 org，不引入 team/user/branch/role 作用域。
 
 ### `add-enterprise-feature-grants`：范围
 
@@ -199,11 +199,13 @@ Subject + Resource + Action + Condition => Decision
   - `feature.ai_review`
   - `feature.ci_secret_management`
   - `feature.required_status_checks`
-- 禁止 repo 关闭上级 `required` 功能。
+- 上级显式 disabled 不可下级开启，required 不可下级关闭；首个根向下锁获胜，旧冲突保留并投影。
+- 七个 native_gate 默认 enabled；六个外部 key 默认 disabled 且仅 policy_only 输出，不执行 scanner/AI/status 或新增 merge gate。
+- 提供真实 global/org/repo API、authority/action/credential 校验、reader/raw 隔离、CAS/reset 和原子审计；迁移 363 后 DB version 364，不重写原生 unit。
 
 ### `add-enterprise-feature-grants`：非范围
 
-- 不实现 merge gate 的完整阻断，只提供 feature state 解析。
+- 不实现完整 merge gate、外部 scanner/AI 执行、integration/token 自动创建；native_gate 仍须真实阻断对应 disabled 业务与 required 原生配置降级。
 - 不实现 UI。
 
 ### `add-enterprise-feature-grants`：建议能力路径
@@ -439,3 +441,11 @@ openspec new change "harden-wecom-governance-ops"
 回归与恢复证据见该 change 的 `verification.md`，运维步骤见 [shadow 运维手册](authz-shadow-runbook.md)。路线图中 enforce、feature grant、merge gate、模板、offboarding 和管理 UI 保持后续范围，不能以此次实施替代其独立 proposal 与验收。
 
 企微 callback 保持关闭，登录刷新及定时完整同步为当前方案；服务端永久只部署和验收 Linux，Windows 客户端访问不受影响。本次更新保留以上路线图原文，不将未来阶段提前勾选，也不提交、推送或归档。
+
+## 2026-10-05：Proposal 4 实施边界更新
+
+`add-enterprise-feature-grants` 当前实现包含 13-key 固定目录、global/org/repo 四态确定性锁、strict contexts、版本 CAS、真实受权管理与安全 effective 投影，以及七项 native_gate 的 Web/API/service/worker/Git/registry 配置与内容约束。required 不自动补原生资源，native availability/pending 不等于治理通过；六个 policy_only key 不执行外部集成或新增 merge deny。没有新功能 UI，也不自动完成后续模板/完整 merge gate/offboarding 提案。
+
+运维步骤见 [功能授权手册](feature-grants-runbook.md)：Linux 正式 migration 363 / DB version 364、Cargo 稳定用途标记、`enterprise_cargo_index_source` 唯一 pair 与永久历史来源，以及旧索引受审计显式认领（完整 Git 历史核实、可重复 `--source-repo-id` 或互斥 `--confirm-no-linked-history`），旧 mail queue 全实例停机和仅 mail 隔离、旧 hook 来源缺失 fail-closed，以及成套 DB+Git/storage+queue 备份恢复。Git commit 前追加 Cargo 实际来源，删除/unlink 不清理；索引读取按全部来源当前 repo 策略，来源删除/未知拒绝。marked index 禁止 owner transfer，rename 保留稳定 ID；未标记同名仓库仅 disabled 保留上游 lookup，不赋 marker。旧二进制不得降 schema，不按仓库名称或仅现存包认领索引、不 rewrite 历史，不删 common 共享队列目录。
+
+本更新不宣称生产部署/完整恢复已经执行；实跑与未验证项以本 change verification 为准，前序 change 历史验收保留。

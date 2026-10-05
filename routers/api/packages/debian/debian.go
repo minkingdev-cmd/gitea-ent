@@ -24,6 +24,7 @@ import (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.PlainText(status, message)
 }
@@ -248,7 +249,7 @@ func DeletePackageFile(ctx *context.Context) {
 	var pd *packages_model.PackageDescriptor
 
 	err := db.WithTx(ctx, func(ctx stdctx.Context) error {
-		pv, err := packages_model.GetVersionByNameAndVersion(ctx, owner.ID, packages_model.TypeDebian, name, version)
+		pv, err := packages_model.GetVersionByNameAndVersionForCleanup(ctx, owner.ID, packages_model.TypeDebian, name, version)
 		if err != nil {
 			return err
 		}
@@ -297,7 +298,9 @@ func DeletePackageFile(ctx *context.Context) {
 		notify_service.PackageDelete(ctx, ctx.Doer, pd)
 	}
 
-	if err := debian_service.BuildSpecificRepositoryFiles(ctx, ctx.Package.Owner.ID, distribution, component, architecture); err != nil {
+	if err := packages_service.RebuildIndexAfterPackageCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeDebian, func(indexCtx stdctx.Context) error {
+		return debian_service.BuildSpecificRepositoryFiles(indexCtx, ctx.Package.Owner.ID, distribution, component, architecture)
+	}); err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
 	}

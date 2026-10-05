@@ -66,11 +66,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	audit_model "gitea.dev/models/audit"
 	auth_model "gitea.dev/models/auth"
 	authz_model "gitea.dev/models/enterpriseauthz"
+	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/organization"
 	"gitea.dev/models/perm"
 	access_model "gitea.dev/models/perm/access"
@@ -103,6 +105,7 @@ import (
 	"gitea.dev/services/audit"
 	"gitea.dev/services/auth"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/forms"
 
 	_ "gitea.dev/routers/api/v1/swagger" // for swagger generation
@@ -478,6 +481,11 @@ func reqRepoWriter(unitTypes ...unit.Type) func(ctx *context.APIContext) {
 			common.ObserveMarkedRepoDenial(ctx.Base, ctx.Doer, ctx.Repo, "api")
 			return
 		}
+		if slices.Contains(unitTypes, unit.TypeCode) {
+			if err := authz_service.RequireCargoIndexFeature(ctx, ctx.Repo.Repository); err != nil {
+				ctx.APIErrorInternal(err)
+			}
+		}
 	}
 }
 
@@ -487,6 +495,11 @@ func reqRepoReader(unitType unit.Type) func(ctx *context.APIContext) {
 		if !ctx.Repo.Permission.CanRead(unitType) && !ctx.IsUserRepoAdmin() && !ctx.IsUserSiteAdmin() {
 			ctx.APIError(http.StatusForbidden, "user should have specific read permission or be a repo admin or a site admin")
 			return
+		}
+		if unitType == unit.TypeCode {
+			if err := authz_service.RequireCargoIndexFeature(ctx, ctx.Repo.Repository); err != nil {
+				ctx.APIErrorInternal(err)
+			}
 		}
 	}
 }
@@ -768,6 +781,10 @@ func mustEnableIssues(ctx *context.APIContext) {
 		ctx.APIErrorNotFound()
 		return
 	}
+	if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, authz.FeatureIssues); err != nil {
+		enterpriseauthz_router.FeatureBusinessError(ctx, err)
+		return
+	}
 }
 
 func observePullMutationGuard(guard func(*context.APIContext)) func(*context.APIContext) {
@@ -800,6 +817,10 @@ func mustAllowPulls(ctx *context.APIContext) {
 		ctx.APIErrorNotFound()
 		return
 	}
+	if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, authz.FeaturePullRequests); err != nil {
+		enterpriseauthz_router.FeatureBusinessError(ctx, err)
+		return
+	}
 }
 
 func mustEnableIssuesOrPulls(ctx *context.APIContext) {
@@ -826,11 +847,61 @@ func mustEnableIssuesOrPulls(ctx *context.APIContext) {
 		ctx.APIErrorNotFound()
 		return
 	}
+	if !setting.EnterpriseAuthz.Enabled {
+		return
+	}
+	var issue *issues_model.Issue
+	var err error
+	if index := ctx.PathParamInt64("index"); index > 0 {
+		issue, err = issues_model.GetIssueByIndex(ctx, ctx.Repo.Repository.ID, index)
+	} else if id := ctx.PathParamInt64("id"); id > 0 {
+		var comment *issues_model.Comment
+		comment, err = issues_model.GetCommentByID(ctx, id)
+		if err == nil {
+			issue, err = issues_model.GetIssueByID(ctx, comment.IssueID)
+		}
+	} else if ctx.Req.Method == http.MethodPost || strings.HasSuffix(ctx.Req.URL.Path, "/pinned") {
+		if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, authz.FeatureIssues); err != nil {
+			enterpriseauthz_router.FeatureBusinessError(ctx, err)
+		}
+		return
+	} else {
+		return
+	}
+	if !setting.EnterpriseAuthz.Enforce && (err != nil || issue.RepoID != ctx.Repo.Repository.ID) {
+		return
+	}
+	if issues_model.IsErrIssueNotExist(err) || issues_model.IsErrCommentNotExist(err) || err == nil && issue.RepoID != ctx.Repo.Repository.ID {
+		ctx.APIErrorNotFound()
+		return
+	}
+	if err != nil {
+		ctx.APIErrorInternal(err)
+		return
+	}
+	key, typ := authz.FeatureIssues, unit.TypeIssues
+	if issue.IsPull {
+		key, typ = authz.FeaturePullRequests, unit.TypePullRequests
+	}
+	if !ctx.Repo.Permission.CanRead(typ) {
+		if !setting.EnterpriseAuthz.Enforce {
+			return
+		}
+		ctx.APIErrorNotFound()
+		return
+	}
+	if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, key); err != nil {
+		enterpriseauthz_router.FeatureBusinessError(ctx, err)
+	}
 }
 
 func mustEnableWiki(ctx *context.APIContext) {
 	if !ctx.Repo.Permission.CanRead(unit.TypeWiki) {
 		ctx.APIErrorNotFound()
+		return
+	}
+	if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, authz.FeatureWiki); err != nil {
+		enterpriseauthz_router.FeatureBusinessError(ctx, err)
 		return
 	}
 }
@@ -1342,6 +1413,10 @@ func Routes() *web.Router {
 			m.Group("/{username}/{reponame}", func() {
 				m.Group("/enterprise/authz", func() {
 					addEnterpriseAuthzRoutes(m)
+					m.Get("/features", enterpriseauthz_router.RequireFeatureReader, enterpriseauthz_router.ListFeatures)
+					m.Get("/features/{key}", enterpriseauthz_router.RequireFeatureReader, enterpriseauthz_router.GetFeature)
+					m.Get("/features/{key}/grant", enterpriseauthz_router.RequireManagement, enterpriseauthz_router.GetFeatureGrant)
+					m.Combo("/features/{key}").Put(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.PutFeatureGrant).Delete(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.ResetFeatureGrant)
 					m.Get("/effective-permissions", enterpriseauthz_router.RequireDiagnostic, enterpriseauthz_router.EffectivePermissions)
 					m.Post("/evaluate", enterpriseauthz_router.RequireDiagnostic, enterpriseauthz_router.Evaluate)
 				}, reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeRepo))
@@ -1827,7 +1902,11 @@ func Routes() *web.Router {
 		m.Post("/orgs", tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), reqToken(), bind(api.CreateOrgOption{}), org.Create)
 		m.Get("/orgs", tokenRequiresScopes(auth_model.AccessTokenScopeCategoryOrganization), org.GetAll)
 		m.Group("/orgs/{org}", func() {
-			m.Group("/enterprise/authz", func() { addEnterpriseAuthzRoutes(m) }, reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeOrg))
+			m.Group("/enterprise/authz", func() {
+				addEnterpriseAuthzRoutes(m)
+				m.Get("/features", enterpriseauthz_router.RequireManagement, enterpriseauthz_router.ListFeatures)
+				m.Combo("/features/{key}").Get(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.GetFeatureGrant).Put(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.PutFeatureGrant).Delete(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.ResetFeatureGrant)
+			}, reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeOrg))
 			m.Combo("").Get(org.Get).
 				Patch(reqToken(), reqOrgOwnership(), bind(api.EditOrgOption{}), org.Edit).
 				Delete(reqToken(), reqOrgOwnership(), org.Delete)
@@ -1919,6 +1998,8 @@ func Routes() *web.Router {
 		m.Group("/enterprise/authz", func() {
 			addEnterpriseAuthzRoutes(m)
 			m.Get("/actions", enterpriseauthz_router.RequireManagement, enterpriseauthz_router.Actions)
+			m.Get("/features", enterpriseauthz_router.RequireManagement, enterpriseauthz_router.FeatureCatalog)
+			m.Combo("/features/{key}/grants/global").Get(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.GetFeatureGrant).Put(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.PutFeatureGrant).Delete(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.ResetFeatureGrant)
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryAdmin), reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeSystem))
 
 		m.Group("/enterprise/wecom/mappings", func() {

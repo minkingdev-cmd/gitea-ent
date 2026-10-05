@@ -31,6 +31,7 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	packages_helper "gitea.dev/routers/api/packages/helper"
+	"gitea.dev/routers/common"
 	shared_user "gitea.dev/routers/web/shared/user"
 	"gitea.dev/services/context"
 	"gitea.dev/services/forms"
@@ -447,7 +448,10 @@ func PackageSettingsPost(ctx *context.Context) {
 func packageSettingsPostActionLink(ctx *context.Context, form *forms.PackageSettingForm) {
 	pd := ctx.Package.Descriptor
 	if form.RepoName == "" { // remove the link
-		if err := packages_model.SetRepositoryLink(ctx, pd.Package.ID, 0); err != nil {
+		if err := packages_service.SetRepositoryAssociation(ctx, pd.Package.ID, 0); err != nil {
+			if common.WriteExecutionError(ctx.Base, err) {
+				return
+			}
 			ctx.JSONError(ctx.Tr("packages.settings.unlink.error"))
 			return
 		}
@@ -467,7 +471,10 @@ func packageSettingsPostActionLink(ctx *context.Context, form *forms.PackageSett
 		return
 	}
 
-	if err := packages_model.SetRepositoryLink(ctx, pd.Package.ID, repo.ID); err != nil {
+	if err := packages_service.SetRepositoryAssociation(ctx, pd.Package.ID, repo.ID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.JSONError(ctx.Tr("packages.settings.link.error"))
 		return
 	}

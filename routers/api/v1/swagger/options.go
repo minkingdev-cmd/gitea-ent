@@ -16,6 +16,9 @@ import (
 // swagger:parameters parameterBodies
 type swaggerParameterBodies struct {
 	// in:body
+	PutEnterpriseFeatureGrantOption api.PutEnterpriseFeatureGrantOption
+
+	// in:body
 	CreateEnterpriseAuthzRoleOption api.CreateEnterpriseAuthzRoleOption
 	// in:body
 	EditEnterpriseAuthzRoleOption api.EditEnterpriseAuthzRoleOption

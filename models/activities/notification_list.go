@@ -21,6 +21,7 @@ import (
 
 // FindNotificationOptions represent the filters for notifications. If an ID is 0 it will be ignored.
 type FindNotificationOptions struct {
+	featureCond builder.Cond
 	db.ListOptions
 	UserID            int64
 	RepoID            int64
@@ -33,7 +34,10 @@ type FindNotificationOptions struct {
 
 // ToCond will convert each condition into a xorm-Cond
 func (opts FindNotificationOptions) ToConds() builder.Cond {
-	cond := builder.NewCond()
+	cond := opts.featureCond
+	if cond == nil {
+		cond = notificationFeatureCond()
+	}
 	if opts.UserID != 0 {
 		cond = cond.And(builder.Eq{"notification.user_id": opts.UserID})
 	}
@@ -83,7 +87,7 @@ func CreateOrUpdateIssueNotifications(ctx context.Context, issueID, commentID, n
 func createOrUpdateIssueNotifications(ctx context.Context, issueID, commentID, notificationAuthorID, receiverID int64) ([]int64, error) {
 	// init
 	var toNotify container.Set[int64]
-	notifications, err := db.Find[Notification](ctx, FindNotificationOptions{
+	notifications, err := FindNotifications(ctx, &FindNotificationOptions{
 		IssueID: issueID,
 	})
 	if err != nil {
@@ -506,4 +510,32 @@ func (nl NotificationList) LoadIssuePullRequests(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func prepareNotificationQuery(ctx context.Context, opts *FindNotificationOptions) (*FindNotificationOptions, error) {
+	prepared := *opts
+	prepared.featureCond = builder.NewCond()
+	observeNotificationQuery(ctx, prepared.ToConds())
+	cond, err := notificationFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
+	prepared.featureCond = cond
+	return &prepared, nil
+}
+
+func FindNotifications(ctx context.Context, opts *FindNotificationOptions) ([]*Notification, error) {
+	prepared, err := prepareNotificationQuery(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return db.Find[Notification](ctx, prepared)
+}
+
+func CountNotifications(ctx context.Context, opts *FindNotificationOptions) (int64, error) {
+	prepared, err := prepareNotificationQuery(ctx, opts)
+	if err != nil {
+		return 0, err
+	}
+	return db.Count[Notification](ctx, prepared)
 }

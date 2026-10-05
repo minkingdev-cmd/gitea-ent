@@ -45,6 +45,9 @@ type HookResponse struct {
 type HookTask struct {
 	ID             int64  `xorm:"pk autoincr"`
 	HookID         int64  `xorm:"index"`
+	SourceRepoID   int64  `xorm:"NOT NULL DEFAULT 0"`
+	SourceOwnerID  int64  `xorm:"NOT NULL DEFAULT 0"`
+	SourceResolved bool   `xorm:"NOT NULL DEFAULT false"`
 	UUID           string `xorm:"unique"`
 	PayloadContent string `xorm:"LONGTEXT"`
 	// PayloadVersion number to allow for smooth version upgrades:
@@ -81,13 +84,11 @@ func (t *HookTask) BeforeUpdate() {
 
 // AfterLoad updates the webhook object upon setting a column
 func (t *HookTask) AfterLoad() {
-	if len(t.RequestContent) == 0 {
-		return
-	}
-
-	t.RequestInfo = &HookRequest{}
-	if err := json.Unmarshal([]byte(t.RequestContent), t.RequestInfo); err != nil {
-		log.Error("Unmarshal RequestContent[%d]: %v", t.ID, err)
+	if len(t.RequestContent) > 0 {
+		t.RequestInfo = &HookRequest{}
+		if err := json.Unmarshal([]byte(t.RequestContent), t.RequestInfo); err != nil {
+			log.Error("Unmarshal RequestContent[%d]: %v", t.ID, err)
+		}
 	}
 
 	if len(t.ResponseContent) > 0 {
@@ -164,6 +165,9 @@ func ReplayHookTask(ctx context.Context, hookID int64, uuid string) (*HookTask, 
 
 	return CreateHookTask(ctx, &HookTask{
 		HookID:         task.HookID,
+		SourceRepoID:   task.SourceRepoID,
+		SourceOwnerID:  task.SourceOwnerID,
+		SourceResolved: task.SourceResolved,
 		PayloadContent: task.PayloadContent,
 		EventType:      task.EventType,
 		PayloadVersion: task.PayloadVersion,

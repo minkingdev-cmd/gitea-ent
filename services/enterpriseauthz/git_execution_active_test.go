@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	authz_model "gitea.dev/models/enterpriseauthz"
+	packages_model "gitea.dev/models/packages"
+	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unittest"
 	"gitea.dev/modules/git/gitrepo"
 	"gitea.dev/modules/setting"
@@ -108,4 +110,38 @@ func TestGitExecutionPostReceiveRequiresActualRefAndSingleClaim(t *testing.T) {
 	require.False(t, attached)
 	admission.Finish(ctx, NativeSuccess, StageOperation)
 	require.Error(t, RequireGitMergeExecution(post, input.Actor.ID, input.Repo.ID, "main", input.NewCommitID))
+}
+
+func TestCargoCleanupExecutionProofIsNarrowAndOneShot(t *testing.T) {
+	input, command := gitExecutionFixture(t)
+	setting.EnterpriseAuthz.Enforce = true
+	defer test.MockVariableValue(&setting.InternalToken, "cargo-cleanup-test-secret")()
+	input.OldCommitID, input.NewCommitID = command("rev-parse", "HEAD"), command("rev-parse", "HEAD")
+	input.Repo.InternalUsage = repo_model.InternalUsageCargoIndex
+	ctx, admission, err := BeginGitExecution(t.Context(), []GitExecutionInput{input})
+	require.NoError(t, err)
+	require.NoError(t, admission.Start(ctx))
+	ticket := NewHookOperationTicket(ctx, EvaluateInput{Actor: input.Actor, Repo: input.Repo, Credential: input.Credential, ConditionContext: executionInput(t).ConditionContext}, nil)
+	restored, operation := RestoreHookOperation(t.Context(), ticket, input.Repo.ID, input.Actor.ID, "")
+	require.NotNil(t, operation)
+	require.False(t, ReuseCargoIndexCleanupExecution(restored, operation, []GitExecutionInput{input}))
+	release, err := RegisterGitExecution(ctx, admission, []GitExecutionInput{input})
+	require.NoError(t, err)
+	require.False(t, ReuseCargoIndexCleanupExecution(restored, operation, []GitExecutionInput{input}))
+	release()
+	ctx = packages_model.WithCleanupIndexMaintenance(ctx, input.Repo.OwnerID, packages_model.TypeCargo)
+	release, err = RegisterGitExecution(ctx, admission, []GitExecutionInput{input})
+	require.NoError(t, err)
+	defer release()
+	changed := input
+	changed.NewCommitID = "1111111111111111111111111111111111111111"
+	require.False(t, ReuseCargoIndexCleanupExecution(restored, operation, []GitExecutionInput{changed}))
+	alteredRepo := *input.Repo
+	alteredRepo.OwnerID++
+	changed = input
+	changed.Repo = &alteredRepo
+	require.False(t, ReuseCargoIndexCleanupExecution(restored, operation, []GitExecutionInput{changed}))
+	require.True(t, ReuseCargoIndexCleanupExecution(restored, operation, []GitExecutionInput{input}))
+	require.False(t, ReuseCargoIndexCleanupExecution(restored, operation, []GitExecutionInput{input}))
+	require.True(t, ReuseActiveGitExecution(restored, operation, []GitExecutionInput{input}))
 }

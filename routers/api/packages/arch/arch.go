@@ -5,6 +5,7 @@ package arch
 
 import (
 	"bytes"
+	stdctx "context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 )
 
 func apiError(ctx *context.Context, status int, obj any) {
+	status = helper.ResolvePackageErrorStatus(status, obj)
 	message := helper.ProcessErrorForUser(ctx, status, obj)
 	ctx.PlainText(status, message)
 }
@@ -264,7 +266,7 @@ func DeletePackageVersion(ctx *context.Context) {
 	}
 	defer release()
 
-	pv, err := packages_model.GetVersionByNameAndVersion(ctx, ctx.Package.Owner.ID, packages_model.TypeArch, name, version)
+	pv, err := packages_model.GetVersionByNameAndVersionForCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeArch, name, version)
 	if err != nil {
 		if errors.Is(err, util.ErrNotExist) {
 			apiError(ctx, http.StatusNotFound, err)
@@ -274,7 +276,7 @@ func DeletePackageVersion(ctx *context.Context) {
 		return
 	}
 
-	pfs, _, err := packages_model.SearchFiles(ctx, &packages_model.PackageFileSearchOptions{
+	pfs, _, err := packages_model.SearchFilesForCleanup(ctx, &packages_model.PackageFileSearchOptions{
 		VersionID:    pv.ID,
 		CompositeKey: fmt.Sprintf("%s|%s", repository, architecture),
 	})
@@ -296,7 +298,9 @@ func DeletePackageVersion(ctx *context.Context) {
 		return
 	}
 
-	if err := arch_service.BuildSpecificRepositoryFiles(ctx, ctx.Package.Owner.ID, repository, architecture); err != nil {
+	if err := packages_service.RebuildIndexAfterPackageCleanup(ctx, ctx.Package.Owner.ID, packages_model.TypeArch, func(indexCtx stdctx.Context) error {
+		return arch_service.BuildSpecificRepositoryFiles(indexCtx, ctx.Package.Owner.ID, repository, architecture)
+	}); err != nil {
 		apiError(ctx, http.StatusInternalServerError, err)
 		return
 	}

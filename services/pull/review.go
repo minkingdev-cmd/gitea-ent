@@ -13,12 +13,14 @@ import (
 	issues_model "gitea.dev/models/issues"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/optional"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/gitdiff"
 	notify_service "gitea.dev/services/notify"
 )
@@ -106,6 +108,9 @@ func InvalidateCodeComments(ctx context.Context, prs issues_model.PullRequestLis
 
 // CreateCodeComment creates a comment on the code line
 func CreateCodeComment(ctx context.Context, doer *user_model.User, gitRepo *git.Repository, issue *issues_model.Issue, line int64, content, treePath string, pendingReview bool, replyReviewID int64, latestCommitID string, attachments []string) (*issues_model.Comment, error) {
+	if err := authz_service.RequireRepoFeature(ctx, issue.RepoID, authz.FeaturePullRequests); err != nil {
+		return nil, err
+	}
 	var (
 		existsReview bool
 		err          error
@@ -301,6 +306,9 @@ func createCodeComment(ctx context.Context, doer *user_model.User, repo *repo_mo
 
 // SubmitReview creates a review out of the existing pending review or creates a new one if no pending review exist
 func SubmitReview(ctx context.Context, doer *user_model.User, gitRepo *git.Repository, issue *issues_model.Issue, reviewType issues_model.ReviewType, content, commitID string, attachmentUUIDs []string) (*issues_model.Review, *issues_model.Comment, error) {
+	if err := authz_service.RequireRepoFeature(ctx, issue.RepoID, authz.FeaturePullRequests); err != nil {
+		return nil, nil, err
+	}
 	if err := issue.LoadPullRequest(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -358,6 +366,9 @@ func SubmitReview(ctx context.Context, doer *user_model.User, gitRepo *git.Repos
 
 // DismissApprovalReviews dismiss all approval reviews because of new commits
 func DismissApprovalReviews(ctx context.Context, doer *user_model.User, pull *issues_model.PullRequest) error {
+	if err := authz_service.RequireRepoFeature(ctx, pull.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	reviews, err := issues_model.FindReviews(ctx, issues_model.FindReviewOptions{
 		ListOptions: db.ListOptionsAll,
 		IssueID:     pull.IssueID,
@@ -402,6 +413,9 @@ func DismissApprovalReviews(ctx context.Context, doer *user_model.User, pull *is
 
 // DismissReview dismissing stale review by repo admin
 func DismissReview(ctx context.Context, reviewID, repoID int64, message string, doer *user_model.User, isDismiss, dismissPriors bool) (comment *issues_model.Comment, err error) {
+	if err := authz_service.RequireRepoFeature(ctx, repoID, authz.FeaturePullRequests); err != nil {
+		return nil, err
+	}
 	review, err := issues_model.GetReviewByID(ctx, reviewID)
 	if err != nil {
 		return nil, err

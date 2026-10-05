@@ -23,6 +23,9 @@ import (
 	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	webhook_module "gitea.dev/modules/webhook"
+	authz_service "gitea.dev/services/enterpriseauthz"
+
+	"xorm.io/builder"
 )
 
 type Requester func(context.Context, *webhook_model.Webhook, *webhook_model.HookTask) (req *http.Request, body []byte, err error)
@@ -103,7 +106,28 @@ func handler(items ...int64) []int64 {
 	return nil
 }
 
-func enqueueHookTask(taskID int64) error {
+func enqueueHookTask(ctx context.Context, taskID int64) error {
+	if setting.EnterpriseAuthz.Enabled {
+		task, err := webhook_model.GetHookTaskByID(ctx, taskID)
+		if err != nil {
+			return err
+		}
+		hook, err := webhook_model.GetWebhookByID(ctx, task.HookID)
+		if err != nil {
+			return err
+		}
+		if err := requireHookTaskFeature(ctx, hook, task); err != nil {
+			return err
+		}
+	}
+	if db.InTransaction(ctx) {
+		db.AfterCommit(ctx, func() {
+			if err := enqueueHookTask(graceful.GetManager().HammerContext(), taskID); err != nil {
+				log.Error("Unable to enqueue webhook task[%d] after commit: %v", taskID, err)
+			}
+		})
+		return nil
+	}
 	err := hookQueue.Push(taskID)
 	if err != nil && err != queue.ErrAlreadyInQueue {
 		return err
@@ -134,6 +158,12 @@ func checkBranchFilter(branchFilter string, ref git.RefName) bool {
 // Test Push Event control can verify delivery even when those gates would suppress
 // a real event.
 func PrepareTestWebhook(ctx context.Context, w *webhook_model.Webhook, event webhook_module.HookEventType, p api.Payloader) error {
+	if err := requireWebhookFeature(ctx, w, 0, 0); err != nil {
+		return err
+	}
+	if err := requireWebhookBusinessFeature(ctx, event, w.RepoID, w.OwnerID); err != nil {
+		return err
+	}
 	if setting.DisableWebhooks {
 		return nil
 	}
@@ -148,18 +178,32 @@ func PrepareTestWebhook(ctx context.Context, w *webhook_model.Webhook, event web
 		PayloadContent: string(payload),
 		EventType:      event,
 		PayloadVersion: 2,
+		SourceRepoID:   w.RepoID, SourceOwnerID: w.OwnerID, SourceResolved: true,
 	})
 	if err != nil {
 		return fmt.Errorf("CreateHookTask for %s: %w", event, err)
 	}
 
-	return enqueueHookTask(task.ID)
+	return enqueueHookTask(ctx, task.ID)
 }
 
 // PrepareWebhook creates a hook task and enqueues it for processing.
 // The payload is saved as-is. The adjustments depending on the webhook type happen
 // right before delivery, in the [Deliver] method.
 func PrepareWebhook(ctx context.Context, w *webhook_model.Webhook, event webhook_module.HookEventType, p api.Payloader) error {
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && w.RepoID <= 0 && w.OwnerID <= 0 {
+		return &authz_service.ExecutionError{Reason: "invalid_webhook_source", Status: 403}
+	}
+	return prepareWebhook(ctx, w, event, p, w.RepoID, w.OwnerID)
+}
+
+func prepareWebhook(ctx context.Context, w *webhook_model.Webhook, event webhook_module.HookEventType, p api.Payloader, sourceRepoID, sourceOwnerID int64) error {
+	if err := requireWebhookFeature(ctx, w, sourceRepoID, sourceOwnerID); err != nil {
+		return err
+	}
+	if err := requireWebhookBusinessFeature(ctx, event, sourceRepoID, sourceOwnerID); err != nil {
+		return err
+	}
 	// Skip sending if webhooks are disabled.
 	if setting.DisableWebhooks {
 		return nil
@@ -195,16 +239,20 @@ func PrepareWebhook(ctx context.Context, w *webhook_model.Webhook, event webhook
 		PayloadContent: string(payload),
 		EventType:      event,
 		PayloadVersion: 2,
+		SourceRepoID:   sourceRepoID, SourceOwnerID: sourceOwnerID, SourceResolved: true,
 	})
 	if err != nil {
 		return fmt.Errorf("CreateHookTask for %s: %w", event, err)
 	}
 
-	return enqueueHookTask(task.ID)
+	return enqueueHookTask(ctx, task.ID)
 }
 
 // PrepareWebhooks adds new webhooks to task queue for given payload.
 func PrepareWebhooks(ctx context.Context, source EventSource, event webhook_module.HookEventType, p api.Payloader) error {
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && (source.Repository == nil || source.Repository.ID <= 0) && (source.Owner == nil || source.Owner.ID <= 0) {
+		return &authz_service.ExecutionError{Reason: "invalid_webhook_source", Status: 403}
+	}
 	owner := source.Owner
 
 	var ws []*webhook_model.Webhook
@@ -245,8 +293,17 @@ func PrepareWebhooks(ctx context.Context, source EventSource, event webhook_modu
 		return nil
 	}
 
+	sourceRepoID, sourceOwnerID := int64(0), int64(0)
+	if source.Repository != nil {
+		sourceRepoID = source.Repository.ID
+	}
+	if source.Owner != nil {
+		sourceOwnerID = source.Owner.ID
+	} else if owner != nil {
+		sourceOwnerID = owner.ID
+	}
 	for _, w := range ws {
-		if err := PrepareWebhook(ctx, w, event, p); err != nil {
+		if err := prepareWebhook(ctx, w, event, p, sourceRepoID, sourceOwnerID); err != nil {
 			return err
 		}
 	}
@@ -255,10 +312,24 @@ func PrepareWebhooks(ctx context.Context, source EventSource, event webhook_modu
 
 // ReplayHookTask replays a webhook task
 func ReplayHookTask(ctx context.Context, w *webhook_model.Webhook, uuid string) error {
+	original, exists, err := db.Get[webhook_model.HookTask](ctx, builder.Eq{"hook_id": w.ID, "uuid": uuid})
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return webhook_model.ErrHookTaskNotExist{HookID: w.ID, UUID: uuid}
+	}
+	current, err := webhook_model.GetWebhookByID(ctx, w.ID)
+	if err != nil {
+		return err
+	}
+	if err := requireHookTaskFeature(ctx, current, original); err != nil {
+		return err
+	}
 	task, err := webhook_model.ReplayHookTask(ctx, w.ID, uuid)
 	if err != nil {
 		return err
 	}
 
-	return enqueueHookTask(task.ID)
+	return enqueueHookTask(ctx, task.ID)
 }

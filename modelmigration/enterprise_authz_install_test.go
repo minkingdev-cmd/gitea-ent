@@ -29,7 +29,7 @@ func TestEnterpriseAuthzFreshInstall(t *testing.T) {
 	setting.EnterpriseAuthz.Enabled = true
 	require.NoError(t, Migrate(t.Context(), x))
 	require.NoError(t, authzmodel.CheckReady(t.Context()))
-	require.NoError(t, x.Sync(new(authzmodel.RoleDefinition), new(authzmodel.RolePermission), new(authzmodel.SubjectRoleBinding), new(authzmodel.DecisionRecord)))
+	require.NoError(t, x.Sync(new(authzmodel.RoleDefinition), new(authzmodel.RolePermission), new(authzmodel.SubjectRoleBinding), new(authzmodel.DecisionRecord), new(authzmodel.FeatureDefinition), new(authzmodel.FeatureGrant), new(v28.FeatureHookTaskV363), new(authzmodel.CargoIndexSource), new(v28.FeatureRepositoryV363)))
 	before, err := x.Query("SELECT * FROM enterprise_role_definition ORDER BY id")
 	require.NoError(t, err)
 	permissionsBefore, err := x.Query("SELECT * FROM enterprise_role_permission ORDER BY id")
@@ -77,7 +77,7 @@ func TestEnterpriseAuthzFreshInstall(t *testing.T) {
 	}
 	version, err := GetCurrentDBVersion(x)
 	require.NoError(t, err)
-	require.EqualValues(t, 363, version)
+	require.EqualValues(t, 364, version)
 }
 
 func TestEnterpriseAuthzInstallRejectsUnversionedDatabase(t *testing.T) {
@@ -100,9 +100,9 @@ func TestEnterpriseAuthzInstallDoesNotRepairCurrentDatabase(t *testing.T) {
 	defer cleanup()
 	defer test.MockVariableValue(&setting.EnterpriseAuthz)()
 	setting.EnterpriseAuthz.Enabled = true
-	_, err := x.Insert(&Version{ID: 1, Version: 363})
+	_, err := x.Insert(&Version{ID: 1, Version: 364})
 	require.NoError(t, err)
-	require.NoError(t, x.Sync(new(authzmodel.RoleDefinition), new(authzmodel.RolePermission), new(authzmodel.SubjectRoleBinding), new(authzmodel.DecisionRecord)))
+	require.NoError(t, x.Sync(new(authzmodel.RoleDefinition), new(authzmodel.RolePermission), new(authzmodel.SubjectRoleBinding), new(authzmodel.DecisionRecord), new(authzmodel.FeatureDefinition), new(authzmodel.FeatureGrant), new(v28.FeatureHookTaskV363), new(authzmodel.CargoIndexSource), new(v28.FeatureRepositoryV363)))
 	require.NoError(t, Migrate(t.Context(), x))
 	require.EqualError(t, authzmodel.CheckReady(t.Context()), "authz_seed_incomplete")
 	count, err := x.Count(new(authzmodel.RoleDefinition))
@@ -122,8 +122,8 @@ func TestEnterpriseAuthzUpgradeReadiness(t *testing.T) {
 	require.NoError(t, authzmodel.CheckReady(t.Context()))
 	defer test.MockVariableValue(&preparedMigrations)()
 	preparedMigrations = prepareMigrationTasks()[:len(prepareMigrationTasks())-1]
-	require.EqualValues(t, 362, ExpectedDBVersion())
-	require.ErrorContains(t, EnsureUpToDate(t.Context(), x), "current database version 363 is not equal to the expected version 362")
+	require.EqualValues(t, 363, ExpectedDBVersion())
+	require.ErrorContains(t, EnsureUpToDate(t.Context(), x), "current database version 364 is not equal to the expected version 363")
 }
 
 func TestEnterpriseAuthzFreshInstallInterruptedRecovery(t *testing.T) {

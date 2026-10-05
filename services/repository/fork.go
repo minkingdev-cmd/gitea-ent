@@ -21,6 +21,7 @@ import (
 	"gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
 	"gitea.dev/services/audit"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 
 	"xorm.io/builder"
@@ -57,6 +58,10 @@ type ForkRepoOptions struct {
 
 // ForkRepository forks a repository
 func ForkRepository(ctx context.Context, doer, owner *user_model.User, opts ForkRepoOptions) (*repo_model.Repository, error) {
+	if err := authz_service.RequireCargoIndexFeature(ctx, opts.BaseRepo); err != nil {
+		return nil, err
+	}
+
 	if err := opts.BaseRepo.LoadOwner(ctx); err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // CompareInfo represents needed information for comparing references.
@@ -52,6 +53,11 @@ func (ci *CompareInfo) DirectComparison() bool {
 // It does its best to fill the fields as many as it can.
 // MergeBase can be empty if the base and head are unrelated.
 func GetCompareInfo(ctx context.Context, baseRepo, headRepo *repo_model.Repository, headGitRepo *git.Repository, baseRef, headRef git.RefName, directComparison, fileOnly bool) (compareInfo CompareInfo, err error) {
+	for _, repo := range []*repo_model.Repository{baseRepo, headRepo} {
+		if err := authz_service.RequireCargoIndexFeature(ctx, repo); err != nil {
+			return compareInfo, err
+		}
+	}
 	baseCommitID, err1 := git.GetFullCommitID(ctx, baseRepo, baseRef.String())
 	headCommitID, err2 := git.GetFullCommitID(ctx, headRepo, headRef.String())
 	compareInfo = CompareInfo{

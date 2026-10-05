@@ -19,6 +19,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/repostats"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/label"
@@ -387,6 +388,9 @@ func (g *GiteaLocalUploader) SyncBranches(ctx context.Context) error {
 
 // CreateIssues creates issues
 func (g *GiteaLocalUploader) CreateIssues(ctx context.Context, issues ...*base.Issue) error {
+	if err := authz_service.RequireRepoFeature(ctx, g.repo.ID, authz.FeatureIssues); err != nil {
+		return err
+	}
 	iss := make([]*issues_model.Issue, 0, len(issues))
 	for _, issue := range issues {
 		var labels []*issues_model.Label
@@ -471,6 +475,20 @@ func (g *GiteaLocalUploader) CreateIssues(ctx context.Context, issues ...*base.I
 
 // CreateComments creates comments of issues
 func (g *GiteaLocalUploader) CreateComments(ctx context.Context, comments ...*base.Comment) error {
+	for _, comment := range comments {
+		issue, exists := g.issues[comment.IssueIndex]
+		if !exists {
+			return fmt.Errorf("comment references non existent IssueIndex %d", comment.IssueIndex)
+		}
+		key := authz.FeatureIssues
+		if issue.IsPull {
+			key = authz.FeaturePullRequests
+		}
+		if err := authz_service.RequireRepoFeature(ctx, issue.RepoID, key); err != nil {
+			return err
+		}
+	}
+
 	cms := make([]*issues_model.Comment, 0, len(comments))
 	for _, comment := range comments {
 		var issue *issues_model.Issue
@@ -556,6 +574,9 @@ func (g *GiteaLocalUploader) CreateComments(ctx context.Context, comments ...*ba
 
 // CreatePullRequests creates pull requests
 func (g *GiteaLocalUploader) CreatePullRequests(ctx context.Context, prs ...*base.PullRequest) error {
+	if err := authz_service.RequireRepoFeature(ctx, g.repo.ID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	gprs := make([]*issues_model.PullRequest, 0, len(prs))
 	for _, pr := range prs {
 		gpr, err := g.newPullRequest(ctx, pr)
@@ -852,6 +873,9 @@ func convertReviewState(state string) issues_model.ReviewType {
 
 // CreateReviews create pull request reviews of currently migrated issues
 func (g *GiteaLocalUploader) CreateReviews(ctx context.Context, reviews ...*base.Review) error {
+	if err := authz_service.RequireRepoFeature(ctx, g.repo.ID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	cms := make([]*issues_model.Review, 0, len(reviews))
 	for _, review := range reviews {
 		var issue *issues_model.Issue

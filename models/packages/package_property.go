@@ -146,6 +146,10 @@ type DistinctPropertyDependency struct {
 // GetDistinctPropertyValues returns all distinct property values for a given type.
 // Optional: Search only in dependence of another property.
 func GetDistinctPropertyValues(ctx context.Context, packageType Type, ownerID int64, refType PropertyType, propertyName string, dep *DistinctPropertyDependency) ([]string, error) {
+	featureCond, err := FeatureQueryCond(ctx, ownerID, packageType)
+	if err != nil {
+		return nil, err
+	}
 	var cond builder.Cond = builder.Eq{
 		"package_property.ref_type": refType,
 		"package_property.name":     propertyName,
@@ -163,6 +167,9 @@ func GetDistinctPropertyValues(ctx context.Context, packageType Type, ownerID in
 		cond = cond.And(builder.Exists(builder.Select("pp.ref_id").From("package_property pp").Where(innerCond)))
 	}
 
+	ObserveFeatureSession(ctx, ownerID, packageType, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_property").Join("INNER", "package_file", "package_file.id=package_property.ref_id").Join("INNER", "package_version", "package_version.id=package_file.version_id").Join("INNER", "package", "package.id=package_version.package_id").Where(cond)
+	})
 	values := make([]string, 0, 5)
 	return values, db.GetEngine(ctx).
 		Table("package_property").
@@ -170,6 +177,6 @@ func GetDistinctPropertyValues(ctx context.Context, packageType Type, ownerID in
 		Join("INNER", "package_file", "package_file.id = package_property.ref_id").
 		Join("INNER", "package_version", "package_version.id = package_file.version_id").
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(cond).
+		Where(cond.And(featureCond)).
 		Find(&values)
 }

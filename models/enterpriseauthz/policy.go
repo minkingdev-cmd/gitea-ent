@@ -134,6 +134,14 @@ func DeleteScope(ctx context.Context, scope Scope) error {
 				return err
 			}
 		}
+		if _, err := db.GetEngine(ctx).Where(cond).Delete(new(FeatureGrant)); err != nil {
+			return err
+		}
+		if scope.Type == ScopeRepo {
+			if _, err := db.GetEngine(ctx).Where("index_repo_id=?", scope.ID).Delete(new(CargoIndexSource)); err != nil {
+				return err
+			}
+		}
 		_, err = db.GetEngine(ctx).Where(cond).Delete(new(RoleDefinition))
 		return err
 	})

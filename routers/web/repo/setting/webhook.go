@@ -750,6 +750,9 @@ func TestWebhook(ctx *context.Context) {
 		Sender:       apiUser,
 	}
 	if err := webhook_service.PrepareTestWebhook(ctx, w, webhook_module.HookEventPush, p); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.Flash.Error("PrepareTestWebhook: " + err.Error())
 		ctx.Status(http.StatusInternalServerError)
 	} else {
@@ -768,6 +771,9 @@ func ReplayWebhook(ctx *context.Context) {
 	}
 
 	if err := webhook_service.ReplayHookTask(ctx, w, hookTaskUUID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		if webhook.IsErrHookTaskNotExist(err) {
 			ctx.NotFound(nil)
 		} else {

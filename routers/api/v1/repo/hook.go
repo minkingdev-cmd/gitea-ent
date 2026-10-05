@@ -22,6 +22,7 @@ import (
 	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	webhook_service "gitea.dev/services/webhook"
 )
 
@@ -159,6 +160,11 @@ func TestHook(ctx *context.APIContext) {
 	//     "$ref": "#/responses/empty"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
+
+	if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, authz.FeatureWebhooks); err != nil {
+		common.WriteExecutionError(ctx.Base, err)
+		return
+	}
 
 	if ctx.Repo.Commit == nil {
 		// if repo does not have any commits, then don't send a webhook

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/modules/util"
 
 	"xorm.io/builder"
@@ -273,6 +274,14 @@ func UpdatePackageNameByID(ctx context.Context, ownerID int64, packageType Type,
 
 // GetPackageByName gets a package by name
 func GetPackageByName(ctx context.Context, ownerID int64, packageType Type, name string) (*Package, error) {
+	return getPackageByName(ctx, ownerID, packageType, name, false)
+}
+
+func GetPackageByNameForCleanup(ctx context.Context, ownerID int64, packageType Type, name string) (*Package, error) {
+	return getPackageByName(ctx, ownerID, packageType, name, true)
+}
+
+func getPackageByName(ctx context.Context, ownerID int64, packageType Type, name string, cleanup bool) (*Package, error) {
 	var cond builder.Cond = builder.Eq{
 		"package.owner_id":    ownerID,
 		"package.type":        packageType,
@@ -280,6 +289,14 @@ func GetPackageByName(ctx context.Context, ownerID int64, packageType Type, name
 		"package.is_internal": false,
 	}
 
+	if !cleanup {
+		featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ObserveFeatureSession(ctx, ownerID, packageType, func(tx context.Context) db.Session { return db.GetEngine(tx).Table("package").Where(cond) })
+		cond = cond.And(featureCond)
+	}
 	p := &Package{}
 
 	has, err := db.GetEngine(ctx).

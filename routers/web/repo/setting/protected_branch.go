@@ -397,7 +397,16 @@ func UpdateBranchProtectionPriories(ctx *context.Context) {
 		ctx.JSONError("invalid argument")
 		return
 	}
-	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageBranchProtection, "priority")
+	checksChanged, err := pull_service.RequiredChecksPriorityChanged(ctx, ctx.Repo.Repository.ID, form.IDs)
+	if err != nil {
+		ctx.ServerError("RequiredChecksPriorityChanged", err)
+		return
+	}
+	var additionalActions []authz.Action
+	if checksChanged {
+		additionalActions = append(additionalActions, authz.ManageCI)
+	}
+	finishExecution, allowed := common.BeginRepoSettingExecution(ctx.Base, ctx.Doer, ctx.Repo.Repository, "web", authz.ManageBranchProtection, "priority", additionalActions...)
 	if !allowed {
 		return
 	}

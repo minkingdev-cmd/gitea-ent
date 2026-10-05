@@ -4,11 +4,12 @@
 package notify
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	activities_model "gitea.dev/models/activities"
-	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	api "gitea.dev/modules/structs"
 	"gitea.dev/routers/api/v1/utils"
 	"gitea.dev/services/context"
@@ -23,11 +24,15 @@ func NewAvailable(ctx *context.APIContext) {
 	//   "200":
 	//     "$ref": "#/responses/NotificationCount"
 
-	total, err := db.Count[activities_model.Notification](ctx, activities_model.FindNotificationOptions{
+	total, err := activities_model.CountNotifications(ctx, &activities_model.FindNotificationOptions{
 		UserID: ctx.Doer.ID,
 		Status: []activities_model.NotificationStatus{activities_model.NotificationStatusUnread},
 	})
 	if err != nil {
+		if errors.Is(err, authz_model.ErrFeatureQueryUnavailable) {
+			ctx.APIErrorAuto(err)
+			return
+		}
 		ctx.APIError(http.StatusUnprocessableEntity, err.Error())
 		return
 	}

@@ -41,9 +41,15 @@ var MaxQueryParameters = 300
 
 // CountIssuesByRepo map from repoID to number of issues matching the options
 func CountIssuesByRepo(ctx context.Context, opts *IssuesOptions) (map[int64]int64, error) {
+	observeIssueOptions(ctx, opts)
+	featureCond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	sess := db.GetEngine(ctx).
 		Join("INNER", "repository", "`issue`.repo_id = `repository`.id")
 
+	sess.And(featureCond)
 	applyConditions(sess, opts)
 
 	countsSlice := make([]*struct {
@@ -66,10 +72,16 @@ func CountIssuesByRepo(ctx context.Context, opts *IssuesOptions) (map[int64]int6
 
 // CountIssues number return of issues by given conditions.
 func CountIssues(ctx context.Context, opts *IssuesOptions, otherConds ...builder.Cond) (int64, error) {
+	observeIssueOptions(ctx, opts, otherConds...)
+	featureCond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return 0, err
+	}
 	sess := db.GetEngine(ctx).
 		Select("COUNT(issue.id) AS count").
 		Table("issue").
 		Join("INNER", "repository", "`issue`.repo_id = `repository`.id")
+	sess.And(featureCond)
 	applyConditions(sess, opts)
 
 	for _, cond := range otherConds {
@@ -110,19 +122,25 @@ func GetIssueStats(ctx context.Context, opts *IssuesOptions) (*IssueStats, error
 }
 
 func getIssueStatsChunk(ctx context.Context, opts *IssuesOptions, issueIDs []int64) (*IssueStats, error) {
+	observeIssueSession(ctx, func(tx context.Context) db.Session {
+		return applyIssuesOptions(db.GetEngine(tx).Table("issue").Join("INNER", "repository", "issue.repo_id=repository.id"), opts, issueIDs)
+	})
+	featureCond, err := issueFeatureEnabledCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	stats := &IssueStats{}
 
 	sess := db.GetEngine(ctx).
 		Join("INNER", "repository", "`issue`.repo_id = `repository`.id")
 
-	var err error
-	stats.OpenCount, err = applyIssuesOptions(sess, opts, issueIDs).
+	stats.OpenCount, err = applyIssuesOptions(sess, opts, issueIDs).And(featureCond).
 		And("issue.is_closed = ?", false).
 		Count(new(Issue))
 	if err != nil {
 		return stats, err
 	}
-	stats.ClosedCount, err = applyIssuesOptions(sess, opts, issueIDs).
+	stats.ClosedCount, err = applyIssuesOptions(sess, opts, issueIDs).And(featureCond).
 		And("issue.is_closed = ?", true).
 		Count(new(Issue))
 	return stats, err

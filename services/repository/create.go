@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/organization"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
@@ -20,6 +21,7 @@ import (
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/models/webhook"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/graceful"
@@ -53,6 +55,7 @@ type CreateRepoOptions struct {
 	TrustModel       repo_model.TrustModelType
 	MirrorInterval   string
 	ObjectFormatName string
+	InternalUsage    string
 }
 
 func prepareRepoCommit(ctx context.Context, repo *repo_model.Repository, tmpDir string, opts CreateRepoOptions) error {
@@ -253,6 +256,7 @@ func CreateRepositoryDirectly(ctx context.Context, doer, owner *user_model.User,
 		DefaultBranch:                   opts.DefaultBranch,
 		DefaultWikiBranch:               setting.Repository.DefaultBranch,
 		ObjectFormatName:                opts.ObjectFormatName,
+		InternalUsage:                   opts.InternalUsage,
 	}
 
 	// 1 - create the repository database operations first
@@ -363,6 +367,23 @@ func createRepositoryInDB(ctx context.Context, doer, u *user_model.User, repo *r
 		}
 	}
 
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce || repo.InternalUsage != "" {
+		if _, err := db.Exec(ctx, "UPDATE `user` SET id=id WHERE id=?", u.ID); err != nil {
+			return err
+		}
+	}
+	if repo.InternalUsage != "" {
+		if repo.InternalUsage != repo_model.InternalUsageCargoIndex {
+			return util.ErrInvalidArgument
+		}
+		found, err := db.GetEngine(ctx).Where("owner_id=? AND internal_usage=?", u.ID, repo.InternalUsage).Exist(new(repo_model.Repository))
+		if err != nil {
+			return err
+		}
+		if found {
+			return util.NewAlreadyExistErrorf("internal repository purpose already exists")
+		}
+	}
 	if err = db.Insert(ctx, repo); err != nil {
 		return err
 	}
@@ -382,7 +403,25 @@ func createRepositoryInDB(ctx context.Context, doer, u *user_model.User, repo *r
 		defaultUnits = unit.DefaultTemplateRepoUnits
 	}
 	units := make([]repo_model.RepoUnit, 0, len(defaultUnits))
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		if err := authz_model.LockFeatures(ctx, []authz.FeatureKey{authz.FeatureIssues, authz.FeaturePullRequests, authz.FeatureWiki, authz.FeaturePackages, authz.FeatureWebhooks, authz.FeatureCISecretManagement, authz.FeatureRequiredStatusChecks}); err != nil {
+			if denied := authz_service.FeatureGuardError(err); denied != nil {
+				return denied
+			}
+		}
+	}
 	for _, tp := range defaultUnits {
+		if key := authz_service.FeatureForUnit(tp); key != "" && setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+			policy, err := authz_service.GetFeaturePolicy(ctx, key, authz_model.Scope{Type: authz_model.ScopeRepo, ID: repo.ID})
+			if err != nil {
+				if denied := authz_service.FeatureGuardError(err); denied != nil {
+					return denied
+				}
+			} else if policy.Effective.State == authz.FeatureDisabled {
+				continue
+			}
+		}
+
 		switch tp {
 		case unit.TypeIssues:
 			units = append(units, repo_model.RepoUnit{

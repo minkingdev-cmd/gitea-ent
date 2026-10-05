@@ -39,6 +39,9 @@ func toBeRemovedAssignees(issue *issues_model.Issue, assignees []*user_model.Use
 
 // DeleteNotPassedAssignee deletes all assignees who aren't passed via the "assignees" array
 func DeleteNotPassedAssignee(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, assignees []*user_model.User) (err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	toBeRemoved := toBeRemovedAssignees(issue, assignees)
 
 	for _, assignee := range toBeRemoved {
@@ -57,6 +60,9 @@ func DeleteNotPassedAssignee(ctx context.Context, issue *issues_model.Issue, doe
 
 // ToggleAssignee changes a user between assigned and not assigned for this issue, and make issue comment for it.
 func ToggleAssignee(ctx context.Context, issue *issues_model.Issue, doer, assignee *user_model.User) (removed bool, comment *issues_model.Comment, err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return false, nil, err
+	}
 	removed, comment, err = issues_model.ToggleIssueAssignee(ctx, issue, doer, assignee.ID)
 	if err != nil {
 		return false, nil, err
@@ -70,6 +76,9 @@ func ToggleAssignee(ctx context.Context, issue *issues_model.Issue, doer, assign
 
 // ToggleAssignee changes a user between assigned and not assigned for this issue, and make issue comment for it.
 func ToggleAssigneeWithNotify(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, assigneeID int64) (removed bool, comment *issues_model.Comment, err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return false, nil, err
+	}
 	assignee, err := user_model.GetUserByID(ctx, assigneeID)
 	if err != nil {
 		return false, nil, err
@@ -92,6 +101,9 @@ func ToggleAssigneeWithNotify(ctx context.Context, issue *issues_model.Issue, do
 // Pass one or more user logins to replace the set of assignees on this Issue.
 // Send an empty array ([]) to clear all assignees from the Issue.
 func UpdateAssignees(ctx context.Context, issue *issues_model.Issue, oneAssignee string, multipleAssignees []string, doer *user_model.User) (err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	uniqueAssignees := container.SetOf(multipleAssignees...)
 
 	// Keep the old assignee thingy for compatibility reasons
@@ -184,6 +196,9 @@ func validateAssignee(ctx context.Context, issue *issues_model.Issue, doer, assi
 // AddAssigneeIfNotAssigned adds an assignee only if he isn't already assigned to the issue.
 // Also checks for access of assigned user
 func AddAssigneeIfNotAssigned(ctx context.Context, issue *issues_model.Issue, doer, assignee *user_model.User) (comment *issues_model.Comment, err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return nil, err
+	}
 	// Check if the user is already assigned
 	isAssigned, err := issues_model.IsUserAssignedToIssue(ctx, issue, assignee.ID)
 	if err != nil {
@@ -204,6 +219,9 @@ func AddAssigneeIfNotAssigned(ctx context.Context, issue *issues_model.Issue, do
 
 // AddAssignees adds multiple assignees to an issue atomically.
 func AddAssignees(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, assigneeIDs []int64) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	assigneeCommentMap := make(map[int64]*issues_model.Comment)
 	assignees := make(map[int64]*user_model.User)
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
@@ -247,6 +265,9 @@ func AddAssignees(ctx context.Context, issue *issues_model.Issue, doer *user_mod
 
 // RemoveAssignees removes multiple assignees from an issue atomically.
 func RemoveAssignees(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, assigneeIDs []int64) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	assigneeCommentMap := make(map[int64]*issues_model.Comment)
 	assignees := make(map[int64]*user_model.User)
 	if err := db.WithTx(ctx, func(ctx context.Context) error {

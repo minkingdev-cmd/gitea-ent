@@ -30,7 +30,8 @@ func TestActionCatalog(t *testing.T) {
 	require.EqualError(t, ValidatePermission("repo.typo", "allow"), "unknown_action")
 	grant, exists := LookupAction(ManageFeatureGrant)
 	require.True(t, exists)
-	require.False(t, grant.Observed)
+	require.True(t, grant.Observed)
+	require.True(t, grant.EnforceSupported)
 	read, exists := LookupAction(ReadCode)
 	require.True(t, exists)
 	require.Equal(t, []string{"code"}, read.Units)
@@ -126,7 +127,7 @@ func TestRequestSourceCatalog(t *testing.T) {
 }
 
 func TestEnforceCatalogFixedSet(t *testing.T) {
-	want := []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete"}
+	want := []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete", "repo.manage_feature_grant"}
 	var entries []struct {
 		Key              string `json:"key"`
 		EnforceSupported bool   `json:"enforce_supported"`

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/packages"
 	conda_module "gitea.dev/modules/packages/conda"
 
@@ -23,6 +24,10 @@ type FileSearchOptions struct {
 
 // SearchFiles gets all files matching the search options
 func SearchFiles(ctx context.Context, opts *FileSearchOptions) ([]*packages.PackageFile, error) {
+	featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cond builder.Cond = builder.Eq{
 		"package.type":                packages.TypeConda,
 		"package.owner_id":            opts.OwnerID,
@@ -51,12 +56,15 @@ func SearchFiles(ctx context.Context, opts *FileSearchOptions) ([]*packages.Pack
 
 	cond = cond.And(builder.In("package_file.id", builder.Select("package_property.ref_id").Where(filePropsCond).From("package_property")))
 
+	packages.ObserveFeatureSession(ctx, opts.OwnerID, packages.TypeConda, func(tx context.Context) db.Session {
+		return db.GetEngine(tx).Table("package_file").Join("INNER", "package_version", "package_version.id=package_file.version_id").Join("INNER", "package", "package.id=package_version.package_id").Where(cond)
+	})
 	sess := db.GetEngine(ctx).
 		Select("package_file.*").
 		Table("package_file").
 		Join("INNER", "package_version", "package_version.id = package_file.version_id").
 		Join("INNER", "package", "package.id = package_version.package_id").
-		Where(cond)
+		Where(cond.And(featureCond))
 
 	pfs := make([]*packages.PackageFile, 0, 10)
 	return pfs, sess.Find(&pfs)

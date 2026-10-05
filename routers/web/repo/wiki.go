@@ -19,6 +19,7 @@ import (
 	"gitea.dev/models/unit"
 	"gitea.dev/modules/base"
 	"gitea.dev/modules/charset"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/htmlutil"
 	"gitea.dev/modules/log"
@@ -47,6 +48,9 @@ const (
 
 // MustEnableWiki check if wiki is enabled, if external then redirect
 func MustEnableWiki(ctx *context.Context) {
+	if !requireRepoFeature(ctx, authz.FeatureWiki) {
+		return
+	}
 	if !ctx.Repo.Permission.CanRead(unit.TypeWiki) &&
 		!ctx.Repo.Permission.CanRead(unit.TypeExternalWiki) {
 		if log.IsTrace() {

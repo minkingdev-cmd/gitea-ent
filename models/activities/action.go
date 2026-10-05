@@ -467,6 +467,10 @@ func FeedDateCond(opts GetFeedsOptions) builder.Cond {
 }
 
 func ActivityQueryCondition(ctx context.Context, opts GetFeedsOptions) (builder.Cond, error) {
+	featureCond, err := activityFeatureCond(ctx)
+	if err != nil {
+		return nil, err
+	}
 	cond := builder.NewCond()
 
 	if opts.RequestedTeam != nil && opts.RequestedUser == nil {
@@ -546,7 +550,7 @@ func ActivityQueryCondition(ctx context.Context, opts GetFeedsOptions) (builder.
 		cond = cond.And(builder.Eq{"is_deleted": false})
 	}
 
-	cond = cond.And(FeedDateCond(opts))
+	cond = cond.And(FeedDateCond(opts), featureCond)
 
 	return cond, nil
 }

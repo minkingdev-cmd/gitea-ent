@@ -38,6 +38,7 @@ import (
 	"gitea.dev/routers/common"
 	"gitea.dev/services/context"
 	"gitea.dev/services/context/upload"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	git_service "gitea.dev/services/git"
 	"gitea.dev/services/gitdiff"
 	user_service "gitea.dev/services/user"
@@ -189,6 +190,10 @@ func (cpi *comparePageInfoType) parseCompareInfo(ctx *context.Context, comparePa
 			return util.NewNotExistErrorf("") // permission: no error message for end users
 		}
 		ctx.Data["CanWriteToHeadRepo"] = permHead.CanWrite(unit.TypeCode)
+	}
+
+	if err := authz_service.RequireCargoIndexFeature(ctx, headRepo); err != nil {
+		return err
 	}
 
 	// 4 get base and head refs

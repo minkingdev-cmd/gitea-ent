@@ -14,6 +14,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/globallock"
 	"gitea.dev/modules/graceful"
@@ -28,6 +29,12 @@ import (
 func Update(operationCtx context.Context, pr *issues_model.PullRequest, doer *user_model.User, message string, rebase bool) (err error) {
 	if pr == nil || doer == nil {
 		return util.ErrInvalidArgument
+	}
+	if err := authz_service.RequireRepoFeature(operationCtx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
+	if err := requirePullCodeFeatures(operationCtx, pr); err != nil {
+		return err
 	}
 	operationCtx, observation := authz_service.WithRepoPushObservation(operationCtx, doer, pr.HeadRepoID, pr.HeadBranch)
 	ctx := authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), operationCtx)

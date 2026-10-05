@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	packages_model "gitea.dev/models/packages"
 
 	"xorm.io/builder"
@@ -15,7 +16,12 @@ import (
 
 // SearchVersions gets all versions of packages matching the search options
 func SearchVersions(ctx context.Context, opts *packages_model.PackageSearchOptions) ([]*packages_model.PackageVersion, int64, error) {
-	cond := toConds(opts)
+	featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	packages_model.ObserveFeatureSession(ctx, opts.OwnerID, packages_model.TypeNuGet, func(tx context.Context) db.Session { return db.GetEngine(tx).Table("package").Where(toConds(opts)) })
+	cond := toConds(opts).And(featureCond)
 
 	e := db.GetEngine(ctx)
 
@@ -38,7 +44,7 @@ func SearchVersions(ctx context.Context, opts *packages_model.PackageSearchOptio
 	}
 
 	sess := e.
-		Where(opts.ToConds()).
+		Where(opts.ToConds().And(featureCond)).
 		Table("package_version").
 		Join("INNER", inner, "package.id = package_version.package_id")
 
@@ -48,8 +54,13 @@ func SearchVersions(ctx context.Context, opts *packages_model.PackageSearchOptio
 
 // CountPackages counts all packages matching the search options
 func CountPackages(ctx context.Context, opts *packages_model.PackageSearchOptions) (int64, error) {
+	packages_model.ObserveFeatureSession(ctx, opts.OwnerID, packages_model.TypeNuGet, func(tx context.Context) db.Session { return db.GetEngine(tx).Table("package").Where(toConds(opts)) })
+	featureCond, err := authz_model.PackageFeatureQueryCond(ctx)
+	if err != nil {
+		return 0, err
+	}
 	return db.GetEngine(ctx).
-		Where(toConds(opts)).
+		Where(toConds(opts).And(featureCond)).
 		Count(&packages_model.Package{})
 }
 

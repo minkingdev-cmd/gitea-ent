@@ -15,6 +15,7 @@ import (
 	"gitea.dev/modules/web"
 	"gitea.dev/routers/api/v1/shared"
 	"gitea.dev/routers/api/v1/utils"
+	"gitea.dev/routers/common"
 	actions_service "gitea.dev/services/actions"
 	"gitea.dev/services/audit"
 	"gitea.dev/services/context"
@@ -47,14 +48,21 @@ func (Action) ListActionsSecrets(ctx *context.APIContext) {
 	//     "$ref": "#/responses/SecretList"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	opts := &secret_model.FindSecretsOptions{
 		OwnerID:     ctx.Org.Organization.ID,
 		ListOptions: utils.GetListOptions(ctx),
 	}
 
-	secrets, count, err := db.FindAndCount[secret_model.Secret](ctx, opts)
+	secrets, count, err := secret_service.ListManagementSecrets(ctx, opts)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}
@@ -106,11 +114,18 @@ func (Action) CreateOrUpdateSecret(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	opt := web.GetForm[*api.CreateOrUpdateSecretOption](ctx)
 
 	s, created, err := secret_service.CreateOrUpdateSecret(ctx, ctx.Org.Organization.ID, 0, ctx.PathParam("secretname"), opt.Data, opt.Description)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorAuto(err)
 		return
 	}

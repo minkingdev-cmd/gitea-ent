@@ -4,6 +4,7 @@
 package private
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitrepo"
 	"gitea.dev/modules/log"
@@ -21,6 +23,7 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	repo_service "gitea.dev/services/repository"
 	wiki_service "gitea.dev/services/wiki"
 )
@@ -282,11 +285,22 @@ func ServCommand(ctx *context.PrivateContext) {
 		results.RepoID = repo.ID
 	}
 
+	if !results.IsWiki {
+		if err := authz_service.RequireCargoIndexFeature(ctx, repo); err != nil {
+			ctx.PrivateUserErrorf(featureProtocolStatus(err), "package index is unavailable")
+			return
+		}
+	}
+
 	if results.IsWiki {
+		if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeatureWiki); err != nil {
+			ctx.PrivateUserErrorf(featureProtocolStatus(err), "repository wiki is disabled")
+			return
+		}
 		// Ensure the wiki is enabled before we allow access to it
 		if _, err := repo.GetUnit(ctx, unit.TypeWiki); err != nil {
 			if repo_model.IsErrUnitTypeNotExist(err) {
-				ctx.PrivateUserErrorf(http.StatusForbidden, "repository wiki is disabled")
+				ctx.PrivateUserErrorf(featureProtocolStatus(err), "repository wiki is disabled")
 				return
 			}
 			ctx.PrivateInternalErrorf("Failed to get the wiki unit in %-v, error: %v", repo, err)
@@ -312,4 +326,11 @@ func ServCommand(ctx *context.PrivateContext) {
 	log.Debug("Serv Results: %+v", results)
 	ctx.JSON(http.StatusOK, results)
 	// We will update the keys in a different call.
+}
+
+func featureProtocolStatus(err error) int {
+	if rejection, ok := errors.AsType[*authz_service.ExecutionError](err); ok {
+		return rejection.Status
+	}
+	return http.StatusForbidden
 }

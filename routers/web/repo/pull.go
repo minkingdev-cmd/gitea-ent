@@ -541,6 +541,9 @@ func getViewPullHeadBranchCommitID(ctx *context.Context, pull *issues_model.Pull
 		if pull.HeadRepo == nil {
 			return "", util.ErrNotExist
 		}
+		if err := authz_service.RequireCargoIndexFeature(ctx, pull.HeadRepo); err != nil {
+			return "", err
+		}
 		headGitRepo, err := git.RepositoryFromRequestContextOrOpen(ctx, pull.HeadRepo)
 		if err != nil {
 			return "", err

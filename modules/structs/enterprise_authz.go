@@ -86,7 +86,7 @@ type EnterpriseAuthzBinding struct {
 	Created      time.Time            `json:"created"`
 }
 
-// EnterpriseAuthzAction 描述 action，不因此实现 feature grant 或安全守卫。
+// EnterpriseAuthzAction 描述当前 action 接线能力，不表示完整安全守卫已通过。
 // swagger:model
 type EnterpriseAuthzAction struct {
 	Key              string   `json:"key"`
@@ -189,6 +189,7 @@ type EnterpriseAuthzCredentialCeiling struct {
 // EnterpriseAuthzDecisionSnapshot 是当时的安全权限摘要，不读取当前角色解释历史。
 // swagger:model
 type EnterpriseAuthzDecisionSnapshot struct {
+	Features          []EnterpriseFeatureSnapshot      `json:"features,omitempty"`
 	Archived          *bool                            `json:"archived,omitempty"`
 	CatalogVersion    int                              `json:"catalog_version"`
 	NativeMode        int                              `json:"native_mode"`

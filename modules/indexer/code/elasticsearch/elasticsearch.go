@@ -342,6 +342,10 @@ func (b *Indexer) Search(ctx context.Context, opts *internal.SearchOptions) (int
 		query.Must(es.TermsQuery("repo_id", es.ToAnySlice(opts.RepoIDs)...))
 	}
 
+	if len(opts.ExcludedRepoIDs) > 0 {
+		query.MustNot(es.TermsQuery("repo_id", es.ToAnySlice(opts.ExcludedRepoIDs)...))
+	}
+
 	start, pageSize := opts.GetSkipTake()
 	kw := "<em>" + opts.Keyword + "</em>"
 	languageAggs := map[string]any{

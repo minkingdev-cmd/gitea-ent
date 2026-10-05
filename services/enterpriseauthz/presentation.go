@@ -166,6 +166,17 @@ func DecisionDTO(record *authz_model.DecisionRecord) (*api.EnterpriseAuthzDecisi
 	if len(record.SnapshotJSON) > authz.MaxSnapshotBytes || json.Unmarshal([]byte(record.SnapshotJSON), &snapshot) != nil || !authz.ActionInCatalog(snapshot.CatalogVersion, record.Action) || snapshot.NativeMode < 0 || snapshot.NativeMode > 4 || snapshot.PathCount < 0 {
 		return nil, ErrPolicyStorage
 	}
+	if len(snapshot.Features) > len(authz.FeatureCatalog()) {
+		return nil, ErrPolicyStorage
+	}
+	for _, feature := range snapshot.Features {
+		metadata, known := authz.LookupFeature(authz.FeatureKey(feature.Key))
+		chain, err1 := hex.DecodeString(feature.ChainHash)
+		config, err2 := hex.DecodeString(feature.ConfigHash)
+		if !known || feature.Version != 1 || feature.ConfigSchemaVersion != metadata.ConfigSchemaVersion || !authz.FeatureState(feature.State).Valid() || feature.State == string(authz.FeatureInherited) || feature.CapabilityKind != metadata.CapabilityKind || !slices.Contains([]string{"default", "global", "org", "repo"}, feature.Source) || err1 != nil || len(chain) != 32 || err2 != nil || len(config) != 32 || feature.ContextCount < 0 || feature.ContextCount > 192 {
+			return nil, ErrPolicyStorage
+		}
+	}
 	versionActions := [][]string{missing, snapshot.NativeActions, snapshot.Credential.Actions}
 	for _, actions := range versionActions {
 		if !validActions(actions) {

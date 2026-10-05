@@ -19,6 +19,9 @@ import (
 
 // ReviewRequest add or remove a review request from a user for this PR, and make comment for it.
 func ReviewRequest(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, permDoer *access_model.Permission, reviewer *user_model.User, isAdd bool) (comment *issues_model.Comment, err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return nil, err
+	}
 	err = isValidReviewRequest(ctx, reviewer, doer, isAdd, issue, permDoer)
 	if err != nil {
 		return nil, err
@@ -178,6 +181,9 @@ func isValidTeamReviewRequest(ctx context.Context, reviewer *organization.Team, 
 
 // TeamReviewRequest add or remove a review request from a team for this PR, and make comment for it.
 func TeamReviewRequest(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, reviewer *organization.Team, isAdd bool) (comment *issues_model.Comment, err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return nil, err
+	}
 	err = isValidTeamReviewRequest(ctx, reviewer, doer, isAdd, issue)
 	if err != nil {
 		return nil, err

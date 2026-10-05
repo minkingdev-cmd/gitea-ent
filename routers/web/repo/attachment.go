@@ -11,6 +11,7 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/httpcache"
 	"gitea.dev/modules/httplib"
 	"gitea.dev/modules/log"
@@ -19,6 +20,7 @@ import (
 	"gitea.dev/services/attachment"
 	"gitea.dev/services/context"
 	"gitea.dev/services/context/upload"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	repo_service "gitea.dev/services/repository"
 )
 
@@ -154,6 +156,16 @@ func ServeAttachment(ctx *context.Context, uuid string) {
 	if ctx.Repo.Repository != nil && repoID != 0 && ctx.Repo.Repository.ID != repoID {
 		ctx.HTTPError(http.StatusNotFound)
 		return
+	}
+
+	if unitType == unit.TypeIssues || unitType == unit.TypePullRequests {
+		key := authz.FeatureIssues
+		if unitType == unit.TypePullRequests {
+			key = authz.FeaturePullRequests
+		}
+		if featureHTTPError(ctx, authz_service.RequireRepoFeature(ctx, repoID, key)) {
+			return
+		}
 	}
 
 	if unitType == unit.TypeInvalid { // unlinked attachment can only be accessed by the uploader

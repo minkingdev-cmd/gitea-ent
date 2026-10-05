@@ -12,7 +12,9 @@ import (
 	"time"
 
 	db_model "gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	repo_model "gitea.dev/models/repo"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/indexer"
 	"gitea.dev/modules/indexer/issues/bleve"
@@ -26,6 +28,8 @@ import (
 	"gitea.dev/modules/queue"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+
+	"xorm.io/builder"
 )
 
 // IndexerMetadata is used to send data to the queue, so it contains only the ids.
@@ -283,6 +287,31 @@ const (
 
 // SearchIssues search issues by options.
 func SearchIssues(ctx context.Context, opts *SearchOptions) ([]int64, int64, error) {
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
+		opts = opts.Copy()
+		err := db_model.WithIndependentReadTx(ctx, func(tx context.Context) error {
+			for _, item := range []struct {
+				key    authz.FeatureKey
+				target *[]int64
+			}{{authz.FeatureIssues, &opts.ExcludedIssueRepoIDs}, {authz.FeaturePullRequests, &opts.ExcludedPullRepoIDs}} {
+				cond, err := authz_model.FeatureQueryCond(tx, item.key, "repository.id")
+				if err != nil {
+					return err
+				}
+				if !cond.IsValid() {
+					continue
+				}
+				if err := db_model.GetEngine(tx).Table("repository").Cols("id").Where(builder.Not{cond}).Find(item.target); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
 	ix := *globalIndexer.Load()
 
 	if opts.Keyword == "" || opts.IsKeywordNumeric() {
@@ -293,6 +322,10 @@ func SearchIssues(ctx context.Context, opts *SearchOptions) ([]int64, int64, err
 		// Even worse, the external indexer like elastic search may not be available for a while,
 		// and the user may not be able to list issues completely until it is available again.
 		ix = db.GetIndexer()
+	}
+
+	if ix != db.GetIndexer() {
+		observeSearchQuery(ctx, ix, opts)
 	}
 
 	result, err := ix.Search(ctx, opts)
@@ -324,4 +357,31 @@ func SupportedSearchModes() []indexer.SearchMode {
 		return nil
 	}
 	return (*gi).SupportedSearchModes()
+}
+
+func observeSearchQuery(ctx context.Context, ix internal.Indexer, opts *SearchOptions) {
+	for _, key := range []authz.FeatureKey{authz.FeatureIssues, authz.FeaturePullRequests} {
+		authz_model.ObserveFeatureQuery(ctx, key, authz_model.RepoFeatureCandidateCond(ctx, key, "repository.id"), func(tx context.Context, denied builder.Cond) (bool, error) {
+			isPull := key == authz.FeaturePullRequests
+			if opts.IsPull.Has() && opts.IsPull.Value() != isPull {
+				return false, nil
+			}
+			var repoIDs []int64
+			if err := db_model.GetEngine(tx).Table("repository").Cols("id").Where(denied).Find(&repoIDs); err != nil {
+				return false, err
+			}
+			if len(repoIDs) == 0 {
+				return false, nil
+			}
+			candidate := opts.Copy()
+			candidate.CandidateRepoIDs = repoIDs
+			candidate.IsPull = optional.Some(isPull)
+			candidate.Paginator = &db_model.ListOptions{Page: 1, PageSize: 1}
+			result, err := ix.Search(tx, candidate)
+			if err != nil {
+				return false, err
+			}
+			return len(result.Hits) > 0, nil
+		})
+	}
 }

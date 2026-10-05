@@ -102,7 +102,7 @@
 					</a>
 					{{end}}
 
-					{{if .Permission.CanRead ctx.Consts.RepoUnitTypeIssues}}
+					{{if and (not .IssuesFeatureDisabled) (.Permission.CanRead ctx.Consts.RepoUnitTypeIssues)}}
 						<a class="{{if .PageIsIssueList}}active {{end}}item" href="{{.RepoLink}}/issues">
 							{{svg "octicon-issue-opened"}} {{ctx.Locale.Tr "repo.issues"}}
 							{{if .Repository.NumOpenIssues}}
@@ -111,13 +111,13 @@
 						</a>
 					{{end}}
 
-					{{if .Permission.CanRead ctx.Consts.RepoUnitTypeExternalTracker}}
+					{{if and (not .IssuesFeatureDisabled) (.Permission.CanRead ctx.Consts.RepoUnitTypeExternalTracker)}}
 						<a class="{{if .PageIsIssueList}}active {{end}}item" href="{{.RepoExternalIssuesLink}}" target="_blank">
 							{{svg "octicon-link-external"}} {{ctx.Locale.Tr "repo.issues"}}
 						</a>
 					{{end}}
 
-					{{if and .Repository.CanEnablePulls (.Permission.CanRead ctx.Consts.RepoUnitTypePullRequests)}}
+					{{if and (not .PullsFeatureDisabled) .Repository.CanEnablePulls (.Permission.CanRead ctx.Consts.RepoUnitTypePullRequests)}}
 						<a class="{{if .PageIsPullList}}active {{end}}item" href="{{.RepoLink}}/pulls">
 							{{svg "octicon-git-pull-request"}} {{ctx.Locale.Tr "repo.pulls"}}
 							{{if .Repository.NumOpenPulls}}
@@ -135,7 +135,7 @@
 						</a>
 					{{end}}
 
-					{{if .Permission.CanRead ctx.Consts.RepoUnitTypePackages}}
+					{{if and (not .PackagesFeatureDisabled) (.Permission.CanRead ctx.Consts.RepoUnitTypePackages)}}
 						<a href="{{.RepoLink}}/packages" class="{{if .IsPackagesPage}}active {{end}}item">
 							{{svg "octicon-package"}} {{ctx.Locale.Tr "packages.title"}}
 						</a>
@@ -160,13 +160,13 @@
 					</a>
 					{{end}}
 
-					{{if .Permission.CanRead ctx.Consts.RepoUnitTypeWiki}}
+					{{if and (not .WikiFeatureDisabled) (.Permission.CanRead ctx.Consts.RepoUnitTypeWiki)}}
 						<a class="{{if .PageIsWiki}}active {{end}}item" href="{{.RepoLink}}/wiki">
 							{{svg "octicon-book"}} {{ctx.Locale.Tr "repo.wiki"}}
 						</a>
 					{{end}}
 
-					{{if .Permission.CanRead ctx.Consts.RepoUnitTypeExternalWiki}}
+					{{if and (not .WikiFeatureDisabled) (.Permission.CanRead ctx.Consts.RepoUnitTypeExternalWiki)}}
 						<a class="item" href="{{(.Repository.MustGetUnit ctx ctx.Consts.RepoUnitTypeExternalWiki).ExternalWikiConfig.ExternalWikiURL}}" target="_blank">
 							{{svg "octicon-link-external"}} {{ctx.Locale.Tr "repo.wiki"}}
 						</a>

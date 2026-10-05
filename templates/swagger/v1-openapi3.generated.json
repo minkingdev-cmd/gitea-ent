@@ -568,6 +568,78 @@
           }
         }
       },
+      "EnterpriseFeatureCatalog": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseFeatureCatalog"
+            }
+          }
+        },
+        "description": "EnterpriseFeatureCatalog"
+      },
+      "EnterpriseFeatureEffective": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseFeatureEffective"
+            }
+          }
+        },
+        "description": "EnterpriseFeatureEffective"
+      },
+      "EnterpriseFeatureEffectiveList": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "items": {
+                "$ref": "#/components/schemas/EnterpriseFeatureEffective"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "description": "EnterpriseFeatureEffectiveList",
+        "headers": {
+          "X-Total-Count": {
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "EnterpriseFeaturePolicy": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EnterpriseFeaturePolicy"
+            }
+          }
+        },
+        "description": "EnterpriseFeaturePolicy"
+      },
+      "EnterpriseFeaturePolicyList": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "items": {
+                "$ref": "#/components/schemas/EnterpriseFeaturePolicy"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "description": "EnterpriseFeaturePolicyList",
+        "headers": {
+          "X-Total-Count": {
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        }
+      },
       "EnterpriseWeComAuthzMapping": {
         "content": {
           "application/json": {
@@ -6604,7 +6676,7 @@
             "x-go-name": "UnitsAny"
           }
         },
-        "title": "EnterpriseAuthzAction 描述 action，不因此实现 feature grant 或安全守卫。",
+        "title": "EnterpriseAuthzAction 描述当前 action 接线能力，不表示完整安全守卫已通过。",
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
@@ -6891,6 +6963,13 @@
           },
           "credential_ceiling": {
             "$ref": "#/components/schemas/EnterpriseAuthzCredentialCeiling"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseFeatureSnapshot"
+            },
+            "type": "array",
+            "x-go-name": "Features"
           },
           "native_actions": {
             "items": {
@@ -7208,6 +7287,312 @@
           }
         },
         "title": "EnterpriseAuthzUnitMode 是原生 unit 权限快照。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureCatalog": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseFeatureDefinition"
+            },
+            "type": "array",
+            "x-go-name": "Features"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Version"
+          }
+        },
+        "title": "EnterpriseFeatureCatalog 固定版本化目录。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureConfig": {
+        "properties": {
+          "check_contexts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "CheckContexts"
+          }
+        },
+        "title": "EnterpriseFeatureConfig 仅允许非敏感的状态检查 context 名称。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureDefinition": {
+        "properties": {
+          "capability_kind": {
+            "type": "string",
+            "x-go-name": "CapabilityKind"
+          },
+          "config_schema_version": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ConfigSchemaVersion"
+          },
+          "default_state": {
+            "type": "string",
+            "x-go-name": "DefaultState"
+          },
+          "description": {
+            "type": "string",
+            "x-go-name": "Description"
+          },
+          "key": {
+            "type": "string",
+            "x-go-name": "Key"
+          },
+          "supported_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-go-name": "SupportedScopes"
+          }
+        },
+        "title": "EnterpriseFeatureDefinition 描述能力，不表示外部工具已接入。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureEffective": {
+        "properties": {
+          "capability_kind": {
+            "type": "string",
+            "x-go-name": "CapabilityKind"
+          },
+          "config_schema_version": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ConfigSchemaVersion"
+          },
+          "conflict": {
+            "type": "boolean",
+            "x-go-name": "Conflict"
+          },
+          "key": {
+            "type": "string",
+            "x-go-name": "Key"
+          },
+          "locked": {
+            "type": "boolean",
+            "x-go-name": "Locked"
+          },
+          "native_available": {
+            "type": "boolean",
+            "x-go-name": "NativeAvailable"
+          },
+          "pending": {
+            "type": "boolean",
+            "x-go-name": "Pending"
+          },
+          "source": {
+            "type": "string",
+            "x-go-name": "Source"
+          },
+          "state": {
+            "type": "string",
+            "x-go-name": "State"
+          }
+        },
+        "title": "EnterpriseFeatureEffective 为原生 reader 的非敏感投影。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureGrant": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/EnterpriseFeatureConfig"
+          },
+          "created": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-name": "Created"
+          },
+          "created_by": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "CreatedBy"
+          },
+          "key": {
+            "type": "string",
+            "x-go-name": "Key"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Revision"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/EnterpriseFeatureScope"
+          },
+          "state": {
+            "type": "string",
+            "x-go-name": "State"
+          },
+          "updated": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-name": "Updated"
+          },
+          "updated_by": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "UpdatedBy"
+          }
+        },
+        "title": "EnterpriseFeatureGrant 的 inherited revision=0 表示未持久化。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureLayer": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/EnterpriseFeatureConfig"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Revision"
+          },
+          "scope": {
+            "type": "string",
+            "x-go-name": "Scope"
+          },
+          "state": {
+            "type": "string",
+            "x-go-name": "State"
+          }
+        },
+        "title": "EnterpriseFeatureLayer 为有权管理者提供参与链。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeaturePolicy": {
+        "properties": {
+          "chain": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseFeatureLayer"
+            },
+            "type": "array",
+            "x-go-name": "Chain"
+          },
+          "chain_hash": {
+            "type": "string",
+            "x-go-name": "ChainHash"
+          },
+          "config": {
+            "$ref": "#/components/schemas/EnterpriseFeatureConfig"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseFeatureScope"
+            },
+            "type": "array",
+            "x-go-name": "Conflicts"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/EnterpriseFeatureEffective"
+          },
+          "grant": {
+            "$ref": "#/components/schemas/EnterpriseFeatureGrant"
+          },
+          "locked_by": {
+            "$ref": "#/components/schemas/EnterpriseFeatureScope"
+          },
+          "policy_revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "PolicyRevision"
+          }
+        },
+        "title": "EnterpriseFeaturePolicy 为管理者的安全详细投影。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureScope": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ID"
+          },
+          "scope": {
+            "type": "string",
+            "x-go-name": "Scope"
+          }
+        },
+        "title": "EnterpriseFeatureScope 由 URL/current owner 决定。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "EnterpriseFeatureSnapshot": {
+        "properties": {
+          "capability_kind": {
+            "type": "string",
+            "x-go-name": "CapabilityKind"
+          },
+          "chain_hash": {
+            "type": "string",
+            "x-go-name": "ChainHash"
+          },
+          "config_hash": {
+            "type": "string",
+            "x-go-name": "ConfigHash"
+          },
+          "config_schema_version": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ConfigSchemaVersion"
+          },
+          "conflict": {
+            "type": "boolean",
+            "x-go-name": "Conflict"
+          },
+          "context_count": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ContextCount"
+          },
+          "key": {
+            "type": "string",
+            "x-go-name": "Key"
+          },
+          "locked": {
+            "type": "boolean",
+            "x-go-name": "Locked"
+          },
+          "native_available": {
+            "type": "boolean",
+            "x-go-name": "NativeAvailable"
+          },
+          "pending": {
+            "type": "boolean",
+            "x-go-name": "Pending"
+          },
+          "source": {
+            "type": "string",
+            "x-go-name": "Source"
+          },
+          "state": {
+            "type": "string",
+            "x-go-name": "State"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "Version"
+          }
+        },
+        "title": "EnterpriseFeatureSnapshot 不含 config 原文或祖先/actor 标识。",
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
@@ -10203,6 +10588,30 @@
           }
         },
         "title": "PutEnterpriseAuthzBindingOption repo 不是授权主体。",
+        "type": "object",
+        "x-go-package": "gitea.dev/modules/structs"
+      },
+      "PutEnterpriseFeatureGrantOption": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/EnterpriseFeatureConfig"
+          },
+          "expected_revision": {
+            "format": "int64",
+            "type": "integer",
+            "x-go-name": "ExpectedRevision"
+          },
+          "state": {
+            "type": "string",
+            "x-go-name": "State"
+          }
+        },
+        "required": [
+          "state",
+          "config",
+          "expected_revision"
+        ],
+        "title": "PutEnterpriseFeatureGrantOption 使用单调版本 CAS；首次写入版本为 0。",
         "type": "object",
         "x-go-package": "gitea.dev/modules/structs"
       },
@@ -13780,6 +14189,180 @@
         ]
       }
     },
+    "/enterprise/authz/features": {
+      "get": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureGlobalList",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeatureCatalog"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy GlobalList",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/enterprise/authz/features/{key}/grants/global": {
+      "delete": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureGlobalDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CAS reset to inherited; monotonic revision prevents ABA. Matching no-op does not increment revision or audit.",
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Reset to inherited, or matching no-op"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict or feature_parent_locked"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy GlobalDelete",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "get": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureGlobalGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeaturePolicy"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy GlobalGet",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "put": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureGlobalPut",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutEnterpriseFeatureGrantOption"
+              }
+            }
+          },
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeaturePolicy"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict or feature_parent_locked"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy GlobalPut",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
     "/enterprise/authz/roles": {
       "get": {
         "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
@@ -15206,8 +15789,14 @@
           "200": {
             "$ref": "#/components/responses/SecretList"
           },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/error"
           }
         },
         "summary": "List an organization's actions secrets",
@@ -15297,8 +15886,14 @@
           "400": {
             "$ref": "#/components/responses/error"
           },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/error"
           }
         },
         "summary": "Create or Update a secret value in an organization",
@@ -16166,6 +16761,232 @@
           }
         },
         "summary": "Org enterprise authorization GetDecision",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/features": {
+      "get": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureOrgList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, max 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeaturePolicyList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy OrgList",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/orgs/{org}/enterprise/authz/features/{key}": {
+      "delete": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureOrgDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CAS reset to inherited; monotonic revision prevents ABA. Matching no-op does not increment revision or audit.",
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Reset to inherited, or matching no-op"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict or feature_parent_locked"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy OrgDelete",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "get": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureOrgGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeaturePolicy"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy OrgGet",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "put": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureOrgPut",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutEnterpriseFeatureGrantOption"
+              }
+            }
+          },
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeaturePolicy"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict or feature_parent_locked"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy OrgPut",
         "tags": [
           "enterprise"
         ]
@@ -20865,8 +21686,14 @@
           "200": {
             "$ref": "#/components/responses/SecretList"
           },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/error"
           }
         },
         "summary": "List a repo's actions secrets",
@@ -20974,8 +21801,14 @@
           "400": {
             "$ref": "#/components/responses/error"
           },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/error"
           }
         },
         "summary": "Create or Update a secret value in a repository",
@@ -22124,6 +22957,9 @@
           },
           "423": {
             "$ref": "#/components/responses/repoArchivedError"
+          },
+          "503": {
+            "$ref": "#/components/responses/error"
           }
         },
         "summary": "Create a branch protections for a repository",
@@ -22221,8 +23057,14 @@
           "204": {
             "$ref": "#/components/responses/empty"
           },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/error"
           }
         },
         "summary": "Delete a specific branch protection for the repository",
@@ -24385,6 +25227,320 @@
           }
         },
         "summary": "Repo enterprise authorization Evaluate",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/features": {
+      "get": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureRepoList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-based page, default 1",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, default 20, max 100",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeatureEffectiveList"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy RepoList",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/features/{key}": {
+      "delete": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureRepoDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CAS reset to inherited; monotonic revision prevents ABA. Matching no-op does not increment revision or audit.",
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Reset to inherited, or matching no-op"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict or feature_parent_locked"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy RepoDelete",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "get": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureRepoGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeatureEffective"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy RepoGet",
+        "tags": [
+          "enterprise"
+        ]
+      },
+      "put": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureRepoPut",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutEnterpriseFeatureGrantOption"
+              }
+            }
+          },
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeaturePolicy"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict or feature_parent_locked"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy RepoPut",
+        "tags": [
+          "enterprise"
+        ]
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/features/{key}/grant": {
+      "get": {
+        "description": "Global requires current system management authority and admin scope; org requires current org management authority and organization scope; repo effective GET requires authenticated native visibility and repository read scope. Raw GET requires existing repository management authority. PUT/DELETE additionally require repository write scope and repo.manage_feature_grant even in shadow. Feature policy never grants native permission. Reader projection omits config, actor and ancestor IDs. required reports pending rather than creating native resources; external keys are policy_only, not scanner or merge-gate execution. Strict JSON rejects unknown, duplicate, null, invalid UTF-8 and trailing data. Config max 16 KiB, max 64 contexts of 1-128 bytes.",
+        "operationId": "enterpriseFeatureRepoRaw",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/EnterpriseFeaturePolicy"
+          },
+          "401": {
+            "$ref": "#/components/responses/error"
+          },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/validationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/error"
+          }
+        },
+        "summary": "Enterprise feature policy RepoRaw",
         "tags": [
           "enterprise"
         ]
@@ -37754,8 +38910,14 @@
           "400": {
             "$ref": "#/components/responses/error"
           },
+          "403": {
+            "$ref": "#/components/responses/forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/notFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/error"
           }
         },
         "summary": "Create or Update a secret value in a user scope",

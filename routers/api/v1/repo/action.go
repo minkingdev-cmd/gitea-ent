@@ -70,6 +70,10 @@ func (Action) ListActionsSecrets(ctx *context.APIContext) {
 	//     "$ref": "#/responses/SecretList"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	repo := ctx.Repo.Repository
 	listOptions := utils.GetListOptions(ctx)
@@ -79,8 +83,11 @@ func (Action) ListActionsSecrets(ctx *context.APIContext) {
 		ListOptions: listOptions,
 	}
 
-	secrets, count, err := db.FindAndCount[secret_model.Secret](ctx, opts)
+	secrets, count, err := secret_service.ListManagementSecrets(ctx, opts)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorInternal(err)
 		return
 	}
@@ -137,6 +144,10 @@ func (Action) CreateOrUpdateSecret(ctx *context.APIContext) {
 	//     "$ref": "#/responses/error"
 	//   "404":
 	//     "$ref": "#/responses/notFound"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "503":
+	//     "$ref": "#/responses/error"
 
 	repo := ctx.Repo.Repository
 
@@ -149,6 +160,9 @@ func (Action) CreateOrUpdateSecret(ctx *context.APIContext) {
 	defer finishExecution()
 	s, created, err := secret_service.CreateOrUpdateSecret(ctx, 0, repo.ID, ctx.PathParam("secretname"), opt.Data, opt.Description)
 	if err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		ctx.APIErrorAuto(err)
 		return
 	}

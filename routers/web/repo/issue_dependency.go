@@ -8,6 +8,7 @@ import (
 	access_model "gitea.dev/models/perm/access"
 	"gitea.dev/modules/setting"
 	"gitea.dev/services/context"
+	issue_service "gitea.dev/services/issue"
 )
 
 // AddDependency adds new dependencies
@@ -67,7 +68,7 @@ func AddDependency(ctx *context.Context) {
 		return
 	}
 
-	err = issues_model.CreateIssueDependency(ctx, ctx.Doer, issue, dep)
+	err = issue_service.CreateIssueDependency(ctx, ctx.Doer, issue, dep)
 	if issues_model.IsErrDependencyExists(err) {
 		ctx.JSONError(ctx.Tr("repo.issues.dependency.add_error_dep_exists"))
 		return
@@ -144,7 +145,7 @@ func RemoveDependency(ctx *context.Context) {
 		}
 	}
 
-	err = issues_model.RemoveIssueDependency(ctx, ctx.Doer, issue, dep, depType)
+	err = issue_service.RemoveIssueDependency(ctx, ctx.Doer, issue, dep, depType)
 	if issues_model.IsErrDependencyNotExists(err) {
 		ctx.JSONError(ctx.Tr("repo.issues.dependency.add_error_dep_not_exist"))
 		return

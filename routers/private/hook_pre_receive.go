@@ -14,6 +14,7 @@ import (
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/git/gitcmd"
 	"gitea.dev/modules/private"
@@ -79,6 +80,10 @@ func (ctx *preReceiveContext) CanCreatePullRequest() bool {
 
 // AssertCreatePullRequest returns true if can create pull requests
 func (ctx *preReceiveContext) AssertCreatePullRequest() bool {
+	if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, authz.FeaturePullRequests); err != nil {
+		ctx.PrivateUserErrorf(featureProtocolStatus(err), "pull requests are disabled")
+		return false
+	}
 	if !ctx.CanCreatePullRequest() {
 		if ctx.Written() {
 			return false
@@ -96,6 +101,13 @@ func HookPreReceive(ctx *gitea_context.PrivateContext) {
 		return
 	}
 
+	if opts.IsWiki {
+		if err := authz_service.RequireRepoFeature(ctx, ctx.Repo.Repository.ID, authz.FeatureWiki); err != nil {
+			ctx.PrivateUserErrorf(featureProtocolStatus(err), "repository wiki is disabled")
+			return
+		}
+	}
+
 	ourCtx := &preReceiveContext{
 		PrivateContext: ctx,
 		env:            generateGitEnv(opts), // Generate git environment for checking commits
@@ -106,6 +118,17 @@ func HookPreReceive(ctx *gitea_context.PrivateContext) {
 	if len(opts.OldCommitIDs) != len(opts.NewCommitIDs) || len(opts.OldCommitIDs) != len(opts.RefFullNames) {
 		ctx.PrivateUserErrorf(http.StatusForbidden, "invalid_execution_context")
 		return
+	}
+
+	if !opts.IsWiki {
+		inputs := receiveExecutionInputs(ctx, operation, opts)
+		cleanupAllowed := len(inputs) == len(opts.RefFullNames) && authz_service.ReuseCargoIndexCleanupExecution(operationCtx, operation, inputs)
+		if !cleanupAllowed {
+			if err := authz_service.RequireCargoIndexFeature(operationCtx, ctx.Repo.Repository); err != nil {
+				ctx.PrivateUserErrorf(featureProtocolStatus(err), "package index is unavailable")
+				return
+			}
+		}
 	}
 
 	// Iterate across the provided old commit IDs

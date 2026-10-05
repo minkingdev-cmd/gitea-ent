@@ -17,11 +17,13 @@ import (
 	"gitea.dev/models/renderhelper"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/emoji"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/markup/markdown"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/translation"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	incoming_payload "gitea.dev/services/mailer/incoming/payload"
 	sender_service "gitea.dev/services/mailer/sender"
 	"gitea.dev/services/mailer/token"
@@ -45,6 +47,14 @@ type mailComment struct {
 }
 
 func composeIssueCommentMessages(ctx context.Context, comment *mailComment, lang string, recipients []*user_model.User, fromMention bool, info string) ([]*sender_service.Message, error) {
+	key := authz.FeatureIssues
+	if comment.Issue.IsPull {
+		key = authz.FeaturePullRequests
+	}
+	if err := authz_service.RequireRepoFeature(ctx, comment.Issue.RepoID, key); err != nil {
+		return nil, err
+	}
+
 	var (
 		subject string
 		link    string
@@ -170,6 +180,7 @@ func composeIssueCommentMessages(ctx context.Context, comment *mailComment, lang
 			subject,
 			mailBody.String(),
 		)
+		msg.IssueID = comment.Issue.ID
 		msg.Info = fmt.Sprintf("Subject: %s, %s", subject, info)
 
 		msg.SetHeader("Message-ID", msgID)

@@ -12,6 +12,9 @@ import (
 
 // CreateIssueReaction creates a reaction on an issue.
 func CreateIssueReaction(ctx context.Context, doer *user_model.User, issue *issues_model.Issue, content string) (*issues_model.Reaction, error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return nil, err
+	}
 	if err := issue.LoadRepo(ctx); err != nil {
 		return nil, err
 	}
@@ -29,6 +32,9 @@ func CreateIssueReaction(ctx context.Context, doer *user_model.User, issue *issu
 
 // CreateCommentReaction creates a reaction on a comment.
 func CreateCommentReaction(ctx context.Context, doer *user_model.User, comment *issues_model.Comment, content string) (*issues_model.Reaction, error) {
+	if err := requireCommentFeature(ctx, comment); err != nil {
+		return nil, err
+	}
 	if err := comment.LoadIssue(ctx); err != nil {
 		return nil, err
 	}

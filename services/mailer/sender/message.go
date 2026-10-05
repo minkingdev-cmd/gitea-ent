@@ -21,6 +21,7 @@ import (
 
 // Message mail body and log info
 type Message struct {
+	IssueID         int64
 	Info            string // Message information for log purpose.
 	FromAddress     string
 	FromDisplayName string

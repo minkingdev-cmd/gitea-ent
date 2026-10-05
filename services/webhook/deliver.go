@@ -32,6 +32,7 @@ import (
 	"gitea.dev/modules/timeutil"
 	"gitea.dev/modules/util"
 	webhook_module "gitea.dev/modules/webhook"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 func newDefaultRequest(ctx context.Context, w *webhook_model.Webhook, t *webhook_model.HookTask) (req *http.Request, body []byte, err error) {
@@ -148,8 +149,29 @@ func addDefaultHeaders(req *http.Request, secret []byte, w *webhook_model.Webhoo
 // Deliver creates the [http.Request] (depending on the webhook type), sends it
 // and records the status and response.
 func Deliver(ctx context.Context, t *webhook_model.HookTask) error {
+	if setting.EnterpriseAuthz.Enabled && t.ID > 0 {
+		current, err := webhook_model.GetHookTaskByID(ctx, t.ID)
+		if err != nil {
+			return err
+		}
+		t = current
+	}
 	w, err := webhook_model.GetWebhookByID(ctx, t.HookID)
 	if err != nil {
+		return err
+	}
+
+	if err := requireHookTaskFeature(ctx, w, t); err != nil {
+		t.IsDelivered = true
+		t.IsSucceed = false
+		status := http.StatusForbidden
+		if executionErr, ok := errors.AsType[*authz_service.ExecutionError](err); ok {
+			status = executionErr.Status
+		}
+		t.ResponseInfo = &webhook_model.HookResponse{Status: status, Body: "Webhook delivery blocked by feature policy"}
+		if updateErr := webhook_model.UpdateHookTask(ctx, t); updateErr != nil {
+			return updateErr
+		}
 		return err
 	}
 
@@ -352,7 +374,7 @@ func populateWebhookSendingQueue(ctx context.Context) {
 				return
 			default:
 			}
-			if err := enqueueHookTask(taskID); err != nil {
+			if err := enqueueHookTask(ctx, taskID); err != nil {
 				log.Error("Unable to push HookTask[%d] to the Webhook Sending queue: %v", taskID, err)
 			}
 		}

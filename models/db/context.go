@@ -9,7 +9,10 @@ import (
 	"errors"
 	"runtime"
 	"slices"
+	"strconv"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"gitea.dev/modules/setting"
 
@@ -22,6 +25,8 @@ type contextKey struct{ key string }
 var (
 	contextKeyEngine       = contextKey{"engine"}
 	contextKeyPostCommit   = contextKey{"post-commit"}
+	contextKeyReadOnly     = contextKey{"read-only"}
+	contextKeySQLContext   = contextKey{"sql-context"}
 	ContextKeyTestFixtures = contextKey{"test-fixtures"}
 )
 
@@ -97,8 +102,10 @@ type postCommitter struct {
 }
 
 type transactionState struct {
-	effects []func()
-	aborted error
+	effects         []func()
+	aborted         error
+	rollbackEffects []func()
+	committed       bool
 }
 
 func (c *postCommitter) Commit() error {
@@ -111,6 +118,8 @@ func (c *postCommitter) Commit() error {
 	if err := c.Session.Commit(); err != nil {
 		return err
 	}
+	c.state.committed = true
+	c.state.rollbackEffects = nil
 	_ = c.Session.Close()
 	effects := c.state.effects
 	c.state.effects = nil
@@ -118,6 +127,27 @@ func (c *postCommitter) Commit() error {
 		effect()
 	}
 	return nil
+}
+
+func (c *postCommitter) Close() error {
+	err := c.Session.Close()
+	effects := c.state.rollbackEffects
+	c.state.rollbackEffects = nil
+	if !c.state.committed {
+		for _, effect := range effects {
+			effect()
+		}
+	}
+	return err
+}
+
+// AfterRollback 在最外层事务释放锁后执行，不能从回调恢复业务写入。
+func AfterRollback(ctx context.Context, effect func()) {
+	if state, ok := ctx.Value(contextKeyPostCommit).(*transactionState); ok && InTransaction(ctx) {
+		state.rollbackEffects = append(state.rollbackEffects, effect)
+		return
+	}
+	effect()
 }
 
 // AfterCommit delays external side effects until the outermost transaction commits.
@@ -177,13 +207,14 @@ func TxContext(parentCtx context.Context) (context.Context, Committer, error) {
 		return withContextEngine(parentCtx, sess), &halfCommitter{committer: sess, state: state}, nil
 	}
 
-	sess := xormEngine.NewSession()
+	sess := xormEngine.NewSession().Context(parentCtx)
 	if err := sess.Begin(); err != nil {
 		_ = sess.Close()
 		return nil, nil, err
 	}
 	state := new(transactionState)
 	ctx := context.WithValue(withContextEngine(parentCtx, sess), contextKeyPostCommit, state)
+	ctx = context.WithValue(ctx, contextKeySQLContext, sessionContext{session: sess, ctx: parentCtx, recovery: parentCtx})
 	return ctx, &postCommitter{Session: sess, state: state}, nil
 }
 
@@ -207,14 +238,118 @@ func WithIndependentReadTx(parentCtx context.Context, f func(context.Context) er
 	}
 	state := new(transactionState)
 	ctx := context.WithValue(withContextEngine(parentCtx, sess), contextKeyPostCommit, state)
+	committer := &postCommitter{Session: sess, state: state}
+	defer committer.Close()
+	ctx = context.WithValue(ctx, contextKeyReadOnly, sess)
+	ctx = context.WithValue(ctx, contextKeySQLContext, sessionContext{session: sess, ctx: parentCtx, recovery: parentCtx})
 	if err := f(ctx); err != nil {
 		return err
 	}
-	committer := &postCommitter{Session: sess, state: state}
 	return committer.Commit()
 }
 
 var ErrIndependentTransactionInUse = errors.New("independent_transaction_in_business_transaction")
+
+func IsReadOnly(ctx context.Context) bool {
+	readOnly, _ := ctx.Value(contextKeyReadOnly).(*xorm.Session)
+	return readOnly != nil && readOnly == getTransactionSession(ctx)
+}
+
+type sessionContext struct {
+	session  *xorm.Session
+	ctx      context.Context
+	recovery context.Context
+}
+
+var savepointSequence atomic.Uint64
+
+var ErrObservationTransactionUnavailable = errors.New("observation_transaction_unavailable")
+
+// WithSavepoint 隔离可恢复观测错误，防止 PostgreSQL 中止调用方事务。
+func WithSavepoint(ctx context.Context, f func(context.Context) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !InTransaction(ctx) {
+		return f(ctx)
+	}
+	binding, known := ctx.Value(contextKeySQLContext).(sessionContext)
+	sess := getTransactionSession(ctx)
+	scoped := ctx
+	if known && binding.session == sess {
+		sqlContext := ctx
+		if setting.Database.Type.IsPostgreSQL() {
+			sqlContext = binding.recovery
+		}
+		sess.Context(sqlContext)
+		defer sess.Context(binding.ctx)
+		scoped = context.WithValue(ctx, contextKeySQLContext, sessionContext{session: sess, ctx: sqlContext, recovery: binding.recovery})
+	}
+	unavailable := func(err error) error {
+		err = errors.Join(ErrObservationTransactionUnavailable, err)
+		if state, ok := ctx.Value(contextKeyPostCommit).(*transactionState); ok {
+			state.aborted = err
+			state.effects = nil
+		}
+		return err
+	}
+	name := "gitea_observation_" + strconv.FormatUint(savepointSequence.Add(1), 10)
+	if _, err := Exec(ctx, "SAVEPOINT "+name); err != nil {
+		return unavailable(err)
+	}
+	var previousTimeout string
+	var err error
+	if known && binding.session == sess && setting.Database.Type.IsPostgreSQL() {
+		previousTimeout, err = observationStatementTimeout(ctx, sess)
+	}
+	if err == nil {
+		err = f(scoped)
+	}
+	if err == nil {
+		err = ctx.Err()
+	}
+	if known && binding.session == sess {
+		sess.Context(binding.recovery)
+	}
+	if err == nil && previousTimeout != "" {
+		_, err = sess.Exec("SELECT set_config('statement_timeout', ?, true)", previousTimeout)
+	}
+	if err != nil {
+		if _, rollbackErr := Exec(ctx, "ROLLBACK TO SAVEPOINT "+name); rollbackErr != nil {
+			return unavailable(errors.Join(err, rollbackErr))
+		}
+	}
+	if _, releaseErr := Exec(ctx, "RELEASE SAVEPOINT "+name); releaseErr != nil {
+		return unavailable(errors.Join(err, releaseErr))
+	}
+	return err
+}
+
+func observationStatementTimeout(ctx context.Context, sess *xorm.Session) (string, error) {
+	deadline, bounded := ctx.Deadline()
+	if !bounded {
+		return "", nil
+	}
+	remaining := time.Until(deadline).Milliseconds()
+	if remaining < 1 {
+		return "", context.DeadlineExceeded
+	}
+	rows, err := sess.QueryString("SELECT current_setting('statement_timeout') AS timeout, EXTRACT(EPOCH FROM current_setting('statement_timeout')::interval) * 1000 AS milliseconds")
+	if err != nil {
+		return "", err
+	}
+	previous := rows[0]["timeout"]
+	limit, err := strconv.ParseFloat(rows[0]["milliseconds"], 64)
+	if err != nil {
+		return "", err
+	}
+	if limit > 0 && limit <= float64(remaining) {
+		return "", nil
+	}
+	// lib/pq 的观测 deadline 会关闭整个连接，使用服务端超时保留可回滚事务。
+	_, err = sess.Exec("SELECT set_config('statement_timeout', ?, true)", strconv.FormatInt(remaining, 10))
+	return previous, err
+}
 
 func WithIndependentTx(parentCtx context.Context, f func(context.Context) error) error {
 	if err := parentCtx.Err(); err != nil {
@@ -230,10 +365,13 @@ func WithIndependentTx(parentCtx context.Context, f func(context.Context) error)
 	}
 	state := new(transactionState)
 	ctx := context.WithValue(withContextEngine(parentCtx, sess), contextKeyPostCommit, state)
+	committer := &postCommitter{Session: sess, state: state}
+	defer committer.Close()
+	ctx = context.WithValue(ctx, contextKeySQLContext, sessionContext{session: sess, ctx: parentCtx, recovery: parentCtx})
 	if err := f(ctx); err != nil {
 		return err
 	}
-	return (&postCommitter{Session: sess, state: state}).Commit()
+	return committer.Commit()
 }
 
 // WithTx represents executing database operations on a transaction, if the transaction exist,

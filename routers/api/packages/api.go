@@ -4,10 +4,12 @@
 package packages
 
 import (
+	"errors"
 	"net/http"
 
 	auth_model "gitea.dev/models/auth"
 	"gitea.dev/models/perm"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/log"
 	npm_module "gitea.dev/modules/packages/npm"
 	"gitea.dev/modules/setting"
@@ -37,6 +39,7 @@ import (
 	"gitea.dev/routers/api/packages/vagrant"
 	"gitea.dev/services/auth"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 func reqPackageAccess(accessMode perm.AccessMode) func(ctx *context.Context) {
@@ -88,6 +91,16 @@ func reqPackageAccess(accessMode perm.AccessMode) func(ctx *context.Context) {
 			ctx.Resp.Header().Set("WWW-Authenticate", `Basic realm="Gitea Package API"`)
 			ctx.HTTPError(http.StatusUnauthorized, "reqPackageAccess", "user should have specific permission or be a site admin")
 			return
+		}
+		if ctx.Req.Method != http.MethodDelete {
+			if err := authz_service.RequireOwnerFeature(ctx, ctx.Package.Owner.ID, authz.FeaturePackages); err != nil {
+				status := http.StatusForbidden
+				if executionErr, ok := errors.AsType[*authz_service.ExecutionError](err); ok {
+					status = executionErr.Status
+				}
+				ctx.HTTPError(status, "reqPackageAccess", err.Error())
+				return
+			}
 		}
 	}
 }

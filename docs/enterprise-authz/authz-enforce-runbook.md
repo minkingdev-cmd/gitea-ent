@@ -4,7 +4,7 @@
 
 服务端仅部署 Linux。本文是高风险 enforce 的追加交付手册；[原 shadow 手册](authz-shadow-runbook.md)与既有企微治理时间线保留，不把旧版本“不支持 enforce”的声明改成已发布事实。首次启用前确认运行的是已完整接线、支持该开关的新版本，不只替换配置。
 
-固定 enforce 集合为 `repo.merge_pull_request`、`repo.push_protected_branch`、`repo.manage_branch_protection`、`repo.manage_codeowners`、`repo.manage_webhook`、`repo.manage_ci`、`repo.manage_secret`、`repo.manage_access`、`repo.transfer`、`repo.archive`、`repo.delete`。普通读写/branch/tag、PR 创建/评审、`repo.migrate` 不因 Risk 自动进入集合；feature grant 仍仅目录/诊断。secret 不可读，workflow dispatch/run/cancel 不是 CI 管理变更。
+固定 enforce 集合为 `repo.merge_pull_request`、`repo.push_protected_branch`、`repo.manage_branch_protection`、`repo.manage_codeowners`、`repo.manage_webhook`、`repo.manage_ci`、`repo.manage_secret`、`repo.manage_access`、`repo.transfer`、`repo.archive`、`repo.delete`。普通读写/branch/tag、PR 创建/评审、`repo.migrate` 不因 Risk 自动进入集合；`add-enterprise-feature-grants` 版本将 `repo.manage_feature_grant` 接到真实管理操作，三种模式均需独立校验 authority/action/凭据；不把它简化为高风险 action 的模式相关准入。secret 管理不返回明文，workflow dispatch/run/cancel 不是 CI 管理变更。
 
 实际许可是**当前原生 action 能力与匹配企业角色 allow 的并集**，再与原生认证、凭据 ceiling、scope/unit/资源可见性及动作安全守卫相交。企业角色不是 native permission 替代品：不能升本地管理员、组织 owner/team 管理资格、读 token 写权限、force merge、mirror/danger-zone 资格，不能突破 checks/review/签名/文件/企微治理。原生 Admin 自有 webhook/CI/protection 能力仍保留；Admin 不是 secret/protected push/access/transfer/archive/delete 的统一默认许可。
 
@@ -14,7 +14,7 @@
 
 停所有实例和 worker、确认在途写入结束，备份整库及匹配二进制/assets/配置/Git/LFS/附件存储。在隔离环境验证新版 migration 和 readiness 后，以服务用户运行正式 `gitea ... migrate`；不手改 `version`、补 seed、重跑旧 migration 或只恢复授权表。
 
-当前目录为 catalog v2，additive migration 只给内置 Owner/Platform Admin 补 `manage_access`，不自动加绑定、不改旧自定义复制角色，也不重算旧历史。老 catalog v1 记录仍按当时白名单解释。
+action 目录为 catalog v2，migration 362 给内置 Owner/Platform Admin 补 `manage_access`，不自动加绑定、不改旧自定义复制角色，也不重算旧历史。老 catalog v1 记录仍按当时白名单解释。功能授权另有 feature catalog v1：migration 363 后 DB version 364，目录为 13 keys，新增策略与受信后台来源/用途元数据；默认不重写原生 unit。详细迁移、权限矩阵和上线阻断项见 [功能授权手册](feature-grants-runbook.md)。
 
 | 模式 | ENABLED | ENFORCE | 业务结果 |
 | --- | --- | --- | --- |
@@ -99,3 +99,11 @@ Git 只输出固定安全拒绝原因，不回显 SQL、路径/内容或原始�
 6. 同版三模式回退不需也不允许降 schema/seed。旧二进制若不识别新schema/exactseed，必须拒绝启动；不能改 version/drop新表/删除manage_access来骗过。真正退旧版需经验证的完整旧备份DB+资源+配置，保全备份之后的新增历史并取得恢复审批。只有旧 gate 探针而无旧完整server/resources，不能宣称已完成旧版本生产恢复。
 
 隔离演练不接生产库、不安装本地登录后门，也不代替生产审批或外部企微联调。当前 change 的实际命令、环境、失败及恢复证据写入其 verification；未执行的恢复层不得标成已完成。
+
+## 2026-10-05：功能授权版本的追加上线门槛
+
+本次追加 native_gate 的 Issues/PR/Wiki/Packages 内容、unit 最终意图、Webhook/secret/required checks 控制；六个外部 key 仅 policy_only 输出，不执行扫描/AI/status 或新增 merge gate。required 不补建原生配置，必须查看 native availability/pending。disabled 无 feature DB 读取、shadow 不因候选拒绝改变原生业务，enforce 默认 fail-closed；显式 infra-only fail-open 不覆盖明确 deny 或管理授权事务。
+
+上线前停全部实例、生产者和 worker，备份并精确隔离旧 mail queue（旧消息没有可信 IssueID，不能安全猜作用域，禁止删除 common 共享目录）；旧 hook task 可信来源不能恢复时 enforce 安全拒绝。旧 Cargo `_cargo-index` 必须由真实系统 authority 核实用途与完整 Git 历史，经 disabled 离线维护和数据库审计执行稳定 repo ID 的 CLI 认领，必带完整可重复 `--source-repo-id` 或互斥的 `--confirm-no-linked-history`；不只检查现存包、不 rewrite 历史。`enterprise_cargo_index_source` 唯一 pair 永久保存各实际来源，Git commit 前追加，删除/unlink 不清理；读取按来源 repo 当前策略，来源删除/未知拒绝。marked index 禁止 owner transfer，rename 仍用稳定 ID；普通同名代码仓库不得按名称标记，disabled 上游 lookup 不赋 marker，enabled 不将其认作索引。以上是生产发布前置工作，不是本机测试已代办的迁移。步骤及 backend 边界见 [功能授权手册](feature-grants-runbook.md)。
+
+同版切 shadow/disabled 保留策略与历史；退旧 binary 必须匹配 DB+Git/Wiki+对象存储+queue+配置完整备份，不降 schema。本文不改写前序 change 验收，也不宣称已生产部署或已完成生产恢复。

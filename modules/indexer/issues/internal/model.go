@@ -85,6 +85,10 @@ type SearchOptions struct {
 	RepoIDs   []int64 // repository IDs which the issues belong to
 	AllPublic bool    // if include all public repositories
 
+	CandidateRepoIDs     []int64
+	ExcludedIssueRepoIDs []int64
+	ExcludedPullRepoIDs  []int64
+
 	IsPull     optional.Option[bool] // if the issues is a pull request
 	IsClosed   optional.Option[bool] // if the issues is closed
 	IsArchived optional.Option[bool] // if the repo is archived

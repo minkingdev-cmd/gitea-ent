@@ -69,6 +69,9 @@ func changeMilestoneAssign(ctx context.Context, doer *user_model.User, issue *is
 
 // ChangeMilestoneAssign changes assignment of milestone for issue.
 func ChangeMilestoneAssign(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, oldMilestoneID int64) (err error) {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	if err := db.WithTx(ctx, func(dbCtx context.Context) error {
 		return changeMilestoneAssign(dbCtx, doer, issue, oldMilestoneID)
 	}); err != nil {

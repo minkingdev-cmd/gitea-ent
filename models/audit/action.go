@@ -62,6 +62,10 @@ func IsActionFilter(action Action) bool {
 }
 
 var (
+	EnterpriseFeatureGrantUpdate    = define("enterprise:feature:grant:update", "Updated enterprise feature {feature_key} grant.")
+	EnterpriseFeatureGrantReset     = define("enterprise:feature:grant:reset", "Reset enterprise feature {feature_key} grant.")
+	EnterpriseCargoIndexAdopt       = define("enterprise:feature:cargo-index:adopt", "Adopted Cargo index repository purpose.")
+	EnterpriseFeatureDecision       = define("enterprise:feature:decision", "Evaluated enterprise feature {feature_key}: {candidate_decision}.")
 	EnterpriseAuthzMigrationFailure = define("enterprise:authz:migration:failure", "Repository migration failed before target creation at {stage}: {reason}.")
 	EnterpriseAuthzDiagnostic       = define("enterprise:authz:diagnostic", "Diagnosed enterprise authorization for repository {repo_id}.")
 	EnterpriseAuthzRoleCreate       = define("enterprise:authz:role:create", "Created enterprise authorization role {role_id}.")

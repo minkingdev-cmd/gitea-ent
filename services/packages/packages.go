@@ -25,6 +25,7 @@ import (
 	packages_module "gitea.dev/modules/packages"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/storage"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	notify_service "gitea.dev/services/notify"
 )
 
@@ -135,6 +136,9 @@ func createPackageAndAddFile(ctx context.Context, pvci *PackageCreationInfo, pfc
 }
 
 func createPackageAndVersion(ctx context.Context, pvci *PackageCreationInfo, allowDuplicate bool) (*packages_model.PackageVersion, bool, error) {
+	if err := requirePackageCreationFeature(ctx, pvci); err != nil {
+		return nil, false, err
+	}
 	log.Trace("Creating package: %v, %v, %v, %s, %s, %+v, %+v, %v", pvci.Creator.ID, pvci.Owner.ID, pvci.PackageType, pvci.Name, pvci.Version, pvci.PackageProperties, pvci.VersionProperties, allowDuplicate)
 
 	packageCreated := true
@@ -309,6 +313,18 @@ func addFileToPackageVersion(ctx context.Context, pv *packages_model.PackageVers
 }
 
 func addFileToPackageVersionUnchecked(ctx context.Context, pv *packages_model.PackageVersion, pfci *PackageFileCreationInfo) (_ *packages_model.PackageFile, _ *packages_model.PackageBlob, created bool, _ error) {
+	if err := requirePackageVersionFeature(ctx, pv); err != nil {
+		return nil, nil, false, err
+	}
+	pkg, err := packages_model.GetPackageByID(ctx, pv.PackageID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if !packages_model.CleanupIndexWriteAllowed(ctx, pkg, pv.Version) {
+		if err := RequirePackageWriteFeature(ctx, pkg); err != nil {
+			return nil, nil, false, err
+		}
+	}
 	log.Trace("Adding package file: %v, %s", pv.ID, pfci.Filename)
 
 	pb, exists, err := GetOrSavePackageBlob(ctx, packages_module.NewContentStore(), NewPackageBlob(pfci.Data), pfci.Data)
@@ -369,7 +385,7 @@ func CheckCountQuotaExceeded(ctx context.Context, doer, owner *user_model.User) 
 	}
 
 	if setting.Packages.LimitTotalOwnerCount > -1 {
-		totalCount, err := packages_model.CountVersions(ctx, &packages_model.PackageSearchOptions{
+		totalCount, err := packages_model.CountVersionsForQuota(ctx, &packages_model.PackageSearchOptions{
 			OwnerID:    owner.ID,
 			IsInternal: optional.Some(false),
 		})
@@ -464,9 +480,20 @@ func CheckSizeQuotaExceeded(ctx context.Context, doer, owner *user_model.User, p
 // GetOrCreateInternalPackageVersion gets or creates an internal package
 // Some package types need such internal packages for housekeeping.
 func GetOrCreateInternalPackageVersion(ctx context.Context, ownerID int64, packageType packages_model.Type, name, version string) (*packages_model.PackageVersion, error) {
+	if !packages_model.CleanupIndexWriteAllowed(ctx, &packages_model.Package{OwnerID: ownerID, Type: packageType, Name: name, LowerName: name, IsInternal: true}, version) {
+		if err := RequirePackageFeature(ctx, &packages_model.Package{OwnerID: ownerID}); err != nil {
+			return nil, err
+		}
+	}
+
 	var pv *packages_model.PackageVersion
 
 	return pv, db.WithTx(ctx, func(ctx context.Context) error {
+		if !packages_model.CleanupIndexWriteAllowed(ctx, &packages_model.Package{OwnerID: ownerID, Type: packageType, LowerName: name, IsInternal: true}, version) {
+			if err := RequirePackageNameWriteFeature(ctx, ownerID, packageType, name); err != nil {
+				return err
+			}
+		}
 		p := &packages_model.Package{
 			OwnerID:    ownerID,
 			Type:       packageType,
@@ -482,6 +509,14 @@ func GetOrCreateInternalPackageVersion(ctx context.Context, ownerID int64, packa
 			}
 		}
 
+		if packages_model.CleanupIndexReadAllowed(ctx, ownerID, packageType) && !packages_model.CleanupIndexWriteAllowed(ctx, p, version) {
+			return &authz_service.ExecutionError{Reason: "invalid_cleanup_index", Status: 403}
+		}
+		if !packages_model.CleanupIndexWriteAllowed(ctx, p, version) {
+			if err := RequirePackageWriteFeature(ctx, p); err != nil {
+				return err
+			}
+		}
 		pv = &packages_model.PackageVersion{
 			PackageID:    p.ID,
 			CreatorID:    ownerID,
@@ -503,7 +538,7 @@ func GetOrCreateInternalPackageVersion(ctx context.Context, ownerID int64, packa
 
 // RemovePackageVersionByNameAndVersion deletes a package version and all associated files
 func RemovePackageVersionByNameAndVersion(ctx context.Context, doer *user_model.User, pvi *PackageInfo) error {
-	pv, err := packages_model.GetVersionByNameAndVersion(ctx, pvi.Owner.ID, pvi.PackageType, pvi.Name, pvi.Version)
+	pv, err := packages_model.GetVersionByNameAndVersionForCleanup(ctx, pvi.Owner.ID, pvi.PackageType, pvi.Name, pvi.Version)
 	if err != nil {
 		return err
 	}
@@ -643,6 +678,15 @@ func OpenBlobStream(pb *packages_model.PackageBlob) (io.ReadSeekCloser, error) {
 // OpenBlobForDownload returns the content of the specific package blob and increases the download counter.
 // If the storage supports direct serving and it's enabled, only the direct serving url is returned.
 func OpenBlobForDownload(ctx context.Context, pf *packages_model.PackageFile, pb *packages_model.PackageBlob, method string, serveDirectReqParams *storage.ServeDirectOptions) (io.ReadSeekCloser, *url.URL, *packages_model.PackageFile, error) {
+	if setting.EnterpriseAuthz.Enabled {
+		pv, err := packages_model.GetVersionByID(ctx, pf.VersionID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if err := requirePackageVersionFeature(ctx, pv); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	key := packages_module.BlobHash256Key(pb.HashSHA256)
 
 	cs := packages_module.NewContentStore()
@@ -720,7 +764,7 @@ func RemovePackage(ctx context.Context, doer *user_model.User, p *packages_model
 func RemoveAllPackages(ctx context.Context, userID int64) (int, error) {
 	count := 0
 	for {
-		pkgVersions, _, err := packages_model.SearchVersions(ctx, &packages_model.PackageSearchOptions{
+		pkgVersions, _, err := packages_model.SearchVersionsForCleanup(ctx, &packages_model.PackageSearchOptions{
 			Paginator: &db.ListOptions{
 				PageSize: repo_model.RepositoryListDefaultPageSize,
 				Page:     1,

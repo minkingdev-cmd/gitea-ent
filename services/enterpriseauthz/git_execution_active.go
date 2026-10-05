@@ -10,16 +10,20 @@ import (
 	"strings"
 	"sync"
 
+	packages_model "gitea.dev/models/packages"
+	repo_model "gitea.dev/models/repo"
 	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/setting"
 )
 
 type activeGitExecution struct {
-	admission   *Admission
-	keys        [][32]byte
-	claimed     map[[32]byte]bool
-	postClaimed map[[32]byte]bool
+	admission           *Admission
+	keys                [][32]byte
+	claimed             map[[32]byte]bool
+	postClaimed         map[[32]byte]bool
+	cargoCleanupOwnerID int64
+	cleanupClaimed      map[[32]byte]bool
 }
 
 var activeGitExecutions = struct {
@@ -44,11 +48,18 @@ func RegisterGitExecution(ctx context.Context, admission *Admission, inputs []Gi
 		admission.mutex.Unlock()
 		return func() {}, invalid
 	}
-	entry := &activeGitExecution{admission: admission, claimed: make(map[[32]byte]bool), postClaimed: make(map[[32]byte]bool)}
+	entry := &activeGitExecution{admission: admission, claimed: make(map[[32]byte]bool), postClaimed: make(map[[32]byte]bool), cleanupClaimed: make(map[[32]byte]bool)}
 	for _, input := range inputs {
 		if input.Actor == nil || input.Repo == nil {
 			admission.mutex.Unlock()
 			return func() {}, invalid
+		}
+		if input.Repo.InternalUsage == repo_model.InternalUsageCargoIndex && packages_model.CleanupIndexReadAllowed(ctx, input.Repo.OwnerID, packages_model.TypeCargo) {
+			if entry.cargoCleanupOwnerID != 0 && entry.cargoCleanupOwnerID != input.Repo.OwnerID {
+				admission.mutex.Unlock()
+				return func() {}, invalid
+			}
+			entry.cargoCleanupOwnerID = input.Repo.OwnerID
 		}
 		key := gitPreparedKey(input)
 		if !slices.Contains(admission.preparedKeys, key) || slices.Contains(entry.keys, key) {
@@ -186,4 +197,27 @@ func RequireGitMergeExecution(ctx context.Context, actor, repoID int64, branch, 
 		}
 	}
 	return invalid
+}
+
+func ReuseCargoIndexCleanupExecution(_ context.Context, operation *HookOperation, inputs []GitExecutionInput) bool {
+	if operation == nil || len(inputs) != 1 {
+		return false
+	}
+	input := inputs[0]
+	if input.Actor == nil || input.Repo == nil || input.Repo.InternalUsage != repo_model.InternalUsageCargoIndex || !input.Ref.IsBranch() || input.Merge || !validHookInput(operation, EvaluateInput{Actor: input.Actor, Repo: input.Repo, Credential: input.Credential, ConditionContext: authz.ConditionContext{Source: input.Source}}) {
+		return false
+	}
+	key := gitPreparedKey(input)
+	activeGitExecutions.Lock()
+	defer activeGitExecutions.Unlock()
+	for _, entry := range activeGitExecutions.operations[operation.payload.OperationID] {
+		entry.admission.mutex.Lock()
+		live := entry.admission.started && !entry.admission.finished
+		entry.admission.mutex.Unlock()
+		if live && entry.cargoCleanupOwnerID == input.Repo.OwnerID && entry.cargoCleanupOwnerID > 0 && slices.Contains(entry.keys, key) && !entry.cleanupClaimed[key] {
+			entry.cleanupClaimed[key] = true
+			return true
+		}
+	}
+	return false
 }

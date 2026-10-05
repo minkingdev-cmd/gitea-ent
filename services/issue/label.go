@@ -15,6 +15,9 @@ import (
 
 // ClearLabels clears all of an issue's labels
 func ClearLabels(ctx context.Context, issue *issues_model.Issue, doer *user_model.User) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	if err := issues_model.ClearIssueLabels(ctx, issue, doer); err != nil {
 		return err
 	}
@@ -26,6 +29,9 @@ func ClearLabels(ctx context.Context, issue *issues_model.Issue, doer *user_mode
 
 // AddLabel adds a new label to the issue.
 func AddLabel(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, label *issues_model.Label) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	if err := issues_model.NewIssueLabel(ctx, issue, label, doer); err != nil {
 		return err
 	}
@@ -36,6 +42,9 @@ func AddLabel(ctx context.Context, issue *issues_model.Issue, doer *user_model.U
 
 // AddLabels adds a list of new labels to the issue.
 func AddLabels(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, labels []*issues_model.Label) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	if err := issues_model.NewIssueLabels(ctx, issue, labels, doer); err != nil {
 		return err
 	}
@@ -46,6 +55,9 @@ func AddLabels(ctx context.Context, issue *issues_model.Issue, doer *user_model.
 
 // RemoveLabel removes a label from issue by given ID.
 func RemoveLabel(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, label *issues_model.Label) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	if err := db.WithTx(ctx, func(ctx context.Context) error {
 		if err := issue.LoadRepo(ctx); err != nil {
 			return err
@@ -73,6 +85,9 @@ func RemoveLabel(ctx context.Context, issue *issues_model.Issue, doer *user_mode
 
 // ReplaceLabels removes all current labels and add new labels to the issue.
 func ReplaceLabels(ctx context.Context, issue *issues_model.Issue, doer *user_model.User, labels []*issues_model.Label) error {
+	if err := RequireFeature(ctx, issue); err != nil {
+		return err
+	}
 	old, err := issues_model.GetLabelsByIssueID(ctx, issue.ID)
 	if err != nil {
 		return err

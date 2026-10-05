@@ -10,6 +10,7 @@ import (
 
 	_ "gitea.dev/models/organization"
 	_ "gitea.dev/models/repo"
+	_ "gitea.dev/models/webhook"
 )
 
 func TestMain(m *testing.M) { unittest.MainTest(m) }

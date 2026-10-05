@@ -5,6 +5,7 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"net/url"
@@ -12,7 +13,10 @@ import (
 	"strings"
 	"time"
 
+	authz_model "gitea.dev/models/enterpriseauthz"
+	repo_model "gitea.dev/models/repo"
 	"gitea.dev/modules/base"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/htmlutil"
 	"gitea.dev/modules/markup"
 	"gitea.dev/modules/public"
@@ -25,6 +29,16 @@ import (
 
 func newFuncMapWebPage() template.FuncMap {
 	return map[string]any{
+		"RepoFeatureVisible": func(ctx context.Context, repo *repo_model.Repository, key authz.FeatureKey) bool {
+			if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+				return true
+			}
+			if repo.LoadOwner(ctx) != nil {
+				return false
+			}
+			visible, _ := authz_model.RepoFeatureVisible(ctx, key, repo.ID, repo.OwnerID, repo.Owner.IsOrganization())
+			return visible
+		},
 		"DumpVar": dumpVar,
 		"NIL":     func() any { return nil },
 

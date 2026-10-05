@@ -23,9 +23,10 @@ type Indexer interface {
 }
 
 type SearchOptions struct {
-	RepoIDs  []int64
-	Keyword  string
-	Language string
+	RepoIDs         []int64
+	ExcludedRepoIDs []int64
+	Keyword         string
+	Language        string
 
 	SearchMode indexer.SearchModeType
 

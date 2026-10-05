@@ -118,6 +118,9 @@ func checkManualMergeExecutionNative(ctx context.Context, pr *issues_model.PullR
 }
 
 func checkUpdateExecutionNative(ctx context.Context, pr *issues_model.PullRequest, actor *user_model.User, rebase bool) error {
+	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+		return err
+	}
 	permission, err := access_model.GetDoerRepoPermission(ctx, pr.BaseRepo, actor)
 	if err != nil {
 		return err

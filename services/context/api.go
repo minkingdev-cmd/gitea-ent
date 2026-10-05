@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	authz_model "gitea.dev/models/enterpriseauthz"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
@@ -27,6 +28,7 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web"
 	web_types "gitea.dev/modules/web/types"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 // APIContext is a specific context for API service
@@ -129,6 +131,16 @@ func (ctx *APIContext) APIErrorInternal(err error) {
 }
 
 func (ctx *APIContext) apiErrorInternal(skip int, err error) {
+	if denial, ok := errors.AsType[*authz_service.ExecutionError](err); ok {
+		ctx.APIError(denial.Status, denial.Reason)
+		return
+	}
+
+	if errors.Is(err, authz_model.ErrFeatureQueryUnavailable) {
+		ctx.APIError(http.StatusServiceUnavailable, "feature_policy_unavailable")
+		return
+	}
+
 	log.ErrorWithSkip(skip+1, "InternalServerError: %v", err)
 
 	var message string

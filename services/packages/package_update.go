@@ -14,10 +14,23 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
 )
 
 func LinkToRepository(ctx context.Context, pkg *packages_model.Package, repo *repo_model.Repository, doer *user_model.User) error {
+	current, err := packages_model.GetPackageByID(ctx, pkg.ID)
+	if err != nil {
+		return err
+	}
+	pkg = current
+	if err := RequirePackageFeature(ctx, pkg); err != nil {
+		return err
+	}
+	if err := authz_service.RequireRepoFeature(ctx, repo.ID, authz.FeaturePackages); err != nil {
+		return err
+	}
 	if pkg.OwnerID != repo.OwnerID {
 		return util.ErrPermissionDenied
 	}
@@ -33,7 +46,7 @@ func LinkToRepository(ctx context.Context, pkg *packages_model.Package, repo *re
 		return util.ErrPermissionDenied
 	}
 
-	if err := packages_model.SetRepositoryLink(ctx, pkg.ID, repo.ID); err != nil {
+	if err := SetRepositoryAssociation(ctx, pkg.ID, repo.ID); err != nil {
 		return fmt.Errorf("error while linking package '%v' to repo '%v' : %w", pkg.Name, repo.FullName(), err)
 	}
 	return nil
@@ -70,11 +83,19 @@ func canDoerManagePackage(ctx context.Context, pkg *packages_model.Package, doer
 }
 
 func UnlinkFromRepository(ctx context.Context, pkg *packages_model.Package, doer *user_model.User) error {
+	current, err := packages_model.GetPackageByID(ctx, pkg.ID)
+	if err != nil {
+		return err
+	}
+	pkg = current
+	if err := RequirePackageFeature(ctx, pkg); err != nil {
+		return err
+	}
 	if pkg.RepoID == 0 {
 		return util.ErrInvalidArgument
 	}
 	if !canDoerManagePackage(ctx, pkg, doer) {
 		return util.ErrPermissionDenied
 	}
-	return packages_model.UnlinkRepository(ctx, pkg.ID)
+	return SetRepositoryAssociation(ctx, pkg.ID, 0)
 }

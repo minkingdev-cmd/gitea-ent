@@ -5,12 +5,14 @@ package user
 
 import (
 	stdCtx "context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	activities_model "gitea.dev/models/activities"
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	issues_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
@@ -54,7 +56,7 @@ func prepareUserNotificationsData(ctx *context.Context) {
 	perPage := util.IfZero(ctx.FormInt("perPage"), 20) // this value is never used or exposed ....
 	queryStatus := util.Iif(pageType == "read", activities_model.NotificationStatusRead, activities_model.NotificationStatusUnread)
 
-	total, err := db.Count[activities_model.Notification](ctx, activities_model.FindNotificationOptions{
+	total, err := activities_model.CountNotifications(ctx, &activities_model.FindNotificationOptions{
 		UserID: ctx.Doer.ID,
 		Status: []activities_model.NotificationStatus{queryStatus},
 	})
@@ -71,7 +73,7 @@ func prepareUserNotificationsData(ctx *context.Context) {
 	}
 
 	statuses := []activities_model.NotificationStatus{queryStatus, activities_model.NotificationStatusPinned}
-	nls, err := db.Find[activities_model.Notification](ctx, activities_model.FindNotificationOptions{
+	nls, err := activities_model.FindNotifications(ctx, &activities_model.FindNotificationOptions{
 		ListOptions: db.ListOptions{
 			PageSize: perPage,
 			Page:     page,
@@ -80,7 +82,7 @@ func prepareUserNotificationsData(ctx *context.Context) {
 		Status: statuses,
 	})
 	if err != nil {
-		ctx.ServerError("db.Find[activities_model.Notification]", err)
+		ctx.ServerError("activities_model.FindNotifications", err)
 		return
 	}
 
@@ -432,12 +434,16 @@ func NotificationWatching(ctx *context.Context) {
 
 // NewAvailable returns the notification counts
 func NewAvailable(ctx *context.Context) {
-	total, err := db.Count[activities_model.Notification](ctx, activities_model.FindNotificationOptions{
+	total, err := activities_model.CountNotifications(ctx, &activities_model.FindNotificationOptions{
 		UserID: ctx.Doer.ID,
 		Status: []activities_model.NotificationStatus{activities_model.NotificationStatusUnread},
 	})
 	if err != nil {
-		log.Error("db.Count[activities_model.Notification]", err)
+		if errors.Is(err, authz_model.ErrFeatureQueryUnavailable) {
+			ctx.ServerError("CountNotifications", err)
+			return
+		}
+		log.Error("activities_model.CountNotifications", err)
 		ctx.JSON(http.StatusOK, structs.NotificationCount{New: 0})
 		return
 	}

@@ -184,6 +184,7 @@ func TestEnterpriseAuthzSettingsSharedBoundariesRejectMissingAdmission(t *testin
 	defer tests.PrepareTestEnv(t)()
 	defer test.MockVariableValue(&setting.EnterpriseAuthz.Enabled, true)()
 	defer test.MockVariableValue(&setting.EnterpriseAuthz.Enforce, true)()
+	defer test.MockVariableValue(&setting.Audit.RecordOutput, setting.AuditRecordOutputDatabase)()
 	check := func(err error) {
 		t.Helper()
 		var rejection *authz_service.ExecutionError

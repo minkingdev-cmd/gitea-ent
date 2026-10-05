@@ -20,6 +20,7 @@ import (
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
 	user_model "gitea.dev/models/user"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/htmlutil"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/markup/markdown"
@@ -90,6 +91,9 @@ func MustAllowUserComment(ctx *context.Context) {
 
 // MustEnableIssues check if repository enable internal issues
 func MustEnableIssues(ctx *context.Context) {
+	if !requireRepoFeature(ctx, authz.FeatureIssues) {
+		return
+	}
 	if !ctx.Repo.Permission.CanRead(unit.TypeIssues) &&
 		!ctx.Repo.Permission.CanRead(unit.TypeExternalTracker) {
 		ctx.NotFound(nil)
@@ -108,6 +112,9 @@ func MustEnableIssues(ctx *context.Context) {
 
 // MustAllowPulls check if repository enable pull requests and user have right to do that
 func MustAllowPulls(ctx *context.Context) {
+	if !requireRepoFeature(ctx, authz.FeaturePullRequests) {
+		return
+	}
 	if !ctx.Repo.Repository.CanEnablePulls() || !ctx.Repo.Permission.CanRead(unit.TypePullRequests) {
 		ctx.NotFound(nil)
 		return
@@ -198,6 +205,9 @@ func GetActionIssue(ctx *context.Context) *issues_model.Issue {
 }
 
 func checkIssueRights(ctx *context.Context, issue *issues_model.Issue) {
+	if featureHTTPError(ctx, issue_service.RequireFeature(ctx, issue)) {
+		return
+	}
 	if issue.IsPull && !ctx.Repo.Permission.CanRead(unit.TypePullRequests) ||
 		!issue.IsPull && !ctx.Repo.Permission.CanRead(unit.TypeIssues) {
 		ctx.NotFound(nil)
@@ -235,6 +245,9 @@ func getActionIssues(ctx *context.Context) issues_model.IssueList {
 			ctx.NotFound(nil)
 			return nil
 		}
+		if featureHTTPError(ctx, issue_service.RequireFeature(ctx, issue)) {
+			return nil
+		}
 		if err = issue.LoadAttributes(ctx); err != nil {
 			ctx.ServerError("LoadAttributes", err)
 			return nil
@@ -252,6 +265,10 @@ func GetIssueInfo(ctx *context.Context) {
 		} else {
 			ctx.HTTPError(http.StatusInternalServerError, "GetIssueByIndex", err.Error())
 		}
+		return
+	}
+
+	if featureHTTPError(ctx, issue_service.RequireFeature(ctx, issue)) {
 		return
 	}
 
@@ -387,6 +404,10 @@ func UpdateIssueDeadline(ctx *context.Context) {
 		} else {
 			ctx.HTTPError(http.StatusInternalServerError, "GetIssueByIndex", err.Error())
 		}
+		return
+	}
+
+	if featureHTTPError(ctx, issue_service.RequireFeature(ctx, issue)) {
 		return
 	}
 

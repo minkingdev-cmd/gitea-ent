@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"strconv"
 
+	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	packages_model "gitea.dev/models/packages"
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
@@ -21,8 +24,12 @@ import (
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/structs"
 	"gitea.dev/modules/util"
+	authz_service "gitea.dev/services/enterpriseauthz"
+	packages_service "gitea.dev/services/packages"
 	repo_service "gitea.dev/services/repository"
 	files_service "gitea.dev/services/repository/files"
+
+	"xorm.io/builder"
 )
 
 const (
@@ -102,6 +109,7 @@ func RebuildIndex(ctx context.Context, doer, owner *user_model.User) error {
 
 			return nil
 		},
+		ps...,
 	)
 }
 
@@ -109,12 +117,12 @@ func UpdatePackageIndexIfExists(ctx context.Context, doer, owner *user_model.Use
 	// We do not want to force the creation of the repo here
 	// cargo http index does not rely on the repo itself,
 	// so if the repo does not exist, we just do nothing.
-	repo, err := repo_model.GetRepositoryByOwnerAndName(ctx, owner.Name, IndexRepositoryName)
+	repo, err := getIndexRepository(ctx, owner.ID)
 	if err != nil {
 		if errors.Is(err, util.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("GetRepositoryByOwnerAndName: %w", err)
+		return fmt.Errorf("getIndexRepository: %w", err)
 	}
 
 	p, err := packages_model.GetPackageByID(ctx, packageID)
@@ -122,6 +130,9 @@ func UpdatePackageIndexIfExists(ctx context.Context, doer, owner *user_model.Use
 		return fmt.Errorf("GetPackageByID[%d]: %w", packageID, err)
 	}
 
+	if p.OwnerID != owner.ID || p.Type != packages_model.TypeCargo {
+		return util.ErrPermissionDenied
+	}
 	return alterRepositoryContent(
 		ctx,
 		doer,
@@ -130,6 +141,7 @@ func UpdatePackageIndexIfExists(ctx context.Context, doer, owner *user_model.Use
 		func(t *files_service.TemporaryUploadRepository) error {
 			return addOrUpdatePackageIndex(ctx, t, p)
 		},
+		p,
 	)
 }
 
@@ -144,6 +156,11 @@ type IndexVersionEntry struct {
 }
 
 func BuildPackageIndex(ctx context.Context, p *packages_model.Package) (*bytes.Buffer, error) {
+	if !packages_model.CleanupIndexReadAllowed(ctx, p.OwnerID, packages_model.TypeCargo) {
+		if err := packages_service.RequirePackageFeature(ctx, p); err != nil {
+			return nil, err
+		}
+	}
 	pvs, _, err := packages_model.SearchVersions(ctx, &packages_model.PackageSearchOptions{
 		PackageID: p.ID,
 		Sort:      packages_model.SortVersionAsc,
@@ -207,21 +224,51 @@ func addOrUpdatePackageIndex(ctx context.Context, t *files_service.TemporaryUplo
 	return writeObjectToIndex(ctx, t, BuildPackagePath(p.LowerName), b)
 }
 
-func getOrCreateIndexRepository(ctx context.Context, doer, owner *user_model.User) (*repo_model.Repository, error) {
-	repo, err := repo_model.GetRepositoryByOwnerAndName(ctx, owner.Name, IndexRepositoryName)
+func getIndexRepository(ctx context.Context, ownerID int64) (*repo_model.Repository, error) {
+	var repositories []*repo_model.Repository
+	err := db.GetEngine(ctx).Where(builder.Eq{"owner_id": ownerID, "internal_usage": repo_model.InternalUsageCargoIndex}).Limit(2).Find(&repositories)
 	if err != nil {
-		if errors.Is(err, util.ErrNotExist) {
-			repo, err = repo_service.CreateRepositoryDirectly(ctx, doer, owner, repo_service.CreateRepoOptions{
-				Name: IndexRepositoryName,
-			}, true)
-			if err != nil {
-				return nil, fmt.Errorf("CreateRepository: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("GetRepositoryByOwnerAndName: %w", err)
+		return nil, err
+	}
+	if len(repositories) > 1 {
+		return nil, &authz_service.ExecutionError{Reason: "invalid_cargo_index", Status: 503}
+	}
+	if len(repositories) == 1 {
+		return repositories[0], nil
+	}
+	legacy, exists, err := db.Get[repo_model.Repository](ctx, builder.Eq{"owner_id": ownerID, "lower_name": IndexRepositoryName})
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		if !setting.EnterpriseAuthz.Enabled {
+			return legacy, nil
+		}
+		return nil, &authz_service.ExecutionError{Reason: "untrusted_cargo_index", Status: 503}
+	}
+	return nil, util.ErrNotExist
+}
+
+func getOrCreateIndexRepository(ctx context.Context, doer, owner *user_model.User) (*repo_model.Repository, error) {
+	if err := packages_service.RequireDerivedIndexFeature(ctx, owner.ID, packages_model.TypeCargo); err != nil {
+		return nil, err
+	}
+	repo, err := getIndexRepository(ctx, owner.ID)
+	if err != nil {
+		if !errors.Is(err, util.ErrNotExist) {
+			return nil, fmt.Errorf("getIndexRepository: %w", err)
+		}
+		repo, err = repo_service.CreateRepositoryDirectly(ctx, doer, owner, repo_service.CreateRepoOptions{
+			Name:          IndexRepositoryName,
+			InternalUsage: repo_model.InternalUsageCargoIndex,
+		}, true)
+		if err != nil {
+			return nil, fmt.Errorf("CreateRepository: %w", err)
 		}
 	}
-
+	if err := authz_service.RequireCargoIndexFeature(ctx, repo); err != nil {
+		return nil, err
+	}
 	return repo, nil
 }
 
@@ -258,7 +305,20 @@ func createOrUpdateConfigFile(ctx context.Context, repo *repo_model.Repository, 
 }
 
 // This is a shorter version of CreateOrUpdateRepoFile which allows to perform multiple actions on a git repository
-func alterRepositoryContent(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, commitMessage string, fn func(*files_service.TemporaryUploadRepository) error) error {
+func alterRepositoryContent(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, commitMessage string, fn func(*files_service.TemporaryUploadRepository) error, sourcePackages ...*packages_model.Package) error {
+	current, err := repo_model.GetRepositoryByID(ctx, repo.ID)
+	if err != nil {
+		return err
+	}
+	if current.InternalUsage != repo_model.InternalUsageCargoIndex && setting.EnterpriseAuthz.Enabled {
+		return &authz_service.ExecutionError{Reason: "untrusted_cargo_index", Status: 503}
+	}
+	repo = current
+	if !packages_model.CleanupIndexReadAllowed(ctx, repo.OwnerID, packages_model.TypeCargo) {
+		if err := authz_service.RequireCargoIndexFeature(ctx, repo); err != nil {
+			return err
+		}
+	}
 	t, err := files_service.NewTemporaryUploadRepository(repo)
 	if err != nil {
 		return err
@@ -301,6 +361,9 @@ func alterRepositoryContent(ctx context.Context, doer *user_model.User, repo *re
 		CommitMessage:  commitMessage,
 		DoerUser:       doer,
 	}
+	if err := rememberIndexPackageSources(ctx, repo, sourcePackages); err != nil {
+		return err
+	}
 	commitHash, err := t.CommitTree(ctx, commitOpts)
 	if err != nil {
 		return err
@@ -316,4 +379,53 @@ func writeObjectToIndex(ctx context.Context, t *files_service.TemporaryUploadRep
 	}
 
 	return t.AddObjectToIndex(ctx, "100644", hash, path)
+}
+
+func rememberIndexPackageSources(ctx context.Context, index *repo_model.Repository, packages []*packages_model.Package) error {
+	if index.InternalUsage != repo_model.InternalUsageCargoIndex || len(packages) == 0 {
+		return nil
+	}
+	return db.WithTx(ctx, func(ctx context.Context) error {
+		if err := authz_model.LockScope(ctx, authz_model.Scope{Type: authz_model.ScopeOrg, ID: index.OwnerID}); err != nil {
+			return err
+		}
+		if err := authz_model.LockScope(ctx, authz_model.Scope{Type: authz_model.ScopeRepo, ID: index.ID}); err != nil {
+			return err
+		}
+		current, err := repo_model.GetRepositoryByID(ctx, index.ID)
+		if err != nil {
+			return err
+		}
+		if current.OwnerID != index.OwnerID || current.InternalUsage != repo_model.InternalUsageCargoIndex {
+			return util.ErrPermissionDenied
+		}
+		ids := make([]int64, 0, len(packages))
+		for _, pkg := range packages {
+			ids = append(ids, pkg.ID)
+		}
+		slices.Sort(ids)
+		ids = slices.Compact(ids)
+		var actual []*packages_model.Package
+		if err := db.GetEngine(ctx).Where(builder.Eq{"owner_id": current.OwnerID, "type": packages_model.TypeCargo}).In("id", ids).Find(&actual); err != nil {
+			return err
+		}
+		if len(actual) != len(ids) {
+			return util.ErrNotExist
+		}
+		for _, pkg := range actual {
+			if pkg.RepoID <= 0 {
+				continue
+			}
+			exists, err := db.GetEngine(ctx).Where(builder.Eq{"index_repo_id": current.ID, "source_repo_id": pkg.RepoID}).Exist(new(authz_model.CargoIndexSource))
+			if err != nil {
+				return err
+			}
+			if !exists {
+				if err := db.Insert(ctx, &authz_model.CargoIndexSource{IndexRepoID: current.ID, SourceRepoID: pkg.RepoID}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 }

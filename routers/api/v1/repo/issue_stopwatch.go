@@ -10,6 +10,7 @@ import (
 	"gitea.dev/routers/api/v1/utils"
 	"gitea.dev/services/context"
 	"gitea.dev/services/convert"
+	issue_service "gitea.dev/services/issue"
 	notify_service "gitea.dev/services/notify"
 )
 
@@ -54,7 +55,7 @@ func StartIssueStopwatch(ctx *context.APIContext) {
 		return
 	}
 
-	if ok, err := issues_model.CreateIssueStopwatch(ctx, ctx.Doer, issue); err != nil {
+	if ok, err := issue_service.CreateIssueStopwatch(ctx, ctx.Doer, issue); err != nil {
 		ctx.APIErrorInternal(err)
 		return
 	} else if !ok {
@@ -107,7 +108,7 @@ func StopIssueStopwatch(ctx *context.APIContext) {
 		return
 	}
 
-	if ok, err := issues_model.FinishIssueStopwatch(ctx, ctx.Doer, issue); err != nil {
+	if ok, err := issue_service.FinishIssueStopwatch(ctx, ctx.Doer, issue); err != nil {
 		ctx.APIErrorInternal(err)
 		return
 	} else if !ok {
@@ -159,7 +160,7 @@ func DeleteIssueStopwatch(ctx *context.APIContext) {
 		return
 	}
 
-	if ok, err := issues_model.CancelStopwatch(ctx, ctx.Doer, issue); err != nil {
+	if ok, err := issue_service.CancelStopwatch(ctx, ctx.Doer, issue); err != nil {
 		ctx.APIErrorInternal(err)
 		return
 	} else if !ok {

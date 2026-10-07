@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 
+	authz_model "gitea.dev/models/enterpriseauthz"
 	issues_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
 	repo_model "gitea.dev/models/repo"
@@ -20,13 +21,21 @@ import (
 )
 
 type MergeOptions struct {
-	Force bool
+	Force            bool
+	BypassReason     string
+	BypassCategories []string
 }
 
 type mergeExecution struct {
-	ctx         context.Context
-	admission   *authz_service.Admission
-	nativeGuard func(context.Context, *user_model.User, *repo_model.Repository) error
+	ctx                   context.Context
+	admission             *authz_service.Admission
+	nativeGuard           func(context.Context, *user_model.User, *repo_model.Repository) error
+	gateGuard             func(context.Context, gitrepo.RepositoryFacade, string, string) (*authz_model.MergeGateEvaluation, error)
+	gate                  *authz_model.MergeGateEvaluation
+	gateResultSHA         string
+	gatePushAttempted     bool
+	gatePushSucceeded     bool
+	gateTerminalAttempted bool
 }
 
 func (execution *mergeExecution) finish(err error) {
@@ -52,7 +61,7 @@ func refreshPullMutation(ctx context.Context, pr *issues_model.PullRequest, doer
 		return nil, err
 	}
 	actor.ExtDoerData = doer.ExtDoerData
-	if !actor.IsActive || actor.ProhibitLogin {
+	if (!setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce) && (!actor.IsActive || actor.ProhibitLogin) {
 		return nil, &authz_service.ExecutionError{Reason: "actor_inactive", Status: http.StatusForbidden}
 	}
 	if actor.IsAdmin {
@@ -140,7 +149,19 @@ func checkUpdateExecutionNative(ctx context.Context, pr *issues_model.PullReques
 
 func beginPullGitExecution(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, gitRepo gitrepo.RepositoryFacade, branch, oldCommit, newCommit string, merge, push bool, execution *mergeExecution) (context.Context, authz.HookOperationTicket, func(), error) {
 	noop := func() {}
+	if execution.gateGuard != nil {
+		ctx = authz_service.WithOperation(ctx)
+	}
 	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
+		if execution.gateGuard != nil {
+			var err error
+			execution.ctx = ctx
+			execution.gate, err = execution.gateGuard(ctx, gitRepo, oldCommit, newCommit)
+			if err != nil {
+				return ctx, "", noop, err
+			}
+			execution.gateResultSHA = newCommit
+		}
 		return ctx, "", noop, nil
 	}
 	source, ceiling := authz_service.ExecutionAttributionForActor(ctx, doer, repo.ID)
@@ -154,9 +175,17 @@ func beginPullGitExecution(ctx context.Context, doer *user_model.User, repo *rep
 	}
 	execution.ctx, execution.admission = executionCtx, admission
 	ctx = authz_service.DetachedObservationContext(ctx, executionCtx)
+	if execution.gateGuard != nil {
+		execution.gate, err = execution.gateGuard(ctx, gitRepo, oldCommit, newCommit)
+		if err != nil {
+			return ctx, "", noop, err
+		}
+		execution.gateResultSHA = newCommit
+	}
 	if !push {
 		return executionCtx, "", noop, nil
 	}
+	executionCtx = authz_service.WithMergeGateHookAdmission(executionCtx, execution.gate, branch, newCommit)
 	release := noop
 	if admission != nil {
 		release, err = authz_service.RegisterGitExecution(executionCtx, admission, inputs)
@@ -171,5 +200,9 @@ func beginPullGitExecution(ctx context.Context, doer *user_model.User, repo *rep
 		owned = []authz_service.HookOwnedObservation{{Action: parent, Branch: branch}}
 	}
 	ticket := authz_service.NewHookOperationTicket(executionCtx, authz_service.EvaluateInput{Actor: doer, Repo: repo, Credential: ceiling, Action: parent, ConditionContext: authz.ConditionContext{Source: source, Branch: branch, BranchKnown: true}}, owned)
+	if merge && setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce && ticket == "" {
+		release()
+		return ctx, "", noop, mergeGateExecutionError("merge_gate_evidence_persist_failed", http.StatusServiceUnavailable)
+	}
 	return ctx, ticket, release, nil
 }

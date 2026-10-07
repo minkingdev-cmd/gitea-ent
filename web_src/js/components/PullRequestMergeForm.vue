@@ -2,6 +2,7 @@
 import {computed, onMounted, onUnmounted, shallowRef, watch} from 'vue';
 import SvgIcon from './SvgIcon.vue';
 import {toggleElem} from '../utils/dom.ts';
+import {GET} from '../modules/fetch.ts';
 
 type MergeStyle = {
   name: string,
@@ -13,7 +14,31 @@ type MergeStyle = {
   hideAutoMerge: boolean,
 };
 
+type MergeGatePreview = {
+  mode: string,
+  candidate_decision: string,
+  can_bypass: boolean,
+  can_schedule: boolean,
+  reasons: {code: string, state: string, message_key: string}[],
+};
+
+type MergeGate = {
+  mode: string,
+  preview?: MergeGatePreview,
+  previewStyle: string,
+  previewUrl: string,
+  descriptors: {code: string, message_key: string, text: string, bypass_category: string}[],
+  textTitle: string,
+  textShadow: string,
+  textUnknown: string,
+  textPreview: string,
+  textBypass: string,
+  textReason: string,
+  textCategories: string,
+};
+
 type MergeForm = {
+  mergeGate?: MergeGate,
   allOverridableChecksOk: boolean,
   baseLink: string,
   canMergeNow: boolean,
@@ -50,6 +75,55 @@ const mergeMessageFieldValue = shallowRef<string | undefined>('');
 const deleteBranchAfterMerge = shallowRef(false);
 const autoMergeWhenSucceed = shallowRef(false);
 
+const gatePreview = shallowRef(mergeForm.mergeGate?.preview);
+const bypassRequested = shallowRef(false);
+const bypassReason = shallowRef('');
+const bypassCategories = shallowRef<string[]>([]);
+const manualCommitID = shallowRef('');
+const gateEnforce = mergeForm.mergeGate?.mode === 'enforce';
+let previewRequest: AbortController | undefined;
+const gateBypassAvailable = computed(() => gateEnforce && !autoMergeWhenSucceed.value && gatePreview.value?.candidate_decision === 'deny' && gatePreview.value.can_bypass);
+const bypassChoices = computed(() => mergeForm.mergeGate?.descriptors.filter((entry) => entry.bypass_category && gatePreview.value?.reasons.some((reason) => reason.code === entry.code)) || []);
+const gateSubmitAllowed = computed(() => {
+  if (!gateEnforce) return true;
+  const preview = gatePreview.value;
+  if (!preview) return false;
+  if (autoMergeWhenSucceed.value) return !bypassRequested.value && preview.can_schedule;
+  if (!bypassRequested.value) return preview.candidate_decision === 'allow';
+  return preview.can_bypass && preview.candidate_decision === 'deny' && bypassCategories.value.length > 0 && bypassReason.value.trim().length > 0 && new TextEncoder().encode(bypassReason.value.trim()).length <= 1024;
+});
+
+function reasonText(code: string) {
+  return mergeForm.mergeGate!.descriptors.find((entry) => entry.code === code)?.text || mergeForm.mergeGate!.textUnknown;
+}
+
+async function refreshGatePreview() {
+  if (!mergeForm.mergeGate) return;
+  previewRequest?.abort();
+  const request = new AbortController();
+  previewRequest = request;
+  gatePreview.value = undefined;
+  bypassRequested.value = false;
+  bypassReason.value = '';
+  bypassCategories.value = [];
+  const query = new URLSearchParams({style: mergeStyle.value, commit_id: manualCommitID.value});
+  try {
+    const response = await GET(`${mergeForm.mergeGate.previewUrl}?${query}`, {signal: request.signal});
+    if (!response.ok || request !== previewRequest) return;
+    const preview: MergeGatePreview = await response.json();
+    if (request === previewRequest && ['allow', 'deny', 'error', 'bypass'].includes(preview.candidate_decision)) gatePreview.value = preview;
+  } catch {
+    // 无法取得预览时保持不可确定，不能沿用旧许可。
+  }
+}
+
+watch(manualCommitID, refreshGatePreview);
+watch(autoMergeWhenSucceed, () => {
+  bypassRequested.value = false;
+  bypassReason.value = '';
+  bypassCategories.value = [];
+});
+
 const mergeStyle = shallowRef('');
 const mergeStyleDetail = shallowRef<MergeStyle>({name: '', allowed: false, textDoMerge: '', hideAutoMerge: false});
 
@@ -72,10 +146,12 @@ const mergeSelectStyleClass = computed(() => {
 });
 
 const forceMerge = computed(() => {
+  if (gateEnforce) return !autoMergeWhenSucceed.value && bypassRequested.value;
   return mergeForm.canMergeNow && !mergeForm.allOverridableChecksOk;
 });
 
-watch(mergeStyle, (val) => {
+watch(mergeStyle, (val, old) => {
+  if (mergeForm.mergeGate && (old || val !== mergeForm.mergeGate.previewStyle)) void refreshGatePreview();
   mergeStyleDetail.value = mergeForm.mergeStyles.find((e) => e.name === val)!;
   for (const elem of document.querySelectorAll('[data-pull-merge-style]')) {
     toggleElem(elem, elem.getAttribute('data-pull-merge-style') === val);
@@ -94,6 +170,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('mouseup', hideMergeStyleMenu);
+  previewRequest?.abort();
 });
 
 function hideMergeStyleMenu() {
@@ -110,7 +187,7 @@ function toggleActionForm(show: boolean) {
 
 function switchMergeStyle(name: string, autoMerge = false) {
   mergeStyle.value = name;
-  autoMergeWhenSucceed.value = autoMerge;
+  autoMergeWhenSucceed.value = gateEnforce && name === mergeStyleManuallyMerged ? false : autoMerge;
 }
 
 function clearMergeMessage() {
@@ -129,7 +206,16 @@ function clearMergeMessage() {
       -H "accept: application/json" -H "authorization: Basic $base64_auth" -H "Content-Type: application/json" \
       -d '{"context": "test/context", "description": "description", "state": "${state}", "target_url": "http://localhost"}'
   -->
-  <div>
+  <div @keydown.esc="showMergeStyleMenu = false; toggleActionForm(false)">
+    <section v-if="mergeForm.mergeGate" class="ui message" :class="gatePreview?.candidate_decision === 'allow' ? 'info' : 'warning'" aria-live="polite">
+      <strong>{{ mergeForm.mergeGate.textTitle }}</strong>
+      <p v-if="mergeForm.mergeGate.mode === 'shadow'">{{ mergeForm.mergeGate.textShadow }}</p>
+      <p v-if="!gatePreview || gatePreview.candidate_decision === 'error'">{{ mergeForm.mergeGate.textUnknown }}</p>
+      <ul v-if="gatePreview?.reasons.length">
+        <li v-for="reason in gatePreview.reasons" :key="`${reason.code}:${reason.state}:${reason.message_key}`">{{ reasonText(reason.code) }}</li>
+      </ul>
+      <p>{{ mergeForm.mergeGate.textPreview }}</p>
+    </section>
     <!-- eslint-disable-next-line vue/no-v-html -->
     <div v-if="mergeForm.hasPendingPullRequestMerge" v-html="mergeForm.hasPendingPullRequestMergeTip" class="ui info message"/>
 
@@ -154,18 +240,35 @@ function clearMergeMessage() {
       </template>
 
       <div class="field" v-if="mergeStyle === mergeStyleManuallyMerged">
-        <input type="text" name="merge_commit_id" :placeholder="mergeForm.textMergeCommitId">
+        <input type="text" name="merge_commit_id" :placeholder="mergeForm.textMergeCommitId" v-model="manualCommitID">
       </div>
 
+      <fieldset v-if="gateEnforce && bypassRequested && !autoMergeWhenSucceed" class="tw-mb-4">
+        <legend>{{ mergeForm.mergeGate!.textCategories }}</legend>
+        <div class="field" v-for="entry in bypassChoices" :key="entry.code">
+          <label class="flex-text-block">
+            <input type="checkbox" name="bypass_categories" :value="entry.bypass_category" v-model="bypassCategories">
+            {{ entry.text }}
+          </label>
+        </div>
+        <div class="field">
+          <label for="merge-gate-bypass-reason">{{ mergeForm.mergeGate!.textReason }}</label>
+          <textarea id="merge-gate-bypass-reason" name="bypass_reason" v-model="bypassReason" required maxlength="1024" rows="3"/>
+        </div>
+      </fieldset>
       <div class="flex-text-block tw-gap-3">
-        <button class="ui button" :class="mergeButtonStyleClass" type="submit" name="do" :value="mergeStyle">
+        <button class="ui button" :class="mergeButtonStyleClass" type="submit" :disabled="!gateSubmitAllowed" name="do" :value="mergeStyle">
           {{ mergeStyleDetail.textDoMerge }}
           <template v-if="autoMergeWhenSucceed">
             {{ mergeForm.textAutoMergeButtonWhenSucceed }}
           </template>
         </button>
 
-        <button class="ui button merge-cancel" type="button" @click="toggleActionForm(false)">
+        <button v-if="gateBypassAvailable && !bypassRequested" data-merge-gate-bypass type="button" class="ui red button" @click="bypassRequested = true">
+          {{ mergeForm.mergeGate!.textBypass }}
+        </button>
+
+        <button class="ui button merge-cancel" type="button" @click="bypassRequested = false; toggleActionForm(false)">
           {{ mergeForm.textCancel }}
         </button>
 
@@ -176,10 +279,10 @@ function clearMergeMessage() {
       </div>
     </form>
 
-    <div v-if="!showActionForm" class="tw-flex">
+    <div v-if="!showActionForm" class="flex-text-block tw-gap-3">
       <!-- the merge button -->
       <div class="ui buttons merge-button" :class="mergeSelectStyleClass" @click="toggleActionForm(true)">
-        <button class="ui button">
+        <button type="button" class="ui button" :disabled="!gateSubmitAllowed && mergeStyle !== mergeStyleManuallyMerged">
           <svg-icon name="octicon-git-merge"/>
           <span class="button-text">
             {{ mergeStyleDetail.textDoMerge }}
@@ -188,36 +291,41 @@ function clearMergeMessage() {
             </template>
           </span>
         </button>
-        <div class="ui dropdown icon button" @click.stop="showMergeStyleMenu = !showMergeStyleMenu">
-          <svg-icon name="octicon-triangle-down" :size="14"/>
+        <div class="ui dropdown icon button">
+          <button type="button" class="btn" :aria-label="mergeStyleDetail.textDoMerge" :aria-expanded="showMergeStyleMenu" @click.stop="showMergeStyleMenu = !showMergeStyleMenu">
+            <svg-icon name="octicon-triangle-down" :size="14"/>
+          </button>
           <div class="menu" :class="{'show':showMergeStyleMenu}">
             <template v-for="msd in mergeForm.mergeStyles">
               <!-- if can merge now, show one action "merge now", and an action "auto merge when succeed" -->
-              <div class="item" v-if="msd.allowed && mergeForm.canMergeNow" :key="msd.name" @click.stop="switchMergeStyle(msd.name)">
-                <div class="action-text">
+              <div class="item" v-if="msd.allowed && mergeForm.canMergeNow" :key="msd.name">
+                <button type="button" class="btn action-text" @click.stop="switchMergeStyle(msd.name)">
                   {{ msd.textDoMerge }}
-                </div>
-                <div v-if="!msd.hideAutoMerge" class="auto-merge-small" @click.stop="switchMergeStyle(msd.name, true)">
+                </button>
+                <button type="button" v-if="!msd.hideAutoMerge" class="btn auto-merge-small" :aria-label="mergeForm.textAutoMergeWhenSucceed" @click.stop="switchMergeStyle(msd.name, true)">
                   <svg-icon name="octicon-clock" :size="14"/>
                   <div class="auto-merge-tip">
                     {{ mergeForm.textAutoMergeWhenSucceed }}
                   </div>
-                </div>
+                </button>
               </div>
 
               <!-- if can NOT merge now, only show one action "auto merge when succeed" -->
-              <div class="item" v-if="msd.allowed && !mergeForm.canMergeNow && !msd.hideAutoMerge" :key="msd.name" @click.stop="switchMergeStyle(msd.name, true)">
+              <button type="button" class="btn item" v-if="msd.allowed && !mergeForm.canMergeNow && !msd.hideAutoMerge" :key="msd.name" @click.stop="switchMergeStyle(msd.name, true)">
                 <div class="action-text">
                   {{ msd.textDoMerge }} {{ mergeForm.textAutoMergeButtonWhenSucceed }}
                 </div>
-              </div>
+              </button>
             </template>
           </div>
         </div>
       </div>
 
+      <button v-if="gateBypassAvailable" data-merge-gate-bypass type="button" class="ui red button" @click="toggleActionForm(true); bypassRequested = true">
+        {{ mergeForm.mergeGate!.textBypass }}
+      </button>
       <!-- the cancel auto merge button -->
-      <form v-if="mergeForm.hasPendingPullRequestMerge" :action="mergeForm.baseLink+'/cancel_auto_merge'" method="post" class="tw-ml-4">
+      <form v-if="mergeForm.hasPendingPullRequestMerge" :action="mergeForm.baseLink+'/cancel_auto_merge'" method="post" class="form-fetch-action">
         <button class="ui button">
           {{ mergeForm.textAutoMergeCancelSchedule }}
         </button>

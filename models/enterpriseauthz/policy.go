@@ -134,6 +134,9 @@ func DeleteScope(ctx context.Context, scope Scope) error {
 				return err
 			}
 		}
+		if _, err := db.GetEngine(ctx).Where(cond).And("deleted=?", false).Cols("enabled", "deleted", "revision").SetExpr("revision", "revision+1").Update(&ProtectedPathRule{Deleted: true, Enabled: false}); err != nil {
+			return err
+		}
 		if _, err := db.GetEngine(ctx).Where(cond).Delete(new(FeatureGrant)); err != nil {
 			return err
 		}

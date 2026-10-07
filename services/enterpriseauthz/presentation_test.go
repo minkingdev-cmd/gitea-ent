@@ -86,7 +86,9 @@ func TestPresentationDecisionCatalogVersions(t *testing.T) {
 	}{
 		{"v1", `{"catalog_version":1,"native_actions":["repo.clone"]}`, authz.Clone, true},
 		{"v2", `{"catalog_version":2,"native_actions":["repo.manage_access"]}`, authz.Action("repo.manage_access"), true},
-		{"future", `{"catalog_version":3,"native_actions":["repo.clone"]}`, authz.Clone, false},
+		{"v3", `{"catalog_version":3,"native_actions":["repo.bypass_merge_gate"]}`, authz.BypassMergeGate, true},
+		{"v2 gate action", `{"catalog_version":2,"native_actions":["repo.bypass_merge_gate"]}`, authz.Clone, false},
+		{"future", `{"catalog_version":4,"native_actions":["repo.clone"]}`, authz.Clone, false},
 		{"missing", `{"native_actions":["repo.clone"]}`, authz.Clone, false},
 		{"v1 new action", `{"catalog_version":1,"native_actions":["repo.manage_access"]}`, authz.Clone, false},
 		{"v1 new record action", `{"catalog_version":1,"native_actions":[]}`, authz.Action("repo.manage_access"), false},

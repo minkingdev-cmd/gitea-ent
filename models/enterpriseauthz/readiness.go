@@ -102,7 +102,10 @@ func CheckReady(ctx context.Context) error {
 	if err != nil && !errors.Is(err, errSeedIncomplete) {
 		return errors.New("authz_preflight_failed")
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return CheckMergeGateReady(ctx)
 }
 
 func CheckCargoIndexPurposes(ctx context.Context) error {

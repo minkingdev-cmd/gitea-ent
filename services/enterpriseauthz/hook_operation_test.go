@@ -5,6 +5,7 @@ package enterpriseauthz
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	authz_model "gitea.dev/models/enterpriseauthz"
 	"gitea.dev/models/unittest"
 	authz "gitea.dev/modules/enterpriseauthz"
+	"gitea.dev/modules/git"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/test"
 	"gitea.dev/services/audit"
@@ -209,4 +211,51 @@ func TestRepoPushObservationDoesNotMergeDifferentRefs(t *testing.T) {
 		require.Equal(t, "api", record.RequestSource)
 		require.Equal(t, "deny", record.CandidateDecision)
 	}
+}
+
+func TestMergeGateHookRejectsUnadmittedMerge(t *testing.T) {
+	enableMergeGate(t)
+	defer test.MockVariableValue(&setting.InternalToken, "test-only-server-internal-token")()
+	defer test.MockVariableValue(&setting.EnterpriseMergeGate.Enforce, true)()
+	input := observationInput(t)
+	input.Action = authz.MergePullRequest
+	input.ConditionContext = authz.ConditionContext{Source: "api", Branch: "main", BranchKnown: true}
+	ticket := NewHookOperationTicket(WithOperation(t.Context()), input, []HookOwnedObservation{{Action: authz.MergePullRequest, Branch: "main"}})
+	require.Empty(t, string(ticket))
+}
+
+func TestMergeGateHookBindsStartedEvidenceAndExactRefs(t *testing.T) {
+	enableMergeGate(t)
+	defer test.MockVariableValue(&setting.InternalToken, "test-only-server-internal-token")()
+	defer test.MockVariableValue(&setting.EnterpriseMergeGate.Enforce, true)()
+	input := observationInput(t)
+	input.Action = authz.MergePullRequest
+	input.ConditionContext = authz.ConditionContext{Source: "api", Branch: "main", BranchKnown: true}
+	ctx := WithOperation(t.Context())
+	oldSHA, newSHA := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	snapshot := `{"snapshot_version":1,"result_sha":"` + newSHA + `"}`
+	record := &authz_model.MergeGateEvaluation{OperationID: MergeGateOperationID(ctx), Attempt: 1, Phase: "admission", RepoID: input.Repo.ID, PullID: 1, IssueID: 1, ActorID: input.Actor.ID, Source: "api", Mode: "enforce", HeadSHA: strings.Repeat("c", 40), BaseSHA: oldSHA, CandidateDecision: "allow", AdmissionDecision: "allow", ReasonsJSON: "[]", SnapshotJSON: snapshot, SnapshotHash: fmt.Sprintf("%x", sha256.Sum256([]byte(snapshot))), SnapshotVersion: 1, ExecutionState: "not_started"}
+	require.NoError(t, db.WithIndependentTx(ctx, func(tx context.Context) error { return PersistMergeGateEvaluationTx(tx, record, true) }))
+	bound := WithMergeGateHookAdmission(ctx, record, "main", newSHA)
+	ticket := NewHookOperationTicket(bound, input, []HookOwnedObservation{{Action: authz.MergePullRequest, Branch: "main"}})
+	require.NotEmpty(t, string(ticket))
+	restored, operation := RestoreHookOperation(t.Context(), ticket, input.Repo.ID, input.Actor.ID, "")
+	require.NotNil(t, operation)
+	require.NoError(t, ValidateMergeGateHook(restored, operation, git.RefNameFromBranch("main"), oldSHA, newSHA))
+	otherRequest := WithOperation(t.Context())
+	_, crossed := RestoreHookOperation(otherRequest, ticket, input.Repo.ID, input.Actor.ID, "")
+	require.Nil(t, crossed)
+	unbound := WithMergeGateHookAdmission(otherRequest, record, "main", newSHA)
+	require.Empty(t, string(NewHookOperationTicket(unbound, input, []HookOwnedObservation{{Action: authz.MergePullRequest, Branch: "main"}})))
+	for _, tc := range []struct{ branch, old, next string }{
+		{"other", oldSHA, newSHA}, {"main", newSHA, newSHA}, {"main", oldSHA, oldSHA},
+	} {
+		require.Error(t, ValidateMergeGateHook(restored, operation, git.RefNameFromBranch(tc.branch), tc.old, tc.next))
+	}
+	require.NoError(t, FinishMergeGateEvaluation(ctx, record, "succeeded", newSHA))
+	require.Error(t, ValidateMergeGateHook(restored, operation, git.RefNameFromBranch("main"), oldSHA, newSHA))
+	now := time.Now()
+	t.Cleanup(test.MockVariableValue(&hookOperationNow, func() time.Time { return now.Add(25 * time.Hour) }))
+	_, expired := RestoreHookOperation(t.Context(), ticket, input.Repo.ID, input.Actor.ID, "")
+	require.Nil(t, expired)
 }

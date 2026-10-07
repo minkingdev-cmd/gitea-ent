@@ -62,6 +62,12 @@ func IsActionFilter(action Action) bool {
 }
 
 var (
+	EnterpriseMergeGateEvaluation   = define("enterprise:merge-gate:evaluation", "Evaluated enterprise merge gate: {candidate_decision}.")
+	EnterpriseMergeGateExecution    = define("enterprise:merge-gate:execution", "Enterprise merge gate execution: {execution_state}.")
+	EnterpriseMergeGateMarker       = define("enterprise:merge-gate:marker", "Committed enterprise merge gate marker for pull request {pull_id}.")
+	EnterpriseProtectedPathCreate   = define("enterprise:merge-gate:rule:create", "Created protected path rule {rule_id}.")
+	EnterpriseProtectedPathUpdate   = define("enterprise:merge-gate:rule:update", "Updated protected path rule {rule_id}.")
+	EnterpriseProtectedPathDelete   = define("enterprise:merge-gate:rule:delete", "Deleted protected path rule {rule_id}.")
 	EnterpriseFeatureGrantUpdate    = define("enterprise:feature:grant:update", "Updated enterprise feature {feature_key} grant.")
 	EnterpriseFeatureGrantReset     = define("enterprise:feature:grant:reset", "Reset enterprise feature {feature_key} grant.")
 	EnterpriseCargoIndexAdopt       = define("enterprise:feature:cargo-index:adopt", "Adopted Cargo index repository purpose.")

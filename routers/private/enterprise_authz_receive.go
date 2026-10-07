@@ -74,9 +74,23 @@ func admitReceiveBranches(operationCtx context.Context, ctx *gitea_context.Priva
 	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce || opts.IsWiki {
 		return true
 	}
+	for i, ref := range opts.RefFullNames {
+		if err := authz_service.ValidateMergeGateHook(operationCtx, operation, ref, opts.OldCommitIDs[i], opts.NewCommitIDs[i]); err != nil {
+			ctx.PrivateUserErrorf(http.StatusServiceUnavailable, "merge_gate_hook_unavailable")
+			return false
+		}
+	}
 	inputs := receiveExecutionInputs(ctx, operation, opts)
 	if len(inputs) == 0 || authz_service.ReuseActiveGitExecution(operationCtx, operation, inputs) {
 		return true
+	}
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce && operation != nil {
+		for _, ref := range opts.RefFullNames {
+			if ref.IsBranch() && operation.Owns(authz.MergePullRequest, ref.BranchName()) {
+				ctx.PrivateUserErrorf(http.StatusServiceUnavailable, "merge_gate_hook_unadmitted")
+				return false
+			}
+		}
 	}
 	executionCtx, admission, err := authz_service.BeginGitExecution(operationCtx, inputs)
 	if err == nil {

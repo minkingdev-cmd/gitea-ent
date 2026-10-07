@@ -4,6 +4,7 @@
 package enterpriseauthz
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,8 +15,8 @@ import (
 
 func TestActionCatalog(t *testing.T) {
 	catalog := Catalog()
-	require.Len(t, catalog, 20)
-	require.Equal(t, 2, CatalogVersion)
+	require.Len(t, catalog, 22)
+	require.Equal(t, 3, CatalogVersion)
 	seen := map[Action]bool{}
 	for _, entry := range catalog {
 		require.False(t, seen[entry.Key])
@@ -43,7 +44,7 @@ func TestActionCatalog(t *testing.T) {
 	require.Equal(t, []string{"code", "pull_requests"}, pr.Units)
 	roles := BuiltinRoles()
 	require.Len(t, roles, 8)
-	require.Len(t, roles["owner"], 20)
+	require.Len(t, roles["owner"], 22)
 	require.Equal(t, roles["owner"], roles["platform-admin"])
 	require.NotContains(t, roles["reviewer"], PushBranch)
 	require.Contains(t, roles["security-maintainer"], ManageCodeowners)
@@ -127,7 +128,7 @@ func TestRequestSourceCatalog(t *testing.T) {
 }
 
 func TestEnforceCatalogFixedSet(t *testing.T) {
-	want := []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete", "repo.manage_feature_grant"}
+	want := []string{"repo.merge_pull_request", "repo.push_protected_branch", "repo.manage_branch_protection", "repo.manage_codeowners", "repo.manage_webhook", "repo.manage_ci", "repo.manage_secret", "repo.manage_access", "repo.transfer", "repo.archive", "repo.delete", "repo.manage_feature_grant", "repo.manage_sensitive_paths", "repo.bypass_merge_gate"}
 	var entries []struct {
 		Key              string `json:"key"`
 		EnforceSupported bool   `json:"enforce_supported"`
@@ -142,4 +143,18 @@ func TestEnforceCatalogFixedSet(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, want, actual)
+}
+
+func TestMergeGateActionCatalogHistory(t *testing.T) {
+	for _, action := range []Action{ManageSensitivePaths, BypassMergeGate} {
+		require.False(t, ActionInCatalog(1, action))
+		require.False(t, ActionInCatalog(2, action))
+		require.True(t, ActionInCatalog(3, action))
+		for key, actions := range BuiltinRoles() {
+			require.Equal(t, key == "owner" || key == "platform-admin", slices.Contains(actions, action))
+		}
+	}
+	require.True(t, ActionInCatalog(2, ManageAccess))
+	require.False(t, ActionInCatalog(1, ManageAccess))
+	require.False(t, ActionInCatalog(4, MergePullRequest))
 }

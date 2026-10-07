@@ -6,6 +6,7 @@ package common
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	repo_model "gitea.dev/models/repo"
 	user_model "gitea.dev/models/user"
@@ -75,7 +76,7 @@ func WriteExecutionError(base *context.Base, err error) bool {
 		return false
 	}
 	status := rejection.Status
-	if status != http.StatusForbidden && status != http.StatusServiceUnavailable {
+	if status != http.StatusForbidden && status != http.StatusServiceUnavailable && !(strings.HasPrefix(rejection.Reason, "merge_gate_") && (status == http.StatusConflict || status == http.StatusUnprocessableEntity)) {
 		status = http.StatusServiceUnavailable
 	}
 	base.JSON(status, map[string]string{"message": rejection.Reason})

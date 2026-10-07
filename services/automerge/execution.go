@@ -22,9 +22,10 @@ import (
 
 type ScheduleOptions struct {
 	ReplaceExisting bool
+	MergeOptions    pull_service.MergeOptions
 }
 
-func autoMergeBranchCleanupContext(ctx context.Context, actor *user_model.User, headRepoID int64, headBranch string) (context.Context, *authz_service.Observation, error) {
+func autoMergeBranchCleanupContext(ctx context.Context, actor *user_model.User, headRepoID int64, headBranch string, originals ...authz_service.CredentialCeiling) (context.Context, *authz_service.Observation, error) {
 	if !setting.EnterpriseAuthz.Enabled || !setting.EnterpriseAuthz.Enforce {
 		return ctx, nil, nil
 	}
@@ -36,9 +37,22 @@ func autoMergeBranchCleanupContext(ctx context.Context, actor *user_model.User, 
 	if err != nil {
 		return ctx, nil, err
 	}
+	ceiling := authz_service.CredentialCeiling{Read: true, Write: true}
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+		if len(originals) == 0 {
+			return ctx, nil, &authz_service.ExecutionError{Reason: "merge_gate_permission_denied", Status: http.StatusForbidden}
+		}
+		ceiling, err = authz_service.RefreshMergeGateCredential(ctx, actor.ID, repo, originals[0])
+		if err != nil {
+			return ctx, nil, err
+		}
+		if !ceiling.Read || !ceiling.Write {
+			return ctx, nil, &authz_service.ExecutionError{Reason: "merge_gate_permission_denied", Status: http.StatusForbidden}
+		}
+	}
 	ctx, observation := authz_service.WithObservationContext(ctx, authz_service.EvaluateInput{
 		Actor: actor, Repo: repo, Permission: &permission, Action: authz.PushBranch,
-		Credential:       authz_service.CredentialCeiling{Read: true, Write: true},
+		Credential:       ceiling,
 		ConditionContext: authz.ConditionContext{Source: "auto_merge", Branch: headBranch, BranchKnown: true},
 	})
 	return ctx, observation, nil

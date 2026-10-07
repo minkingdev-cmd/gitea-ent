@@ -416,14 +416,16 @@ type MergePullRequestForm struct {
 	middleware.FormDefaultValidator
 	// required: true
 	// enum: ["merge","rebase","rebase-merge","squash","fast-forward-only","manually-merged"]
-	Do                     string `json:"do" binding:"Required;In(merge,rebase,rebase-merge,squash,fast-forward-only,manually-merged)"`
-	MergeTitleField        string `json:"merge_title_field,omitempty"`
-	MergeMessageField      string `json:"merge_message_field,omitempty"`
-	MergeCommitID          string `json:"merge_commit_id,omitempty"` // only used for manually-merged
-	HeadCommitID           string `json:"head_commit_id,omitempty"`
-	ForceMerge             bool   `json:"force_merge,omitempty"`
-	MergeWhenChecksSucceed bool   `json:"merge_when_checks_succeed,omitempty"`
-	DeleteBranchAfterMerge *bool  `json:"delete_branch_after_merge,omitempty"`
+	Do                     string   `json:"do" binding:"Required;In(merge,rebase,rebase-merge,squash,fast-forward-only,manually-merged)"`
+	MergeTitleField        string   `json:"merge_title_field,omitempty"`
+	MergeMessageField      string   `json:"merge_message_field,omitempty"`
+	MergeCommitID          string   `json:"merge_commit_id,omitempty"` // only used for manually-merged
+	HeadCommitID           string   `json:"head_commit_id,omitempty"`
+	ForceMerge             bool     `json:"force_merge,omitempty"`
+	BypassReason           string   `json:"bypass_reason,omitempty" form:"bypass_reason"`
+	BypassCategories       []string `json:"bypass_categories,omitempty" form:"bypass_categories"`
+	MergeWhenChecksSucceed bool     `json:"merge_when_checks_succeed,omitempty"`
+	DeleteBranchAfterMerge *bool    `json:"delete_branch_after_merge,omitempty"`
 }
 
 func (f *MergePullRequestForm) UnmarshalJSON(b []byte) error {
@@ -439,10 +441,12 @@ func (f *MergePullRequestForm) UnmarshalJSON(b []byte) error {
 		MergeCommitID1     string `json:"merge_commit_id"`
 		MergeCommitID2     string `json:"MergeCommitID"`
 
-		HeadCommitID           string `json:"head_commit_id"`
-		ForceMerge             bool   `json:"force_merge"`
-		MergeWhenChecksSucceed bool   `json:"merge_when_checks_succeed"`
-		DeleteBranchAfterMerge *bool  `json:"delete_branch_after_merge"`
+		HeadCommitID           string   `json:"head_commit_id"`
+		ForceMerge             bool     `json:"force_merge"`
+		BypassReason           string   `json:"bypass_reason"`
+		BypassCategories       []string `json:"bypass_categories"`
+		MergeWhenChecksSucceed bool     `json:"merge_when_checks_succeed"`
+		DeleteBranchAfterMerge *bool    `json:"delete_branch_after_merge"`
 	}
 	var a aux
 	if err := json.Unmarshal(b, &a); err != nil {
@@ -454,6 +458,7 @@ func (f *MergePullRequestForm) UnmarshalJSON(b []byte) error {
 	f.MergeCommitID = util.IfZero(a.MergeCommitID1, a.MergeCommitID2)
 	f.HeadCommitID = a.HeadCommitID
 	f.ForceMerge = a.ForceMerge
+	f.BypassReason, f.BypassCategories = a.BypassReason, a.BypassCategories
 	f.MergeWhenChecksSucceed = a.MergeWhenChecksSucceed
 	f.DeleteBranchAfterMerge = a.DeleteBranchAfterMerge
 	return nil

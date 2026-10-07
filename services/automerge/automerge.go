@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
@@ -55,6 +56,12 @@ func Init(ctx context.Context) error {
 }
 
 func populateRecentAutoMergeItems(ctx context.Context) {
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+		if err := wakeMergeGateScope(ctx, authz_model.Scope{Type: authz_model.ScopeSystem}); err != nil {
+			log.Error("AutoMerge: startup policy wake failed: %v", err)
+		}
+		return
+	}
 	// in case Gitea's restart aborted some scheduled auto-merge pull requests, try to re-start the recent ones
 	pullIDs, err := pull_model.GetScheduledMergePullIDsSince(ctx, timeutil.TimeStampNow().AddDuration(-24*time.Hour))
 	if err != nil {
@@ -77,6 +84,9 @@ func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_
 		return false, errors.New("invalid auto merge target")
 	}
 	release := func() {}
+	if setting.EnterpriseMergeGate.Enabled {
+		ctx = authz_service.WithOperation(ctx)
+	}
 	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce {
 		release, err = globallock.Lock(ctx, fmt.Sprintf("pull_working_%d", pull.ID))
 		if err != nil {
@@ -86,6 +96,15 @@ func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_
 	defer release()
 	ctx, admission, doer, err := beginAutoMergeSchedule(ctx, doer, pull, style, message, deleteBranchAfterMerge)
 	if err != nil {
+		if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce && doer != nil && doer.ID > 0 && pull != nil && pull.ID > 0 {
+			mergeOptions := pull_service.MergeOptions{}
+			if len(options) > 0 {
+				mergeOptions = options[0].MergeOptions
+			}
+			if evidenceErr := pull_service.PersistDeniedMergeGateSchedule(ctx, doer, pull, style, mergeOptions); evidenceErr != nil {
+				err = evidenceErr
+			}
+		}
 		return false, err
 	}
 	defer func() {
@@ -97,6 +116,9 @@ func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_
 	}()
 	err = db.WithTx(ctx, func(ctx context.Context) error {
 		if len(options) > 0 && options[0].ReplaceExisting {
+			if err := authz_service.CancelMergeGateSchedulesTx(ctx, pull.ID); err != nil {
+				return err
+			}
 			if err := pull_model.DeleteScheduledAutoMerge(ctx, pull.ID); err != nil {
 				return err
 			}
@@ -104,9 +126,43 @@ func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_
 		if err := pull_model.ScheduleAutoMerge(ctx, doer, pull.ID, style, message, deleteBranchAfterMerge); err != nil {
 			return err
 		}
+		mergeOptions := pull_service.MergeOptions{}
+		if len(options) > 0 {
+			mergeOptions = options[0].MergeOptions
+		}
+		if setting.EnterpriseMergeGate.Enabled {
+			_, queue, err := pull_model.GetScheduledMergeByPullID(ctx, pull.ID)
+			if err != nil {
+				return err
+			}
+			if queue == nil {
+				return errors.New("merge_gate_queue_unattributed")
+			}
+			save := func(tx context.Context) error {
+				return pull_service.PersistMergeGateScheduleTx(tx, doer, pull, queue.ID, style, mergeOptions)
+			}
+			if setting.EnterpriseMergeGate.Enforce {
+				if err := save(ctx); err != nil {
+					return err
+				}
+			} else if err := db.WithSavepoint(ctx, save); err != nil {
+				log.Warn("Enterprise merge gate shadow queue evidence unavailable")
+			}
+		}
 		_, err = issues_model.CreateAutoMergeComment(ctx, issues_model.CommentTypePRScheduledToAutoMerge, pull, doer)
 		return err
 	})
+	if err != nil && setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+		if rejection, ok := errors.AsType[*authz_service.ExecutionError](err); ok && strings.HasPrefix(rejection.Reason, "merge_gate_") {
+			mergeOptions := pull_service.MergeOptions{}
+			if len(options) > 0 {
+				mergeOptions = options[0].MergeOptions
+			}
+			if evidenceErr := pull_service.PersistDeniedMergeGateSchedule(ctx, doer, pull, style, mergeOptions); evidenceErr != nil {
+				err = evidenceErr
+			}
+		}
+	}
 	// Old code made "scheduled" to be true after "ScheduleAutoMerge", but it's not right:
 	// If the transaction rolls back, then the pull request is not scheduled to auto merge.
 	// So we should only set "scheduled" to true if there is no error.
@@ -122,6 +178,9 @@ func ScheduleAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_
 // RemoveScheduledAutoMerge cancels a previously scheduled pull request
 func RemoveScheduledAutoMerge(ctx context.Context, doer *user_model.User, pull *issues_model.PullRequest) error {
 	return db.WithTx(ctx, func(ctx context.Context) error {
+		if err := authz_service.CancelMergeGateSchedulesTx(ctx, pull.ID); err != nil {
+			return err
+		}
 		if err := pull_model.DeleteScheduledAutoMerge(ctx, pull.ID); err != nil {
 			return err
 		}
@@ -138,6 +197,16 @@ func handleAutoMergeItem(item automergequeue.AutoMergeItem) {
 	defer finished()
 
 	fields := strings.Split(string(item), ":")
+	if len(fields) == 4 && fields[0] == "gate-scope" {
+		id, err := strconv.ParseInt(fields[2], 10, 64)
+		scope := authz_model.Scope{Type: authz_model.ScopeType(fields[1]), ID: id}
+		if err == nil && scope.Valid() && setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+			if err := wakeMergeGateScope(ctx, scope); err != nil {
+				log.Error("AutoMerge: policy wake failed: %v", err)
+			}
+		}
+		return
+	}
 	if len(fields) != 3 || fields[0] != "pr" {
 		return
 	}
@@ -171,7 +240,7 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		return nil
 	}
 
-	if !pr.IsStatusMergeable() || pr.IsWorkInProgress(ctx) {
+	if (!setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce) && (!pr.IsStatusMergeable() || pr.IsWorkInProgress(ctx)) {
 		// quick check: if the PR can't be merged, just skip
 		return errors.Join(errSkipAutoMerge, errors.New("pull request is not mergeable or is work in progress"))
 	}
@@ -229,13 +298,15 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		return errors.Join(errSkipAutoMerge, errors.New("unsupported pull request git flow type"))
 	}
 
-	// Check if all checks succeeded
-	pass, err := pull_service.IsPullCommitStatusPass(ctx, pr)
-	if err != nil {
-		return fmt.Errorf("failed to check pull commit status: %w", err)
-	}
-	if !pass {
-		return errors.Join(errSkipAutoMerge, errors.New("unsuccessful status checks"))
+	if !setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce {
+		// Check if all checks succeeded
+		pass, err := pull_service.IsPullCommitStatusPass(ctx, pr)
+		if err != nil {
+			return fmt.Errorf("failed to check pull commit status: %w", err)
+		}
+		if !pass {
+			return errors.Join(errSkipAutoMerge, errors.New("unsuccessful status checks"))
+		}
 	}
 
 	// Merge if all checks succeeded
@@ -260,18 +331,32 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		return fmt.Errorf("failed to get doer repo permission: %w", err)
 	}
 
+	ceiling := authz_service.CredentialCeiling{Read: true, Write: true}
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+		ctx = authz_service.WithMergeGateAutoQueue(ctx, scheduledPRM.ID)
+		ceiling, err = authz_service.MergeGateAutoCredential(ctx, scheduledPRM.ID, pr.ID, doer.ID, pr.BaseRepo)
+		if err != nil {
+			ceiling = authz_service.CredentialCeiling{} // 写前准入重新读取并持久化故障。
+		}
+	}
 	ctx, _ = authz_service.WithObservationContext(ctx, authz_service.EvaluateInput{
 		Actor: doer, Repo: pr.BaseRepo, Permission: &perm,
-		Credential: authz_service.CredentialCeiling{Read: true, Write: true},
+		Credential: ceiling,
 		Action:     authz.MergePullRequest, ConditionContext: authz.ConditionContext{Source: "auto_merge", Branch: pr.BaseBranch, BranchKnown: true},
 	})
-	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && (!doer.IsActive || doer.ProhibitLogin) {
+	if setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce && (!setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce) && (!doer.IsActive || doer.ProhibitLogin) {
 		authz_service.FinishOperationObservation(ctx, doer.ID, pr.BaseRepoID, authz.MergePullRequest, authz_service.NativeDenied, authz_service.StageAuthorization)
 		return errors.Join(errSkipAutoMerge, errors.New("scheduled actor is no longer active"))
 	}
 
-	if err := pull_service.CheckPullMergeable(ctx, doer, &perm, pr, pull_service.MergeCheckTypeGeneral, scheduledPRM.MergeStyle, false); err != nil {
-		return errors.Join(errSkipAutoMerge, errors.New("pull request is not mergeable"))
+	if !setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce {
+		if err := pull_service.CheckPullMergeable(ctx, doer, &perm, pr, pull_service.MergeCheckTypeGeneral, scheduledPRM.MergeStyle, false); err != nil {
+			return errors.Join(errSkipAutoMerge, errors.New("pull request is not mergeable"))
+		}
+	}
+
+	if setting.EnterpriseMergeGate.Enabled {
+		ctx = authz_service.WithMergeGateAutoQueue(ctx, scheduledPRM.ID)
 	}
 
 	// although expectedHeadCommitID is checked before, we should pass it to the Merge function to
@@ -292,7 +377,7 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		if err != nil {
 			log.Error("ShouldDeleteBranchAfterMerge: %v", err)
 		} else if deleteBranchAfterMerge {
-			cleanupCtx, observation, cleanupErr := autoMergeBranchCleanupContext(ctx, doer, pr.HeadRepoID, pr.HeadBranch)
+			cleanupCtx, observation, cleanupErr := autoMergeBranchCleanupContext(ctx, doer, pr.HeadRepoID, pr.HeadBranch, ceiling)
 			if cleanupErr == nil {
 				cleanupErr = repo_service.DeleteBranchAfterMerge(cleanupCtx, doer, pr.ID, nil)
 			}
@@ -307,4 +392,31 @@ func handlePullRequestAutoMerge(ctx context.Context, pr *issues_model.PullReques
 		}
 	}
 	return nil
+}
+
+func wakeMergeGateScope(ctx context.Context, scope authz_model.Scope) error {
+	cursor := int64(0)
+	for {
+		var pulls []*issues_model.PullRequest
+		query := db.GetEngine(ctx).Table("pull_request").Select("pull_request.*").Join("INNER", "pull_auto_merge", "pull_auto_merge.pull_id=pull_request.id").Join("INNER", "issue", "issue.id=pull_request.issue_id").Where("pull_request.has_merged=? AND issue.is_closed=? AND pull_request.id>?", false, false, cursor)
+		switch scope.Type {
+		case authz_model.ScopeRepo:
+			query = query.And("pull_request.base_repo_id=?", scope.ID)
+		case authz_model.ScopeOrg:
+			query = query.Join("INNER", "repository", "repository.id=pull_request.base_repo_id").And("repository.owner_id=?", scope.ID)
+		}
+		if err := query.Asc("pull_request.id").Limit(100).Find(&pulls); err != nil {
+			return err
+		}
+		if len(pulls) == 0 {
+			return nil
+		}
+		for _, pr := range pulls {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			cursor = pr.ID
+			automergequeue.StartAutoMergeCheckByPullHead(ctx, pr)
+		}
+	}
 }

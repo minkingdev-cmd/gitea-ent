@@ -187,48 +187,64 @@ func (protectBranch *ProtectedBranch) CanUserForcePush(ctx context.Context, user
 
 // IsUserMergeWhitelisted checks if some user is whitelisted to merge to this branch
 func IsUserMergeWhitelisted(ctx context.Context, protectBranch *ProtectedBranch, userID int64, permissionInRepo access_model.Permission) bool {
+	allowed, err := IsUserMergeWhitelistedWithError(ctx, protectBranch, userID, permissionInRepo)
+	if err != nil {
+		log.Error("IsUserMergeWhitelisted: %v", err)
+	}
+	return allowed && err == nil
+}
+
+func IsUserMergeWhitelistedWithError(ctx context.Context, protectBranch *ProtectedBranch, userID int64, permissionInRepo access_model.Permission) (bool, error) {
 	if !protectBranch.EnableMergeWhitelist {
 		// Then we need to fall back on whether the user has write permission
-		return permissionInRepo.CanWrite(unit.TypeCode)
+		return permissionInRepo.CanWrite(unit.TypeCode), nil
 	}
 
 	if slices.Contains(protectBranch.MergeWhitelistUserIDs, userID) {
-		return true
+		return true, nil
 	}
 
 	if len(protectBranch.MergeWhitelistTeamIDs) == 0 {
-		return false
+		return false, nil
 	}
 
 	in, err := organization.IsUserInTeams(ctx, userID, protectBranch.MergeWhitelistTeamIDs)
 	if err != nil {
 		log.Error("IsUserInTeams: %v", err)
-		return false
+		return false, err
 	}
-	return in
+	return in, nil
 }
 
 // CanBypassBranchProtection reports whether the user can bypass branch protection checks (status checks, approvals, protected files)
 // Either a repo admin (when not blocked) or a user/team on the bypass allowlist can bypass.
 func CanBypassBranchProtection(ctx context.Context, protectBranch *ProtectedBranch, user *user_model.User, isRepoAdmin bool) bool {
+	allowed, err := CanBypassBranchProtectionWithError(ctx, protectBranch, user, isRepoAdmin)
+	if err != nil {
+		log.Error("CanBypassBranchProtection: %v", err)
+	}
+	return allowed && err == nil
+}
+
+func CanBypassBranchProtectionWithError(ctx context.Context, protectBranch *ProtectedBranch, user *user_model.User, isRepoAdmin bool) (bool, error) {
 	if isRepoAdmin && !protectBranch.BlockAdminMergeOverride {
-		return true
+		return true, nil
 	}
 	if !protectBranch.EnableBypassAllowlist {
-		return false
+		return false, nil
 	}
 	if slices.Contains(protectBranch.BypassAllowlistUserIDs, user.ID) {
-		return true
+		return true, nil
 	}
 	if len(protectBranch.BypassAllowlistTeamIDs) == 0 {
-		return false
+		return false, nil
 	}
 	in, err := organization.IsUserInTeams(ctx, user.ID, protectBranch.BypassAllowlistTeamIDs)
 	if err != nil {
 		log.Error("IsUserInTeams failed: userID=%d, repoID=%d, allowlistTeamIDs=%v, err=%v", user.ID, protectBranch.RepoID, protectBranch.BypassAllowlistTeamIDs, err)
-		return false
+		return false, err
 	}
-	return in
+	return in, nil
 }
 
 // IsUserOfficialReviewer check if user is official reviewer for the branch (counts towards required approvals)

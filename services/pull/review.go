@@ -20,6 +20,7 @@ import (
 	"gitea.dev/modules/optional"
 	"gitea.dev/modules/setting"
 	"gitea.dev/modules/util"
+	"gitea.dev/services/automergequeue"
 	authz_service "gitea.dev/services/enterpriseauthz"
 	"gitea.dev/services/gitdiff"
 	notify_service "gitea.dev/services/notify"
@@ -497,4 +498,38 @@ func DismissReview(ctx context.Context, reviewID, repoID int64, message string, 
 	notify_service.PullReviewDismiss(ctx, doer, review, comment)
 
 	return comment, nil
+}
+
+func ResolveReviewConversation(ctx context.Context, comment *issues_model.Comment, actor *user_model.User, resolved bool) error {
+	if !setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce {
+		return issues_model.MarkConversation(ctx, comment, actor, resolved)
+	}
+	return db.WithTx(ctx, func(tx context.Context) error {
+		current, err := issues_model.GetCommentByID(tx, comment.ID)
+		if err != nil {
+			return err
+		}
+		changed := current.Type == issues_model.CommentTypeCode && (current.ResolveDoerID != 0) != resolved
+		if err := issues_model.MarkConversation(tx, current, actor, resolved); err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		if err := current.LoadIssue(tx); err != nil {
+			return err
+		}
+		if !current.Issue.IsPull {
+			return nil
+		}
+		if err := current.Issue.LoadPullRequest(tx); err != nil {
+			return err
+		}
+		pr := current.Issue.PullRequest
+		if err := pr.LoadBaseRepo(tx); err != nil {
+			return err
+		}
+		db.AfterCommit(tx, func() { automergequeue.StartAutoMergeCheckByPullHead(context.WithoutCancel(ctx), pr) })
+		return nil
+	})
 }

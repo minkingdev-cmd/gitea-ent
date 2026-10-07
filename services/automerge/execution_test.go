@@ -200,3 +200,14 @@ func TestAutoMergeExecutionScheduleRejectsBeforeMutation(t *testing.T) {
 	require.False(t, row.ExecutionStarted)
 	require.NotContains(t, row.SnapshotJSON, "private scheduling message")
 }
+
+func TestMergeGateCleanupCannotInventWorkerCredential(t *testing.T) {
+	unittest.PrepareTestEnv(t)
+	t.Cleanup(test.MockVariableValue(&setting.EnterpriseAuthz, setting.EnterpriseAuthzConfig{Enabled: true, Enforce: true}))
+	t.Cleanup(test.MockVariableValue(&setting.EnterpriseMergeGate, setting.EnterpriseMergeGateConfig{Enabled: true, Enforce: true}))
+	actor := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 2})
+	_, _, err := autoMergeBranchCleanupContext(t.Context(), actor, 11, "branch2")
+	var denied *authz_service.ExecutionError
+	require.ErrorAs(t, err, &denied)
+	require.Equal(t, 403, denied.Status)
+}

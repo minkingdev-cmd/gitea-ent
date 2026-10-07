@@ -167,7 +167,7 @@ func UpdateResolveConversation(ctx *context.Context) {
 	}
 
 	if action == "Resolve" || action == "UnResolve" {
-		err = issues_model.MarkConversation(ctx, comment, ctx.Doer, action == "Resolve")
+		err = pull_service.ResolveReviewConversation(ctx, comment, ctx.Doer, action == "Resolve")
 		if err != nil {
 			ctx.ServerError("MarkConversation", err)
 			return

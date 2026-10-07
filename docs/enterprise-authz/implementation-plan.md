@@ -1023,3 +1023,12 @@ secret、token、私钥和外部系统凭据不得写入 metadata 明文。
 新 Cargo 索引写 InternalUsage=cargo-index；旧同名仓库不按名字自动认领。enabled preflight 的 cargo_index_purpose_unresolved 必须经用途/稳定 ID 核实、disabled 离线维护及审计 DB CLI 认领，实际普通代码仓库则原生受权重命名解除冲突。旧 mail 队列没有可信 IssueID，必须停全部生产者/实例/worker，备份并仅隔离 mail 队列，禁止删 common 共享目录；旧 hook 不能恢复可信来源则 enforce fail-closed。完整操作与积压处置风险见 [功能授权手册](feature-grants-runbook.md)。
 
 同版 shadow/disabled 回退保留政策/历史；旧 binary 不降 schema，必须 DB+Git/Wiki+storage+queue+配置完整匹配恢复。没有生产部署、队列处置或完整恢复实跑证据时不得宣称完成；前序 change 验收文档不改写。
+
+
+## 2026-10-06：Proposal 5 工作区实施与验收完成（未合并/上线）
+
+`add-enterprise-merge-gate` 已接入独立开关、三作用域累计敏感规则/CAS API、catalog3 两个独立 action、完整 diff/base CODEOWNERS/current-head 审批与 native/feature/path status、shared Merge/manual 写前门禁和有限 bypass 字段/表单。队列记录原始凭据上限及 queue ID，worker 当前 facts 重评；receive 历史保留真实 pusher/非零历史范围；内部 ticket 绑定本次 admission，终态使用同 operation receipt 并只修证据对账。规则管理仍 API-only，没有外部 scanner/AI 执行或模板/offboarding UI。
+
+当前逐 Requirement/Scenario 证据见该 change 的 `verification.md` / `tasks.md`，运维语义见 [merge gate 手册](merge-gate-runbook.md)。最新串行验证通过：完整后端244个测试包、前端167项、Linux SQLite/PostgreSQL 各108入口/角色/模式矩阵和15策略/签名/hook矩阵、真实fork/AGit、故障/取消/超时/独立进程重启对账、迁移及协议套件，PG最终写前11类事实屏障，以及3项对最新Linux服务的Chromium整页E2E。构建、格式/lint、Swagger兼容与strict验证通过；E2E最慢5.5秒，尚未稳定达到4秒性能目标。测试临时服务已清理，不影响现有服务。工作区开发/验收完成不等于已合并或生产上线；生产enforce仍须运维显式审批、统一实例配置和上线观察。
+
+原生 status skipped 兼容而企业 feature/path 仅 success；有 writer 权限者可伪造同名 context，不能宣称供应商身份或扫描内容认证。回退保留两表/历史，不能改 DB version 或删表降级。保留前序 proposal 的原文和证据，callback 持续关闭；未提交、推送、部署、同步 main specs 或归档。

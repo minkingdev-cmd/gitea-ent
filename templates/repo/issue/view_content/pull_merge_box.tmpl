@@ -63,6 +63,17 @@
 				</div>
 			{{end}}
 
+			{{if and (not $data.MergeFormProps) $.EnterpriseMergeGatePreview}}
+				{{$gate := $.EnterpriseMergeGatePreview}}
+				<section class="item" aria-live="polite">
+					<strong>{{ctx.Locale.Tr "repo.merge_gate.title"}}</strong>
+					{{if eq $gate.Mode "shadow"}}<p>{{ctx.Locale.Tr "repo.merge_gate.shadow"}}</p>{{end}}
+					{{if eq $gate.CandidateDecision "error"}}<p>{{ctx.Locale.Tr "repo.merge_gate.unknown"}}</p>{{end}}
+					<ul>{{range $reason := $gate.Reasons}}<li>{{ctx.Locale.Tr $reason.MessageKey}}</li>{{end}}</ul>
+					<p>{{ctx.Locale.Tr "repo.merge_gate.preview"}}</p>
+				</section>
+			{{end}}
+
 			{{if $data.MergeFormProps}}
 				{{/* The merge form is a Vue component. After mounted, it has a button for choosing merge style, so make it have min-height to avoid layout shifting */}}
 				<div class="item">

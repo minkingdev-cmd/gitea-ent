@@ -50,6 +50,11 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 			require.Equal(t, "integration-token", r.URL.Query().Get("access_token"))
 			require.Equal(t, "integration-code", r.URL.Query().Get("code"))
 			_, _ = w.Write([]byte(`{"errcode":0,"userid":"wecom-integration-user","deviceid":"device-1"}`))
+		case "/cgi-bin/tag/list":
+			_, _ = w.Write([]byte(`{"errcode":0,"taglist":[{"tagid":7,"tagname":"integration-admins"}]}`))
+		case "/cgi-bin/tag/get":
+			require.Equal(t, "7", r.URL.Query().Get("tagid"))
+			_, _ = w.Write([]byte(`{"errcode":0,"userlist":[{"userid":"wecom-integration-user"}],"partylist":[]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -58,17 +63,18 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 
 	const sourceName = "wecom-integration"
 	defer test.MockVariableValue(&setting.EnterpriseWeCom, setting.EnterpriseWeComConfig{
-		Enabled:          true,
-		LoginOnly:        true,
-		LoginSourceName:  sourceName,
-		CorpID:           "corp-integration",
-		AgentID:          "1000002",
-		CorpSecret:       "integration-secret",
-		UsernameTemplate: "{userid}",
-		AutoCreateUser:   true,
-		APIBaseURL:       mockWeCom.URL,
-		OAuthBaseURL:     mockWeCom.URL,
-		HTTPTimeout:      5 * time.Second,
+		Enabled:           true,
+		LoginOnly:         true,
+		LoginSourceName:   sourceName,
+		CorpID:            "corp-integration",
+		AgentID:           "1000002",
+		CorpSecret:        "integration-secret",
+		UsernameTemplate:  "{userid}",
+		AutoCreateUser:    true,
+		SuperAdminTagName: "integration-admins",
+		APIBaseURL:        mockWeCom.URL,
+		OAuthBaseURL:      mockWeCom.URL,
+		HTTPTimeout:       5 * time.Second,
 	})()
 	defer test.MockVariableValue(&setting.Service.EnablePasswordSignInForm, true)()
 	defer test.MockVariableValue(&setting.Service.EnableOpenIDSignIn, true)()
@@ -159,6 +165,10 @@ func TestEnterpriseWeComLoginOnlyIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, has)
 		assert.Positive(t, identity.UserID)
+		authority := unittest.AssertExistsAndLoadBean(t, &wecom_model.AdminAuthority{CorpID: "corp-integration", AgentID: "1000002", WeComUserID: "wecom-integration-user"})
+		require.True(t, authority.IsActive)
+		require.Equal(t, "login", authority.RefreshTrigger)
+		unittest.AssertExistsAndLoadBean(t, &wecom_model.ReconcileRun{CorpID: "corp-integration", Trigger: "login", Status: wecom_model.ReconcileRunStatusSuccess})
 	})
 
 	t.Run("WeCom OAuth continues through legitimate MFA", func(t *testing.T) {

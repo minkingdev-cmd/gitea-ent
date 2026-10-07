@@ -11,6 +11,6 @@ import (
 
 func TestEnterpriseAuthzFeatureMigrationRegistered(t *testing.T) {
 	migrations := prepareMigrationTasks()
-	require.EqualValues(t, 363, migrations[len(migrations)-1].idNumber)
-	require.EqualValues(t, 364, ExpectedDBVersion())
+	require.EqualValues(t, 364, migrations[len(migrations)-1].idNumber)
+	require.EqualValues(t, 365, ExpectedDBVersion())
 }

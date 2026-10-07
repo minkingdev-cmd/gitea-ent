@@ -85,7 +85,7 @@ func initializeFreshDatabase(ctx context.Context, x base.EngineMigration, versio
 	if err := sess.Begin(); err != nil {
 		return err
 	}
-	if err := sess.Sync(new(Version), new(authzRoleDefinitionInstall), new(authzRolePermissionInstall), new(authzBindingInstall), new(authzDecisionInstall), new(v28.FeatureDefinitionV363), new(v28.FeatureGrantV363), new(v28.FeatureHookTaskV363), new(v28.FeatureRepositoryV363), new(v28.FeatureCargoSourceV363)); err != nil {
+	if err := sess.Sync(new(Version), new(authzRoleDefinitionInstall), new(authzRolePermissionInstall), new(authzBindingInstall), new(authzDecisionInstall), new(v28.FeatureDefinitionV363), new(v28.FeatureGrantV363), new(v28.FeatureHookTaskV363), new(v28.FeatureRepositoryV363), new(v28.FeatureCargoSourceV363), new(v28.ProtectedPathRuleV364), new(v28.MergeGateEvaluationV364)); err != nil {
 		return err
 	}
 	if err := v28.SeedEnterpriseFeaturesV363(sess); err != nil {

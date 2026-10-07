@@ -436,6 +436,247 @@
         }
       }
     },
+    "/admin/enterprise/authz/protected-path-rules": {
+      "get": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Global protected path rule list",
+        "operationId": "enterpriseMergeGateGlobalListRule",
+        "parameters": [
+          {
+            "minimum": 1,
+            "type": "integer",
+            "default": 1,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+            "default": 20,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRuleList"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "post": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Global protected path rule create",
+        "operationId": "enterpriseMergeGateGlobalCreateRule",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PutEnterpriseProtectedPathRuleOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
+    "/admin/enterprise/authz/protected-path-rules/{id}": {
+      "get": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Global protected path rule get",
+        "operationId": "enterpriseMergeGateGlobalGetRule",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "delete": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Global protected path rule delete",
+        "operationId": "enterpriseMergeGateGlobalDeleteRule",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
+            "name": "expected_revision",
+            "in": "query",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/empty"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "patch": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Global protected path rule update",
+        "operationId": "enterpriseMergeGateGlobalUpdateRule",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PutEnterpriseProtectedPathRuleOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
     "/admin/hooks": {
       "get": {
         "produces": [
@@ -4458,6 +4699,277 @@
             "$ref": "#/responses/validationError"
           },
           "500": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
+    "/orgs/{org}/enterprise/authz/protected-path-rules": {
+      "get": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Org protected path rule list",
+        "operationId": "enterpriseMergeGateOrgListRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "org",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "default": 1,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+            "default": 20,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRuleList"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "post": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Org protected path rule create",
+        "operationId": "enterpriseMergeGateOrgCreateRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "org",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PutEnterpriseProtectedPathRuleOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
+    "/orgs/{org}/enterprise/authz/protected-path-rules/{id}": {
+      "get": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Org protected path rule get",
+        "operationId": "enterpriseMergeGateOrgGetRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "org",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "delete": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Org protected path rule delete",
+        "operationId": "enterpriseMergeGateOrgDeleteRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "org",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
+            "name": "expected_revision",
+            "in": "query",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/empty"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "patch": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Org protected path rule update",
+        "operationId": "enterpriseMergeGateOrgUpdateRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "org",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PutEnterpriseProtectedPathRuleOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
             "$ref": "#/responses/error"
           }
         }
@@ -12372,6 +12884,307 @@
         }
       }
     },
+    "/repos/{owner}/{repo}/enterprise/authz/protected-path-rules": {
+      "get": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Repo protected path rule list",
+        "operationId": "enterpriseMergeGateRepoListRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "default": 1,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+            "default": 20,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRuleList"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "post": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Repo protected path rule create",
+        "operationId": "enterpriseMergeGateRepoCreateRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PutEnterpriseProtectedPathRuleOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/authz/protected-path-rules/{id}": {
+      "get": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Repo protected path rule get",
+        "operationId": "enterpriseMergeGateRepoGetRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "delete": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Repo protected path rule delete",
+        "operationId": "enterpriseMergeGateRepoDeleteRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
+            "name": "expected_revision",
+            "in": "query",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/empty"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      },
+      "patch": {
+        "description": "Requires current scope management authority and matching token read/write scope; public-only credentials are rejected. Repository writes also require native code visibility and repo.manage_sensitive_paths, including in shadow. Rules accumulate; they do not grant native access. Strict JSON rejects duplicate, unknown and null fields. Config max 16 KiB; patterns max 256 bytes; at most 64 exact contexts of 128 bytes. New rules use expected_revision 0; edits and deletion require current revision. Deleted IDs cannot be reused. Disabled merge gate returns 404.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Repo protected path rule update",
+        "operationId": "enterpriseMergeGateRepoUpdateRule",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PutEnterpriseProtectedPathRuleOption"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseProtectedPathRule"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "description": "revision_conflict"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
     "/repos/{owner}/{repo}/enterprise/authz/roles": {
       "get": {
         "description": "Native token scopes and authority are required; enterprise roles never grant API access. Disabled authz returns 404 after native authorization. Decision list/detail require an unrestricted token (public-only is rejected); diagnostic source is fixed to diagnostic; candidate_only describes the evaluator only and safety_guards_evaluated is false; recorded authorization fields describe actual admission separately. POST requires write scope, GET requires read scope.",
@@ -12686,6 +13499,213 @@
             "$ref": "#/responses/validationError"
           },
           "500": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/merge-gate/{index}": {
+      "get": {
+        "description": "Requires authentication, current code and PR visibility and read repository token scope. Returns safe reasons only, without raw contexts, policy IDs, configuration, history or bypass text. This read-only candidate is not execution permission and does not write admission evidence. Disabled merge gate returns 404.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Preview current PR merge gate conditions",
+        "operationId": "enterpriseMergeGatePreview",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
+            "name": "index",
+            "in": "path",
+            "required": true
+          },
+          {
+            "enum": [
+              "merge",
+              "rebase",
+              "rebase-merge",
+              "squash",
+              "fast-forward-only",
+              "manually-merged"
+            ],
+            "type": "string",
+            "name": "style",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Full commit ID for read-only manual recognition preview",
+            "name": "commit_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseMergeGatePreview"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/merge-gate/{index}/evaluations": {
+      "get": {
+        "description": "Requires current repository policy management authority, code and PR visibility and read repository token scope. Public-only credentials are rejected. Evaluation IDs are scoped to this repository and pull request. Unknown snapshot versions fail closed. Disabled merge gate returns 404. Records are evidence, never reusable execution permission.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "List PR merge gate evaluation history",
+        "operationId": "enterpriseMergeGateListEvaluations",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
+            "name": "index",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "default": 1,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+            "default": 20,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseMergeGateEvaluationList"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
+            "$ref": "#/responses/error"
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/enterprise/merge-gate/{index}/evaluations/{id}": {
+      "get": {
+        "description": "Requires current repository policy management authority, code and PR visibility and read repository token scope. Public-only credentials are rejected. Evaluation IDs are scoped to this repository and pull request. Unknown snapshot versions fail closed. Disabled merge gate returns 404. Records are evidence, never reusable execution permission.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Get PR merge gate evaluation history",
+        "operationId": "enterpriseMergeGateGetEvaluation",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
+            "name": "index",
+            "in": "path",
+            "required": true
+          },
+          {
+            "minimum": 1,
+            "type": "integer",
+            "format": "int64",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/EnterpriseMergeGateEvaluation"
+          },
+          "401": {
+            "$ref": "#/responses/error"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/notFound"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
+          },
+          "503": {
             "$ref": "#/responses/error"
           }
         }
@@ -33469,6 +34489,297 @@
       },
       "x-go-package": "gitea.dev/modules/structs"
     },
+    "EnterpriseMergeGateEvaluation": {
+      "type": "object",
+      "title": "EnterpriseMergeGateEvaluation 仅供本仓库及 PR 的当前管理 authority 查询。",
+      "properties": {
+        "actor_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ActorID"
+        },
+        "admission_decision": {
+          "type": "string",
+          "x-go-name": "AdmissionDecision"
+        },
+        "attempt": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Attempt"
+        },
+        "base_sha": {
+          "type": "string",
+          "x-go-name": "BaseSHA"
+        },
+        "bypass_reason": {
+          "type": "string",
+          "x-go-name": "BypassReason"
+        },
+        "bypass_requested": {
+          "type": "boolean",
+          "x-go-name": "BypassRequested"
+        },
+        "bypass_used": {
+          "type": "boolean",
+          "x-go-name": "BypassUsed"
+        },
+        "candidate_decision": {
+          "type": "string",
+          "x-go-name": "CandidateDecision"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Created"
+        },
+        "execution_state": {
+          "type": "string",
+          "x-go-name": "ExecutionState"
+        },
+        "head_sha": {
+          "type": "string",
+          "x-go-name": "HeadSHA"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "merged_sha": {
+          "type": "string",
+          "x-go-name": "MergedSHA"
+        },
+        "mode": {
+          "type": "string",
+          "x-go-name": "Mode"
+        },
+        "operation_id": {
+          "type": "string",
+          "x-go-name": "OperationID"
+        },
+        "phase": {
+          "type": "string",
+          "x-go-name": "Phase"
+        },
+        "pull_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "PullID"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "x-go-name": "Reasons"
+        },
+        "repo_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "RepoID"
+        },
+        "snapshot": {
+          "type": "object",
+          "additionalProperties": {},
+          "x-go-name": "Snapshot"
+        },
+        "snapshot_hash": {
+          "type": "string",
+          "x-go-name": "SnapshotHash"
+        },
+        "snapshot_version": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "SnapshotVersion"
+        },
+        "source": {
+          "type": "string",
+          "x-go-name": "Source"
+        },
+        "started": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Started"
+        },
+        "terminal": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Terminal"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseMergeGatePreview": {
+      "type": "object",
+      "title": "EnterpriseMergeGatePreview 是当前 PR 的安全解释，不是执行许可。",
+      "properties": {
+        "admission_decision": {
+          "type": "string",
+          "x-go-name": "AdmissionDecision"
+        },
+        "base_sha": {
+          "type": "string",
+          "x-go-name": "BaseSHA"
+        },
+        "can_bypass": {
+          "type": "boolean",
+          "x-go-name": "CanBypass"
+        },
+        "can_schedule": {
+          "type": "boolean",
+          "x-go-name": "CanSchedule"
+        },
+        "candidate_decision": {
+          "type": "string",
+          "x-go-name": "CandidateDecision"
+        },
+        "head_sha": {
+          "type": "string",
+          "x-go-name": "HeadSHA"
+        },
+        "mode": {
+          "type": "string",
+          "x-go-name": "Mode"
+        },
+        "phase": {
+          "type": "string",
+          "x-go-name": "Phase"
+        },
+        "preview_only": {
+          "type": "boolean",
+          "x-go-name": "PreviewOnly"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EnterpriseMergeGateReason"
+          },
+          "x-go-name": "Reasons"
+        },
+        "snapshot_version": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "SnapshotVersion"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseMergeGateReason": {
+      "type": "object",
+      "title": "EnterpriseMergeGateReason 不包含上级策略标识、context 或自由文本。",
+      "properties": {
+        "bypass_category": {
+          "type": "string",
+          "x-go-name": "BypassCategory"
+        },
+        "code": {
+          "type": "string",
+          "x-go-name": "Code"
+        },
+        "message_key": {
+          "type": "string",
+          "x-go-name": "MessageKey"
+        },
+        "source": {
+          "type": "string",
+          "x-go-name": "Source"
+        },
+        "state": {
+          "type": "string",
+          "x-go-name": "State"
+        },
+        "tone": {
+          "type": "string",
+          "x-go-name": "Tone"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseProtectedPathConfig": {
+      "type": "object",
+      "title": "EnterpriseProtectedPathConfig 为累加规则，不覆盖上级规则。",
+      "properties": {
+        "branch_pattern": {
+          "type": "string",
+          "x-go-name": "BranchPattern"
+        },
+        "check_contexts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "CheckContexts"
+        },
+        "enabled": {
+          "type": "boolean",
+          "x-go-name": "Enabled"
+        },
+        "path_pattern": {
+          "type": "string",
+          "x-go-name": "PathPattern"
+        },
+        "required_role_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "RequiredRoleID"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "EnterpriseProtectedPathRule": {
+      "type": "object",
+      "title": "EnterpriseProtectedPathRule 仅供当前作用域管理 authority 查询。",
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/EnterpriseProtectedPathConfig"
+        },
+        "config_schema_version": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ConfigSchemaVersion"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Created"
+        },
+        "created_by": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "CreatedBy"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ID"
+        },
+        "owner_id": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "OwnerID"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Revision"
+        },
+        "scope": {
+          "$ref": "#/definitions/EnterpriseFeatureScope"
+        },
+        "updated": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Updated"
+        },
+        "updated_by": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "UpdatedBy"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
     "EnterpriseWeComAuthzMapping": {
       "type": "object",
       "title": "EnterpriseWeComAuthzMapping represents an Enterprise WeCom authorization mapping.",
@@ -34866,6 +36177,17 @@
         "do"
       ],
       "properties": {
+        "bypass_categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "BypassCategories"
+        },
+        "bypass_reason": {
+          "type": "string",
+          "x-go-name": "BypassReason"
+        },
         "delete_branch_after_merge": {
           "type": "boolean",
           "x-go-name": "DeleteBranchAfterMerge"
@@ -36466,6 +37788,25 @@
         "state": {
           "type": "string",
           "x-go-name": "State"
+        }
+      },
+      "x-go-package": "gitea.dev/modules/structs"
+    },
+    "PutEnterpriseProtectedPathRuleOption": {
+      "type": "object",
+      "title": "PutEnterpriseProtectedPathRuleOption 创建使用 revision 0，修改使用当前版本。",
+      "required": [
+        "config",
+        "expected_revision"
+      ],
+      "properties": {
+        "config": {
+          "$ref": "#/definitions/EnterpriseProtectedPathConfig"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ExpectedRevision"
         }
       },
       "x-go-package": "gitea.dev/modules/structs"
@@ -38642,6 +39983,54 @@
         "type": "array",
         "items": {
           "$ref": "#/definitions/EnterpriseFeaturePolicy"
+        }
+      },
+      "headers": {
+        "X-Total-Count": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "EnterpriseMergeGateEvaluation": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/EnterpriseMergeGateEvaluation"
+      }
+    },
+    "EnterpriseMergeGateEvaluationList": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/EnterpriseMergeGateEvaluation"
+        }
+      },
+      "headers": {
+        "X-Total-Count": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "EnterpriseMergeGatePreview": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/EnterpriseMergeGatePreview"
+      }
+    },
+    "EnterpriseProtectedPathRule": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/EnterpriseProtectedPathRule"
+      }
+    },
+    "EnterpriseProtectedPathRuleList": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/EnterpriseProtectedPathRule"
         }
       },
       "headers": {

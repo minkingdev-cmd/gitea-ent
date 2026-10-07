@@ -21,6 +21,9 @@ type AutoMergeItem string
 var AutoMergeQueue *queue.WorkerPoolQueue[AutoMergeItem]
 
 var AddToQueue = func(item AutoMergeItem) {
+	if AutoMergeQueue == nil {
+		return
+	}
 	if err := AutoMergeQueue.Push(item); err != nil && !errors.Is(err, queue.ErrAlreadyInQueue) {
 		log.Error("Error adding %v to the automerge queue: %v", item, err)
 	}

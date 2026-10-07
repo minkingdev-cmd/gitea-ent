@@ -1413,6 +1413,7 @@ func Routes() *web.Router {
 			m.Group("/{username}/{reponame}", func() {
 				m.Group("/enterprise/authz", func() {
 					addEnterpriseAuthzRoutes(m)
+					addEnterpriseMergeGateRuleRoutes(m)
 					m.Get("/features", enterpriseauthz_router.RequireFeatureReader, enterpriseauthz_router.ListFeatures)
 					m.Get("/features/{key}", enterpriseauthz_router.RequireFeatureReader, enterpriseauthz_router.GetFeature)
 					m.Get("/features/{key}/grant", enterpriseauthz_router.RequireManagement, enterpriseauthz_router.GetFeatureGrant)
@@ -1420,6 +1421,11 @@ func Routes() *web.Router {
 					m.Get("/effective-permissions", enterpriseauthz_router.RequireDiagnostic, enterpriseauthz_router.EffectivePermissions)
 					m.Post("/evaluate", enterpriseauthz_router.RequireDiagnostic, enterpriseauthz_router.Evaluate)
 				}, reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeRepo))
+				m.Get("/enterprise/merge-gate/{index}", reqToken(), enterpriseauthz_router.RequireMergeGateReader, enterpriseauthz_router.PreviewMergeGate)
+				m.Group("/enterprise/merge-gate/{index}/evaluations", func() {
+					m.Get("", enterpriseauthz_router.ListMergeGateEvaluations)
+					m.Get("/{id}", enterpriseauthz_router.GetMergeGateEvaluation)
+				}, reqToken(), enterpriseauthz_router.RequireMergeGateReader, enterpriseauthz_router.AssignScope(authz_model.ScopeRepo), enterpriseauthz_router.RequireMergeGateManagement)
 				m.Get("/compare/*", reqRepoReader(unit.TypeCode), repo.CompareDiff)
 
 				m.Combo("").Get(reqAnyRepoReader(), repo.Get).
@@ -1904,6 +1910,7 @@ func Routes() *web.Router {
 		m.Group("/orgs/{org}", func() {
 			m.Group("/enterprise/authz", func() {
 				addEnterpriseAuthzRoutes(m)
+				addEnterpriseMergeGateRuleRoutes(m)
 				m.Get("/features", enterpriseauthz_router.RequireManagement, enterpriseauthz_router.ListFeatures)
 				m.Combo("/features/{key}").Get(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.GetFeatureGrant).Put(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.PutFeatureGrant).Delete(enterpriseauthz_router.RequireManagement, enterpriseauthz_router.ResetFeatureGrant)
 			}, reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeOrg))
@@ -2012,6 +2019,10 @@ func Routes() *web.Router {
 				Delete(enterprisewecom_router.DisableAuthzMapping)
 		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryAdmin), reqToken(), reqSiteAdmin())
 
+		m.Group("/admin/enterprise/authz", func() {
+			addEnterpriseMergeGateRuleRoutes(m)
+		}, tokenRequiresScopes(auth_model.AccessTokenScopeCategoryAdmin), reqToken(), enterpriseauthz_router.AssignScope(authz_model.ScopeSystem))
+
 		m.Group("/admin", func() {
 			m.Group("/cron", func() {
 				m.Get("", admin.ListCronTasks)
@@ -2084,4 +2095,11 @@ func addEnterpriseAuthzRoutes(m *web.Router) {
 	}, enterpriseauthz_router.RequireManagement)
 	m.Get("/decisions", enterpriseauthz_router.RequireDecisionManagement, enterpriseauthz_router.ListDecisions)
 	m.Get("/decisions/{id}", enterpriseauthz_router.RequireDecisionManagement, enterpriseauthz_router.GetDecision)
+}
+
+func addEnterpriseMergeGateRuleRoutes(m *web.Router) {
+	m.Group("/protected-path-rules", func() {
+		m.Combo("").Get(enterpriseauthz_router.ListProtectedPathRules).Post(enterpriseauthz_router.CreateProtectedPathRule)
+		m.Combo("/{id}").Get(enterpriseauthz_router.GetProtectedPathRule).Patch(enterpriseauthz_router.UpdateProtectedPathRule).Delete(enterpriseauthz_router.DeleteProtectedPathRule)
+	}, enterpriseauthz_router.RequireMergeGateManagement)
 }

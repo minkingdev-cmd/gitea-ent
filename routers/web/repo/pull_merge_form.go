@@ -6,16 +6,21 @@ package repo
 import (
 	"errors"
 	"html/template"
+	"net/http"
 
 	pull_model "gitea.dev/models/pull"
 	repo_model "gitea.dev/models/repo"
 	"gitea.dev/models/unit"
+	authz "gitea.dev/modules/enterpriseauthz"
 	"gitea.dev/modules/git"
 	"gitea.dev/modules/log"
+	"gitea.dev/modules/setting"
+	api "gitea.dev/modules/structs"
 	"gitea.dev/modules/svg"
 	"gitea.dev/modules/templates"
 	"gitea.dev/modules/util"
 	"gitea.dev/services/context"
+	authz_service "gitea.dev/services/enterpriseauthz"
 	pull_service "gitea.dev/services/pull"
 )
 
@@ -23,6 +28,12 @@ func (prInfo *pullRequestViewInfo) prepareMergeBoxFormProps(ctx *context.Context
 	pull := prInfo.issue.PullRequest
 	if pull.HasMerged || prInfo.issue.IsClosed {
 		return
+	}
+	if setting.EnterpriseMergeGate.Enabled && ctx.IsSigned && ctx.Repo.Permission.CanRead(unit.TypeCode) {
+		preview, err := pull_service.PreviewMergeGate(ctx, ctx.Doer, pull.BaseRepoID, pull.ID, "")
+		if err == nil {
+			ctx.Data["EnterpriseMergeGatePreview"] = preview
+		}
 	}
 	if !prInfo.MergeBoxData.hasPermToMerge {
 		return
@@ -109,8 +120,25 @@ func (prInfo *pullRequestViewInfo) prepareMergeBoxFormProps(ctx *context.Context
 		"hasPendingPullRequestMergeTip": hasPendingPullRequestMergeTip,
 	}
 
+	if setting.EnterpriseMergeGate.Enabled {
+		descriptors := []map[string]string{}
+		for _, entry := range authz.MergeGateReasonCatalog() {
+			descriptors = append(descriptors, map[string]string{"code": entry.Code, "message_key": entry.MessageKey, "text": ctx.Locale.TrString(entry.MessageKey), "bypass_category": entry.BypassCategory})
+		}
+		mode := "shadow"
+		if setting.EnterpriseMergeGate.Enforce {
+			mode = "enforce"
+		}
+		mergeFormProps["mergeGate"] = map[string]any{"mode": mode, "preview": ctx.Data["EnterpriseMergeGatePreview"], "previewStyle": prConfig.DefaultMergeStyle, "previewUrl": prInfo.issue.Link() + "/merge_gate", "descriptors": descriptors, "textTitle": ctx.Locale.TrString("repo.merge_gate.title"), "textShadow": ctx.Locale.TrString("repo.merge_gate.shadow"), "textUnknown": ctx.Locale.TrString("repo.merge_gate.unknown"), "textPreview": ctx.Locale.TrString("repo.merge_gate.preview"), "textBypass": ctx.Locale.TrString("repo.merge_gate.bypass"), "textReason": ctx.Locale.TrString("repo.merge_gate.bypass_reason"), "textCategories": ctx.Locale.TrString("repo.merge_gate.bypass_categories")}
+	}
+
 	// if this pr can be merged now, then hide the auto merge
 	generalHideAutoMerge := prInfo.MergeBoxData.canMergeNow && allOverridableChecksOk
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+		if preview, ok := ctx.Data["EnterpriseMergeGatePreview"].(*api.EnterpriseMergeGatePreview); !ok || preview.CandidateDecision != "allow" {
+			generalHideAutoMerge = false
+		}
+	}
 	var mergeStyles []any
 	if pull.IsStatusMergeable() {
 		mergeStyles = []any{
@@ -187,4 +215,32 @@ func (prInfo *pullRequestViewInfo) prepareMergeBoxFormProps(ctx *context.Context
 			ctx.Locale.Tr("repo.pulls.no_merge_helper"),
 		)
 	}
+}
+
+func PreviewPullMergeGate(ctx *context.Context) {
+	if !setting.EnterpriseMergeGate.Enabled {
+		ctx.HTTPError(http.StatusNotFound)
+		return
+	}
+	if !ctx.IsSigned {
+		ctx.HTTPError(http.StatusUnauthorized)
+		return
+	}
+	issue, ok := getPullInfo(ctx)
+	if !ok {
+		return
+	}
+	preview, err := pull_service.PreviewMergeGate(ctx, ctx.Doer, ctx.Repo.Repository.ID, issue.PullRequest.ID, repo_model.MergeStyle(ctx.FormString("style")), ctx.FormString("commit_id"))
+	if err != nil {
+		status := http.StatusServiceUnavailable
+		switch {
+		case errors.Is(err, util.ErrNotExist), errors.Is(err, util.ErrPermissionDenied):
+			status = http.StatusNotFound
+		case errors.Is(err, authz_service.ErrInvalidPolicy):
+			status = http.StatusUnprocessableEntity
+		}
+		ctx.HTTPError(status)
+		return
+	}
+	ctx.JSON(http.StatusOK, preview)
 }

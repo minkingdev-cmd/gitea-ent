@@ -751,14 +751,32 @@ func (pr *PullRequest) Mergeable(ctx context.Context) bool {
 
 // HasEnoughApprovals returns true if pr has enough granted approvals.
 func HasEnoughApprovals(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) bool {
-	if protectBranch.RequiredApprovals == 0 {
-		return true
+	allowed, err := HasEnoughApprovalsWithError(ctx, protectBranch, pr)
+	if err != nil {
+		log.Error("HasEnoughApprovals: %v", err)
 	}
-	return GetGrantedApprovalsCount(ctx, protectBranch, pr) >= protectBranch.RequiredApprovals
+	return allowed && err == nil
 }
 
-// GetGrantedApprovalsCount returns the number of granted approvals for pr. A granted approval must be authored by a user in an approval whitelist.
+func HasEnoughApprovalsWithError(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) (bool, error) {
+	if protectBranch.RequiredApprovals == 0 {
+		return true, nil
+	}
+	count, err := GetGrantedApprovalsCountWithError(ctx, protectBranch, pr)
+	return count >= protectBranch.RequiredApprovals, err
+}
+
+// GetGrantedApprovalsCount counts official, non-dismissed approval reviews.
 func GetGrantedApprovalsCount(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) int64 {
+	count, err := GetGrantedApprovalsCountWithError(ctx, protectBranch, pr)
+	if err != nil {
+		log.Error("GetGrantedApprovalsCount: %v", err)
+		return 0
+	}
+	return count
+}
+
+func GetGrantedApprovalsCountWithError(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) (int64, error) {
 	sess := db.GetEngine(ctx).Where("issue_id = ?", pr.IssueID).
 		And("type = ?", ReviewTypeApprove).
 		And("official = ?", true).
@@ -766,49 +784,46 @@ func GetGrantedApprovalsCount(ctx context.Context, protectBranch *git_model.Prot
 	if protectBranch.IgnoreStaleApprovals {
 		sess = sess.And("stale = ?", false)
 	}
-	approvals, err := sess.Count(new(Review))
-	if err != nil {
-		log.Error("GetGrantedApprovalsCount: %v", err)
-		return 0
-	}
-
-	return approvals
+	return sess.Count(new(Review))
 }
 
-// MergeBlockedByRejectedReview returns true if merge is blocked by rejected reviews
+// MergeBlockedByRejectedReview returns true on rejected review or storage failure.
 func MergeBlockedByRejectedReview(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) bool {
-	if !protectBranch.BlockOnRejectedReviews {
-		return false
+	blocked, err := MergeBlockedByRejectedReviewWithError(ctx, protectBranch, pr)
+	if err != nil {
+		log.Error("MergeBlockedByRejectedReview: %v", err)
 	}
-	rejectExist, err := db.GetEngine(ctx).Where("issue_id = ?", pr.IssueID).
+	return blocked || err != nil
+}
+
+func MergeBlockedByRejectedReviewWithError(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) (bool, error) {
+	if !protectBranch.BlockOnRejectedReviews {
+		return false, nil
+	}
+	return db.GetEngine(ctx).Where("issue_id = ?", pr.IssueID).
 		And("type = ?", ReviewTypeReject).
 		And("official = ?", true).
 		And("dismissed = ?", false).
 		Exist(new(Review))
-	if err != nil {
-		log.Error("MergeBlockedByRejectedReview: %v", err)
-		return true
-	}
-
-	return rejectExist
 }
 
-// MergeBlockedByOfficialReviewRequests block merge because of some review request to official reviewer
-// of from official review
+// MergeBlockedByOfficialReviewRequests returns true on outstanding request or storage failure.
 func MergeBlockedByOfficialReviewRequests(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) bool {
-	if !protectBranch.BlockOnOfficialReviewRequests {
-		return false
+	blocked, err := MergeBlockedByOfficialReviewRequestsWithError(ctx, protectBranch, pr)
+	if err != nil {
+		log.Error("MergeBlockedByOfficialReviewRequests: %v", err)
 	}
-	has, err := db.GetEngine(ctx).Where("issue_id = ?", pr.IssueID).
+	return blocked || err != nil
+}
+
+func MergeBlockedByOfficialReviewRequestsWithError(ctx context.Context, protectBranch *git_model.ProtectedBranch, pr *PullRequest) (bool, error) {
+	if !protectBranch.BlockOnOfficialReviewRequests {
+		return false, nil
+	}
+	return db.GetEngine(ctx).Where("issue_id = ?", pr.IssueID).
 		And("type = ?", ReviewTypeRequest).
 		And("official = ?", true).
 		Exist(new(Review))
-	if err != nil {
-		log.Error("MergeBlockedByOfficialReviewRequests: %v", err)
-		return true
-	}
-
-	return has
 }
 
 // MergeBlockedByOutdatedBranch returns true if merge is blocked by an outdated head branch
@@ -822,8 +837,30 @@ func MergeBlockedByOutdatedBranch(protectBranch *git_model.ProtectedBranch, pr *
 // We're trying to do the best we can when parsing a file.
 // Invalid lines are skipped. Non-existent users and teams too.
 func GetCodeOwnersFromContent(ctx context.Context, data string) ([]*CodeOwnerRule, []string) {
+	rules, warnings, _ := getCodeOwnersFromContent(ctx, data, codeOwnerBestEffort)
+	return rules, warnings
+}
+
+func GetCodeOwnersFromContentWithError(ctx context.Context, data string) ([]*CodeOwnerRule, []string, error) {
+	return getCodeOwnersFromContent(ctx, data, codeOwnerChecked)
+}
+
+func GetCodeOwnersForSensitivePaths(ctx context.Context, data string) ([]*CodeOwnerRule, error) {
+	rules, _, err := getCodeOwnersFromContent(ctx, data, codeOwnerSensitive)
+	return rules, err
+}
+
+type codeOwnerParseMode int
+
+const (
+	codeOwnerBestEffort codeOwnerParseMode = iota
+	codeOwnerChecked
+	codeOwnerSensitive
+)
+
+func getCodeOwnersFromContent(ctx context.Context, data string, mode codeOwnerParseMode) ([]*CodeOwnerRule, []string, error) {
 	if len(data) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	rules := make([]*CodeOwnerRule, 0)
@@ -836,11 +873,17 @@ func GetCodeOwnersFromContent(ctx context.Context, data string) ([]*CodeOwnerRul
 			continue
 		} else if len(tokens) < 2 {
 			warnings = append(warnings, fmt.Sprintf("Line: %d: incorrect format", i+1))
+			if mode == codeOwnerSensitive {
+				return nil, warnings, errors.New("codeowner_format_invalid")
+			}
 			continue
 		}
-		rule, wr := ParseCodeOwnersLine(ctx, tokens)
+		rule, wr, err := parseCodeOwnersLine(ctx, tokens, mode)
 		for _, w := range wr {
 			warnings = append(warnings, fmt.Sprintf("Line: %d: %s", i+1, w))
+		}
+		if err != nil {
+			return nil, warnings, err
 		}
 		if rule == nil {
 			continue
@@ -849,7 +892,7 @@ func GetCodeOwnersFromContent(ctx context.Context, data string) ([]*CodeOwnerRul
 		rules = append(rules, rule)
 	}
 
-	return rules, warnings
+	return rules, warnings, nil
 }
 
 // codeOwnerMatchTimeout bounds a single pattern match so a crafted pattern
@@ -865,6 +908,12 @@ type CodeOwnerRule struct {
 }
 
 func ParseCodeOwnersLine(ctx context.Context, tokens []string) (*CodeOwnerRule, []string) {
+	rule, warnings, _ := parseCodeOwnersLine(ctx, tokens, codeOwnerBestEffort)
+	return rule, warnings
+}
+
+func parseCodeOwnersLine(ctx context.Context, tokens []string, mode codeOwnerParseMode) (*CodeOwnerRule, []string, error) {
+	strict := mode != codeOwnerBestEffort
 	var err error
 	rule := &CodeOwnerRule{
 		Users:    make([]*user_model.User, 0),
@@ -883,19 +932,28 @@ func ParseCodeOwnersLine(ctx context.Context, tokens []string) (*CodeOwnerRule, 
 	rule.Rule, err = regexp2.Compile(expr, regexp2.None)
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("incorrect codeowner regexp: %s", err))
-		return nil, warnings
+		if mode == codeOwnerSensitive {
+			return nil, warnings, err
+		}
+		return nil, warnings, nil
 	}
 	// Bound matching time so user-supplied patterns cannot stall PR creation via catastrophic backtracking.
 	rule.Rule.MatchTimeout = codeOwnerMatchTimeout
 
 	for _, user := range tokens[1:] {
 		user = strings.TrimPrefix(user, "@")
+		if mode == codeOwnerSensitive && user == "" {
+			return nil, warnings, errors.New("codeowner_user_invalid")
+		}
 
 		// Only @org/team can contain slashes
 		if strings.Contains(user, "/") {
 			s := strings.Split(user, "/")
-			if len(s) != 2 {
+			if len(s) != 2 || mode == codeOwnerSensitive && (s[0] == "" || s[1] == "") {
 				warnings = append(warnings, "incorrect codeowner group: "+user)
+				if mode == codeOwnerSensitive {
+					return nil, warnings, errors.New("codeowner_group_invalid")
+				}
 				continue
 			}
 			orgName := s[0]
@@ -904,11 +962,17 @@ func ParseCodeOwnersLine(ctx context.Context, tokens []string) (*CodeOwnerRule, 
 			org, err := org_model.GetOrgByName(ctx, orgName)
 			if err != nil {
 				warnings = append(warnings, "incorrect codeowner organization: "+user)
+				if strict && !org_model.IsErrOrgNotExist(err) {
+					return nil, warnings, err
+				}
 				continue
 			}
 			teams, err := org.LoadTeams(ctx)
 			if err != nil {
 				warnings = append(warnings, "incorrect codeowner team: "+user)
+				if strict {
+					return nil, warnings, err
+				}
 				continue
 			}
 
@@ -921,6 +985,9 @@ func ParseCodeOwnersLine(ctx context.Context, tokens []string) (*CodeOwnerRule, 
 			u, err := user_model.GetUserByName(ctx, user)
 			if err != nil {
 				warnings = append(warnings, "incorrect codeowner user: "+user)
+				if strict && !user_model.IsErrUserNotExist(err) {
+					return nil, warnings, err
+				}
 				continue
 			}
 			rule.Users = append(rule.Users, u)
@@ -929,10 +996,13 @@ func ParseCodeOwnersLine(ctx context.Context, tokens []string) (*CodeOwnerRule, 
 
 	if (len(rule.Users) == 0) && (len(rule.Teams) == 0) {
 		warnings = append(warnings, "no users/groups matched")
-		return nil, warnings
+		if mode == codeOwnerSensitive {
+			return rule, warnings, nil
+		}
+		return nil, warnings, nil
 	}
 
-	return rule, warnings
+	return rule, warnings, nil
 }
 
 func TokenizeCodeOwnersLine(line string) []string {

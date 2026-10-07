@@ -350,6 +350,11 @@ func CreateRepositoryDirectly(ctx context.Context, doer, owner *user_model.User,
 
 // createRepositoryInDB creates a repository for the user/organization.
 func createRepositoryInDB(ctx context.Context, doer, u *user_model.User, repo *repo_model.Repository, isFork bool) (err error) {
+	if setting.EnterpriseMergeGate.Enabled {
+		if err := authz_model.LockFeatures(ctx, []authz.FeatureKey{authz.FeaturePullRequests}); err != nil {
+			return err
+		}
+	}
 	if err := enforceEnterpriseRepoCreationInDB(ctx, doer, u, repo, isFork); err != nil {
 		return err
 	}

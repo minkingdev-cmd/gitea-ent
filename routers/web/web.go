@@ -1725,6 +1725,7 @@ func registerWebRoutes(m *web.Router, webAuth *AuthMiddleware) {
 			m.Get(".diff", repo.DownloadPullDiff)
 			m.Get(".patch", repo.DownloadPullPatch)
 			m.Get("/merge_box", repo.ViewPullMergeBox)
+			m.Get("/merge_gate", repo.PreviewPullMergeGate)
 			m.Group("/commits", func() {
 				m.Get("", repo.SetWhitespaceBehavior, repo.GetPullDiffStats, repo.ViewPullCommits)
 				m.Get("/list", repo.GetPullCommits)

@@ -18,6 +18,7 @@ import (
 	"unicode"
 
 	"gitea.dev/models/db"
+	authz_model "gitea.dev/models/enterpriseauthz"
 	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	access_model "gitea.dev/models/perm/access"
@@ -264,12 +265,20 @@ func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *use
 	if pr == nil || doer == nil {
 		return util.ErrInvalidArgument
 	}
-	if err := authz_service.RequireRepoFeature(operationCtx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
-		return err
+	if !setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce {
+		if err := authz_service.RequireRepoFeature(operationCtx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+			return err
+		}
 	}
+	operationCtx = authz_service.WithOperation(operationCtx)
 	ctx := authz_service.DetachedObservationContext(graceful.GetManager().HammerContext(), operationCtx) // don't abort the git operation even if the user's request is canceled
 	execution := new(mergeExecution)
-	defer func() { execution.finish(err) }()
+	defer func() {
+		execution.finish(err)
+		if terminalErr := execution.finishMergeGate(err); terminalErr != nil {
+			err = terminalErr
+		}
+	}()
 	actorID, repoID := doer.ID, pr.BaseRepoID
 
 	defer func() {
@@ -296,7 +305,7 @@ func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *use
 	prConfig := prUnit.PullRequestsConfig()
 
 	// Check if merge style is correct and allowed
-	if !prConfig.IsMergeStyleAllowed(mergeStyle) {
+	if (!setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce) && !prConfig.IsMergeStyleAllowed(mergeStyle) {
 		return ErrInvalidMergeStyle{ID: pr.BaseRepo.ID, Style: mergeStyle}
 	}
 
@@ -306,7 +315,20 @@ func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *use
 		if err != nil {
 			return err
 		}
-		force := len(options) > 0 && options[0].Force
+		mergeOptions := MergeOptions{}
+		if len(options) > 0 {
+			mergeOptions = options[0]
+		}
+		if err := checkMergeGateBeforeMutation(ctx, pr, doer, mergeStyle, mergeOptions, wasAutoMerged); err != nil {
+			return err
+		}
+		force := mergeOptions.Force
+		if setting.EnterpriseMergeGate.Enabled {
+			execution.gateGuard = func(ctx context.Context, repo git.RepositoryFacade, oldCommit, newCommit string) (*authz_model.MergeGateEvaluation, error) {
+				current, _ := mergeGateGitAt(ctx, repo, oldCommit)
+				return admitMergeGate(ctx, pr, doer, mergeStyle, mergeOptions, wasAutoMerged, current, newCommit, true)
+			}
+		}
 		if err := checkMergeExecutionNative(ctx, pr, doer, mergeStyle, MergeCheckTypeGeneral, force); err != nil {
 			return err
 		}
@@ -332,6 +354,9 @@ func Merge(operationCtx context.Context, pr *issues_model.PullRequest, doer *use
 	// * something wrong happens (e.g.: out of sync?)
 	//   * maybe this is the reason that why the duplicate AddTestPullRequestTask is called in defer func above
 	if err != nil {
+		return err
+	}
+	if err := execution.finishMergeGate(nil); err != nil {
 		return err
 	}
 	// TODO: it is questionable whether it should return error here, the "merge" operation has succeeded
@@ -502,6 +527,9 @@ func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *use
 	// Push back to upstream.
 	// This cause an api call to "/api/internal/hook/post-receive/...",
 	// If it's merge, all db transaction and operations should be there but not here to prevent deadlock.
+	if execution != nil && execution.gate != nil {
+		execution.gatePushAttempted = true
+	}
 	if err := mergeCtx.PrepareGitCmd(pushCmd).RunWithStderr(ctx); err != nil {
 		if strings.Contains(err.Stderr(), "non-fast-forward") {
 			return "", &git.ErrPushOutOfDate{
@@ -519,6 +547,9 @@ func doMergeAndPush(ctx context.Context, pr *issues_model.PullRequest, doer *use
 			return "", err
 		}
 		return "", fmt.Errorf("git push: %s", err.Stderr())
+	}
+	if execution != nil && execution.gate != nil {
+		execution.gatePushSucceeded = true
 	}
 	mergeCtx.outbuf.Reset()
 	return mergeCommitID, nil
@@ -711,7 +742,7 @@ func CheckPullBranchProtections(ctx context.Context, pr *issues_model.PullReques
 }
 
 // MergedManually mark pr as merged manually
-func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string) (err error) {
+func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string, options ...MergeOptions) (err error) {
 	if pr == nil || doer == nil || baseGitRepo == nil {
 		return util.ErrInvalidArgument
 	}
@@ -720,15 +751,23 @@ func MergedManually(ctx context.Context, pr *issues_model.PullRequest, doer *use
 		return fmt.Errorf("lock.Lock: %w", err)
 	}
 	defer releaser()
-	return mergedManuallyLocked(ctx, pr, doer, baseGitRepo, commitID, false)
+	return mergedManuallyLocked(ctx, pr, doer, baseGitRepo, commitID, false, options...)
 }
 
-func mergedManuallyLocked(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string, automatic bool) (err error) {
-	if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
-		return err
+func mergedManuallyLocked(ctx context.Context, pr *issues_model.PullRequest, doer *user_model.User, baseGitRepo *git.Repository, commitID string, automatic bool, options ...MergeOptions) (err error) {
+	if !setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce {
+		if err := authz_service.RequireRepoFeature(ctx, pr.BaseRepoID, authz.FeaturePullRequests); err != nil {
+			return err
+		}
 	}
+	ctx = authz_service.WithOperation(ctx)
 	execution := new(mergeExecution)
-	defer func() { execution.finish(err) }()
+	defer func() {
+		execution.finish(err)
+		if terminalErr := execution.finishMergeGate(err); terminalErr != nil {
+			err = terminalErr
+		}
+	}()
 	actorID, repoID := doer.ID, pr.BaseRepoID
 	defer func() {
 		outcome := authz_service.NativeSuccess
@@ -740,6 +779,22 @@ func mergedManuallyLocked(ctx context.Context, pr *issues_model.PullRequest, doe
 	doer, err = refreshPullMutation(ctx, pr, doer)
 	if err != nil {
 		return err
+	}
+	mergeOptions := MergeOptions{}
+	if len(options) > 0 {
+		mergeOptions = options[0]
+	}
+	var manualGit *mergeGateGitContext
+	if setting.EnterpriseMergeGate.Enabled {
+		manualGit, _ = prepareManualMergeGateGit(ctx, pr, commitID, automatic)
+		if setting.EnterpriseMergeGate.Enforce {
+			if _, err := admitMergeGate(ctx, pr, doer, repo_model.MergeStyleManuallyMerged, mergeOptions, false, manualGit, commitID, false, "manual_recognition"); err != nil {
+				return err
+			}
+		}
+		execution.gateGuard = func(ctx context.Context, _ git.RepositoryFacade, _, resultSHA string) (*authz_model.MergeGateEvaluation, error) {
+			return admitMergeGate(ctx, pr, doer, repo_model.MergeStyleManuallyMerged, mergeOptions, false, manualGit, resultSHA, true, "manual_recognition")
+		}
 	}
 	if err := checkManualMergeExecutionNative(ctx, pr, doer, automatic); err != nil {
 		return err
@@ -788,6 +843,13 @@ func mergedManuallyLocked(ctx context.Context, pr *issues_model.PullRequest, doe
 			return err
 		}
 		defer release()
+	}
+
+	if setting.EnterpriseMergeGate.Enabled && !setting.EnterpriseAuthz.Enforce {
+		ctx, _, _, err = beginPullGitExecution(ctx, doer, pr.BaseRepo, baseGitRepo, pr.BaseBranch, pr.MergeBase, commitID, true, false, execution)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = db.WithTx(ctx, func(ctx context.Context) error {
@@ -839,6 +901,10 @@ func mergedManuallyLocked(ctx context.Context, pr *issues_model.PullRequest, doe
 		return err
 	}
 
+	execution.gatePushSucceeded = true
+	if err := execution.finishMergeGate(nil); err != nil {
+		return err
+	}
 	notify_service.MergePullRequest(ctx, doer, pr)
 	log.Info("manuallyMerged[%d]: Marked as manually merged into %s/%s by commit id: %s", pr.ID, pr.BaseRepo.Name, pr.BaseBranch, commitID)
 
@@ -885,6 +951,9 @@ func SetMerged(ctx context.Context, pr *issues_model.PullRequest, mergedCommitID
 		}
 
 		// Removing an auto merge pull and ignore if not exist
+		if err := authz_service.CancelMergeGateSchedulesTx(ctx, pr.ID); err != nil {
+			return false, err
+		}
 		if err := pull_model.DeleteScheduledAutoMerge(ctx, pr.ID); err != nil && !db.IsErrNotExist(err) {
 			return false, fmt.Errorf("DeleteScheduledAutoMerge[%d]: %v", pr.ID, err)
 		}
@@ -904,6 +973,9 @@ func SetMerged(ctx context.Context, pr *issues_model.PullRequest, mergedCommitID
 			return false, issues_model.ErrIssueAlreadyChanged
 		}
 
+		if err := authz_service.RecordMergeGateMarkerTx(ctx, pr.BaseRepoID, pr.ID, merger.ID, pr.BaseBranch, mergedCommitID); err != nil {
+			return false, err
+		}
 		return true, nil
 	})
 }

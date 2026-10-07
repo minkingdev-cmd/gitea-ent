@@ -113,6 +113,18 @@ func HookPostReceive(ctx *gitea_context.PrivateContext) {
 		return
 	}
 	hookPostReceiveSyncRepoDefaultBranch(ctx, opts, repo)
+	if setting.EnterpriseMergeGate.Enabled && opts.PushTrigger != repo_module.PushTriggerPRMergeToBase {
+		operationCtx, operation := receiveOperation(ctx, opts)
+		if operation != nil {
+			for _, update := range updates {
+				if update.RefFullName.IsBranch() && !update.IsDelRef() {
+					if err := pull_service.RecordManualMergePush(operationCtx, ctx.Doer, repo, update.RefFullName.BranchName(), update.OldCommitID, update.NewCommitID, operation.Source(), operation.Credential()); err != nil {
+						log.Warn("Enterprise manual merge provenance unavailable; Git push already completed")
+					}
+				}
+			}
+		}
+	}
 
 	// handle pull request merging, a pull request action should push at least 1 commit
 	if opts.PushTrigger == repo_module.PushTriggerPRMergeToBase {

@@ -58,7 +58,7 @@ func DetachedObservationContext(target, source context.Context) context.Context 
 		return target
 	}
 	// 不传播请求取消、业务事务或其他请求权限。
-	for _, key := range []any{operationKey{}, boundObservationKey{}} {
+	for _, key := range []any{operationKey{}, boundObservationKey{}, mergeGateQueueKey{}} {
 		if value := source.Value(key); value != nil {
 			target = context.WithValue(target, key, value)
 		}

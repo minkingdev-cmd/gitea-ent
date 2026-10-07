@@ -16,6 +16,9 @@ import (
 // swagger:parameters parameterBodies
 type swaggerParameterBodies struct {
 	// in:body
+	PutEnterpriseProtectedPathRuleOption api.PutEnterpriseProtectedPathRuleOption
+
+	// in:body
 	PutEnterpriseFeatureGrantOption api.PutEnterpriseFeatureGrantOption
 
 	// in:body

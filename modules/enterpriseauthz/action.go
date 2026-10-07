@@ -11,7 +11,7 @@ import (
 type Action string
 
 const (
-	CatalogVersion                = 2
+	CatalogVersion                = 3
 	ViewMetadata           Action = "repo.view_metadata"
 	ReadCode               Action = "repo.read_code"
 	Clone                  Action = "repo.clone"
@@ -26,6 +26,8 @@ const (
 	ManageWebhook          Action = "repo.manage_webhook"
 	ManageCI               Action = "repo.manage_ci"
 	ManageSecret           Action = "repo.manage_secret"
+	ManageSensitivePaths   Action = "repo.manage_sensitive_paths"
+	BypassMergeGate        Action = "repo.bypass_merge_gate"
 	ManageAccess           Action = "repo.manage_access"
 	ManageFeatureGrant     Action = "repo.manage_feature_grant"
 	Migrate                Action = "repo.migrate"
@@ -60,6 +62,8 @@ var actions = []ActionMetadata{
 	{ManageWebhook, "管理仓库 webhook", nil, "high", true, true, false, true},
 	{ManageCI, "管理 CI 设置", []string{"code", "actions"}, "high", true, true, true, true},
 	{ManageSecret, "管理仓库 secret", []string{"actions"}, "high", true, true, false, true},
+	{ManageSensitivePaths, "管理敏感路径规则", []string{"code"}, "high", true, true, false, true},
+	{BypassMergeGate, "有限豁免合并门禁", []string{"code", "pull_requests"}, "high", true, true, false, true},
 	{ManageAccess, "管理仓库访问授权", nil, "high", true, true, false, true},
 	{ManageFeatureGrant, "管理功能授权", nil, "high", true, true, false, true},
 	{Migrate, "迁移到已创建的本地仓库", nil, "high", true, true, false, false},
@@ -104,8 +108,8 @@ func BuiltinRoles() map[string][]Action {
 		"reviewer":            {ViewMetadata, ReadCode, Clone, ReviewPullRequest},
 		"maintainer":          {ViewMetadata, ReadCode, Clone, CreateBranch, PushBranch, CreatePullRequest, ReviewPullRequest, MergePullRequest, ManageWebhook, ManageCI},
 		"security-maintainer": {ViewMetadata, ReadCode, Clone, ReviewPullRequest, ManageCodeowners, ManageCI},
-		"owner":               {ViewMetadata, ReadCode, Clone, CreateBranch, PushBranch, PushProtectedBranch, CreatePullRequest, ReviewPullRequest, MergePullRequest, ManageBranchProtection, ManageCodeowners, ManageWebhook, ManageCI, ManageSecret, ManageAccess, ManageFeatureGrant, Migrate, Transfer, Archive, Delete},
-		"platform-admin":      {ViewMetadata, ReadCode, Clone, CreateBranch, PushBranch, PushProtectedBranch, CreatePullRequest, ReviewPullRequest, MergePullRequest, ManageBranchProtection, ManageCodeowners, ManageWebhook, ManageCI, ManageSecret, ManageAccess, ManageFeatureGrant, Migrate, Transfer, Archive, Delete},
+		"owner":               {ViewMetadata, ReadCode, Clone, CreateBranch, PushBranch, PushProtectedBranch, CreatePullRequest, ReviewPullRequest, MergePullRequest, ManageBranchProtection, ManageCodeowners, ManageWebhook, ManageCI, ManageSecret, ManageAccess, ManageFeatureGrant, ManageSensitivePaths, BypassMergeGate, Migrate, Transfer, Archive, Delete},
+		"platform-admin":      {ViewMetadata, ReadCode, Clone, CreateBranch, PushBranch, PushProtectedBranch, CreatePullRequest, ReviewPullRequest, MergePullRequest, ManageBranchProtection, ManageCodeowners, ManageWebhook, ManageCI, ManageSecret, ManageAccess, ManageFeatureGrant, ManageSensitivePaths, BypassMergeGate, Migrate, Transfer, Archive, Delete},
 	}
 }
 
@@ -115,6 +119,8 @@ func ActionInCatalog(version int, action Action) bool {
 		return slices.Contains([]Action{ViewMetadata, ReadCode, Clone, CreateBranch, PushBranch, PushProtectedBranch, CreatePullRequest, ReviewPullRequest, MergePullRequest, ManageBranchProtection, ManageCodeowners, ManageWebhook, ManageCI, ManageSecret, ManageFeatureGrant, Migrate, Transfer, Archive, Delete}, action)
 	case 2:
 		return action == ManageAccess || ActionInCatalog(1, action)
+	case 3:
+		return action == ManageSensitivePaths || action == BypassMergeGate || ActionInCatalog(2, action)
 	default:
 		return false
 	}

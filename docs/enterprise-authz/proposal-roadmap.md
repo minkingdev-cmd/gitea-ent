@@ -449,3 +449,12 @@ openspec new change "harden-wecom-governance-ops"
 运维步骤见 [功能授权手册](feature-grants-runbook.md)：Linux 正式 migration 363 / DB version 364、Cargo 稳定用途标记、`enterprise_cargo_index_source` 唯一 pair 与永久历史来源，以及旧索引受审计显式认领（完整 Git 历史核实、可重复 `--source-repo-id` 或互斥 `--confirm-no-linked-history`），旧 mail queue 全实例停机和仅 mail 隔离、旧 hook 来源缺失 fail-closed，以及成套 DB+Git/storage+queue 备份恢复。Git commit 前追加 Cargo 实际来源，删除/unlink 不清理；索引读取按全部来源当前 repo 策略，来源删除/未知拒绝。marked index 禁止 owner transfer，rename 保留稳定 ID；未标记同名仓库仅 disabled 保留上游 lookup，不赋 marker。旧二进制不得降 schema，不按仓库名称或仅现存包认领索引、不 rewrite 历史，不删 common 共享队列目录。
 
 本更新不宣称生产部署/完整恢复已经执行；实跑与未验证项以本 change verification 为准，前序 change 历史验收保留。
+
+
+## 2026-10-06：Proposal 5 工作区实施与验收完成（未合并/上线）
+
+`add-enterprise-merge-gate` 已接入独立开关、三作用域累计敏感规则/CAS API、catalog3 两个独立 action、完整 diff/base CODEOWNERS/current-head 审批与 native/feature/path status、shared Merge/manual 写前门禁和有限 bypass 字段/表单。队列记录原始凭据上限及 queue ID，worker 当前 facts 重评；receive 历史保留真实 pusher/非零历史范围；内部 ticket 绑定本次 admission，终态使用同 operation receipt 并只修证据对账。规则管理仍 API-only，没有外部 scanner/AI 执行或模板/offboarding UI。
+
+当前逐 Requirement/Scenario 证据见该 change 的 `verification.md` / `tasks.md`，运维语义见 [merge gate 手册](merge-gate-runbook.md)。最新串行验证通过：完整后端244个测试包、前端167项、Linux SQLite/PostgreSQL 各108入口/角色/模式矩阵和15策略/签名/hook矩阵、真实fork/AGit、故障/取消/超时/独立进程重启对账、迁移及协议套件，PG最终写前11类事实屏障，以及3项对最新Linux服务的Chromium整页E2E。构建、格式/lint、Swagger兼容与strict验证通过；E2E最慢5.5秒，尚未稳定达到4秒性能目标。测试临时服务已清理，不影响现有服务。工作区开发/验收完成不等于已合并或生产上线；生产enforce仍须运维显式审批、统一实例配置和上线观察。
+
+原生 status skipped 兼容而企业 feature/path 仅 success；有 writer 权限者可伪造同名 context，不能宣称供应商身份或扫描内容认证。回退保留两表/历史，不能改 DB version 或删表降级。保留前序 proposal 的原文和证据，callback 持续关闭；未提交、推送、部署、同步 main specs 或归档。

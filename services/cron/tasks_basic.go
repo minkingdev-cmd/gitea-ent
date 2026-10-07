@@ -19,6 +19,7 @@ import (
 	"gitea.dev/services/migrations"
 	mirror_service "gitea.dev/services/mirror"
 	packages_cleanup_service "gitea.dev/services/packages/cleanup"
+	pull_service "gitea.dev/services/pull"
 	repo_service "gitea.dev/services/repository"
 	archiver_service "gitea.dev/services/repository/archiver"
 )
@@ -185,7 +186,14 @@ func registerEnterpriseWeComAdminCallbacks() {
 	})
 }
 
+func registerEnterpriseMergeGateReconciliation() {
+	RegisterTaskFatal("reconcile_enterprise_merge_gate", &BaseConfig{Enabled: setting.EnterpriseMergeGate.Enabled, RunAtStart: true, Schedule: "@every 5m"}, func(ctx context.Context, _ *user_model.User, _ *BaseConfig) error {
+		return pull_service.ReconcileMergeGateEvaluations(ctx)
+	})
+}
+
 func initBasicTasks() {
+	registerEnterpriseMergeGateReconciliation()
 	if setting.Mirror.Enabled {
 		registerUpdateMirrorTask()
 	}

@@ -87,7 +87,7 @@ func TestEnterpriseWeComPublicationCoordinationPortable(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		_, err := wecom_service.RunAutomationPipeline(t.Context(), governancePublicationClient{entered: entered, release: release}, wecom_service.AutomationRunOptions{RunID: "portable-running"})
+		_, err := wecom_service.RunAutomationPipeline(t.Context(), governancePublicationClient{entered: entered, release: release}, wecom_service.AutomationRunOptions{RunID: "portable-running", Trigger: "cron"})
 		done <- err
 	}()
 	<-entered
@@ -95,6 +95,10 @@ func TestEnterpriseWeComPublicationCoordinationPortable(t *testing.T) {
 	require.ErrorContains(t, err, "writer_busy")
 	close(release)
 	require.NoError(t, <-done)
+	published := unittest.AssertExistsAndLoadBean(t, &wecom_model.ReconcileRun{RunID: "portable-running"})
+	require.Equal(t, "cron", published.Trigger)
+	require.Equal(t, "success", published.DirectorySyncStatus)
+	require.Equal(t, "success", published.AuthorityRefreshStatus)
 	coordinator := unittest.AssertExistsAndLoadBean(t, &wecom_model.GovernanceCoordinator{CorpID: "portable", AgentID: "1000002"})
 	require.EqualValues(t, 1, coordinator.PublishedRevision)
 	generated := unittest.AssertExistsAndLoadBean(t, &wecom_model.GeneratedTeam{CorpID: "portable", AgentID: "1000002"})

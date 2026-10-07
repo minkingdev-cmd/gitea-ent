@@ -122,6 +122,14 @@ func testPolicyLifecycleCleanup(t *testing.T, enabled bool) {
 				bindingIDs = append(bindingIDs, entry.ID)
 			}
 			require.Contains(t, bindingIDs, binding.ID)
+			var gateRule *authz_model.ProtectedPathRule
+			var gateEvidence *authz_model.MergeGateEvaluation
+			if name == "repository" || name == "organization" {
+				gateRule = &authz_model.ProtectedPathRule{ScopeType: scopeType, ScopeID: scopeID, OwnerID: ownerID, RequiredRoleID: role.ID, ConfigJSON: "{}", Enabled: true, Revision: 1, CreatedBy: 1, UpdatedBy: 1}
+				require.NoError(t, db.Insert(t.Context(), gateRule))
+				gateEvidence = &authz_model.MergeGateEvaluation{OperationID: "lifecycle-history", Attempt: 1, Phase: "admission", RepoID: repoID, PullID: 1, IssueID: 1, ActorID: actorID, SnapshotJSON: `{"immutable":true}`, SnapshotVersion: 1}
+				require.NoError(t, db.Insert(t.Context(), gateEvidence))
+			}
 			setting.EnterpriseAuthz.Enabled = enabled
 			admin := unittest.AssertExistsAndLoadBean(t, &user_model.User{ID: 1})
 			ctx := audit.WithDoer(t.Context(), admin)
@@ -136,6 +144,14 @@ func testPolicyLifecycleCleanup(t *testing.T, enabled bool) {
 				require.NoError(t, org_service.DeleteOrganization(ctx, unittest.AssertExistsAndLoadBean(t, &organization.Organization{ID: 3}), true))
 			}
 			unittest.AssertNotExistsBean(t, &authz_model.SubjectRoleBinding{ID: binding.ID})
+			if gateRule != nil {
+				stored := unittest.AssertExistsAndLoadBean(t, &authz_model.ProtectedPathRule{ID: gateRule.ID})
+				require.True(t, stored.Deleted)
+				require.False(t, stored.Enabled)
+				require.EqualValues(t, 2, stored.Revision)
+				evidence := unittest.AssertExistsAndLoadBean(t, &authz_model.MergeGateEvaluation{ID: gateEvidence.ID})
+				require.Equal(t, *gateEvidence, *evidence)
+			}
 			storedDecision := unittest.AssertExistsAndLoadBean(t, &authz_model.DecisionRecord{ID: decision.ID})
 			require.Equal(t, *decision, *storedDecision)
 			if containedTeamBinding != nil {

@@ -44,7 +44,7 @@ func TestEnterpriseAuthzFreshInstall(t *testing.T) {
 		require.Equal(t, permissionsBefore, permissionsAfter)
 		count, err := x.Count(new(authzmodel.RolePermission))
 		require.NoError(t, err)
-		require.EqualValues(t, 70, count)
+		require.EqualValues(t, 74, count)
 		require.NoError(t, authzmodel.CheckReady(t.Context()))
 	}
 	var bindings []authzmodel.SubjectRoleBinding
@@ -77,7 +77,7 @@ func TestEnterpriseAuthzFreshInstall(t *testing.T) {
 	}
 	version, err := GetCurrentDBVersion(x)
 	require.NoError(t, err)
-	require.EqualValues(t, 364, version)
+	require.EqualValues(t, 365, version)
 }
 
 func TestEnterpriseAuthzInstallRejectsUnversionedDatabase(t *testing.T) {
@@ -100,7 +100,7 @@ func TestEnterpriseAuthzInstallDoesNotRepairCurrentDatabase(t *testing.T) {
 	defer cleanup()
 	defer test.MockVariableValue(&setting.EnterpriseAuthz)()
 	setting.EnterpriseAuthz.Enabled = true
-	_, err := x.Insert(&Version{ID: 1, Version: 364})
+	_, err := x.Insert(&Version{ID: 1, Version: 365})
 	require.NoError(t, err)
 	require.NoError(t, x.Sync(new(authzmodel.RoleDefinition), new(authzmodel.RolePermission), new(authzmodel.SubjectRoleBinding), new(authzmodel.DecisionRecord), new(authzmodel.FeatureDefinition), new(authzmodel.FeatureGrant), new(v28.FeatureHookTaskV363), new(authzmodel.CargoIndexSource), new(v28.FeatureRepositoryV363)))
 	require.NoError(t, Migrate(t.Context(), x))
@@ -122,8 +122,8 @@ func TestEnterpriseAuthzUpgradeReadiness(t *testing.T) {
 	require.NoError(t, authzmodel.CheckReady(t.Context()))
 	defer test.MockVariableValue(&preparedMigrations)()
 	preparedMigrations = prepareMigrationTasks()[:len(prepareMigrationTasks())-1]
-	require.EqualValues(t, 363, ExpectedDBVersion())
-	require.ErrorContains(t, EnsureUpToDate(t.Context(), x), "current database version 364 is not equal to the expected version 363")
+	require.EqualValues(t, 364, ExpectedDBVersion())
+	require.ErrorContains(t, EnsureUpToDate(t.Context(), x), "current database version 365 is not equal to the expected version 364")
 }
 
 func TestEnterpriseAuthzFreshInstallInterruptedRecovery(t *testing.T) {

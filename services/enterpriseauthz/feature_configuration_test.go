@@ -50,3 +50,32 @@ func (h *featureConfigurationLocks) BeforeProcess(c *contexts.ContextHook) (cont
 }
 
 func (*featureConfigurationLocks) AfterProcess(*contexts.ContextHook) error { return nil }
+
+func TestMergeGateConfigurationLockOrder(t *testing.T) {
+	enableMergeGate(t)
+	setting.EnterpriseAuthz.Enforce = true
+	hook := &mergeGateScopeLocks{enabled: true}
+	db.GetXORMEngineForTesting().AddHook(hook)
+	t.Cleanup(func() { hook.enabled = false })
+	require.NoError(t, WithRepoFeatureConfiguration(t.Context(), 1, nil, nil, func(context.Context) error { return nil }))
+	require.GreaterOrEqual(t, len(hook.tables), 2)
+	require.Equal(t, []string{"feature", "repository"}, hook.tables[:2])
+}
+
+type mergeGateScopeLocks struct {
+	enabled bool
+	tables  []string
+}
+
+func (h *mergeGateScopeLocks) BeforeProcess(c *contexts.ContextHook) (context.Context, error) {
+	if h.enabled && strings.HasPrefix(c.SQL, "UPDATE") {
+		if strings.Contains(c.SQL, "enterprise_feature_definition") {
+			h.tables = append(h.tables, "feature")
+		} else if strings.Contains(c.SQL, "repository") && strings.Contains(c.SQL, "id=id") {
+			h.tables = append(h.tables, "repository")
+		}
+	}
+	return c.Ctx, nil
+}
+
+func (*mergeGateScopeLocks) AfterProcess(*contexts.ContextHook) error { return nil }

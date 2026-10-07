@@ -5,7 +5,9 @@ package enterpriseauthz
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -20,6 +22,7 @@ import (
 	"gitea.dev/modules/util"
 	"gitea.dev/modules/web/middleware"
 	"gitea.dev/services/audit"
+	"gitea.dev/services/automergequeue"
 
 	"xorm.io/builder"
 )
@@ -94,6 +97,11 @@ func withPolicyMutation(ctx context.Context, actor *user_model.User, scope authz
 		return ErrPolicyStorage
 	}
 	return db.WithTx(ctx, func(tx context.Context) error {
+		if setting.EnterpriseMergeGate.Enabled {
+			if err := LockMergeGatePolicyScopes(tx, scope); err != nil {
+				return ErrPolicyStorage
+			}
+		}
 		if scope.Type == authz_model.ScopeSystem {
 			if _, err := db.Exec(tx, "UPDATE `user` SET id=id WHERE id=?", actor.ID); err != nil {
 				return ErrPolicyStorage
@@ -435,6 +443,13 @@ func DeleteRole(ctx context.Context, actor *user_model.User, scope authz_model.S
 		if referenced {
 			return ErrRoleReferenced
 		}
+		referenced, err = db.GetEngine(tx).Where("required_role_id=? AND enabled=? AND deleted=?", id, true, false).Exist(new(authz_model.ProtectedPathRule))
+		if err != nil {
+			return ErrPolicyStorage
+		}
+		if referenced {
+			return ErrRoleReferenced
+		}
 		if err := replaceRolePermissions(tx, id, nil); err != nil {
 			return err
 		}
@@ -508,6 +523,10 @@ func recordPolicyEvent(ctx context.Context, resolved *managementScope, action au
 	}
 	if err := audit.RecordEvent(ctx, audit.RecordParams{Action: action, Actor: audit_model.EntityRef{Type: audit_model.ScopeUser, ID: resolved.actor.ID}, ActorCredential: credential, Impersonator: safeAuditImpersonator(ctx, resolved.actor.ID), Scope: managementAuditScope(resolved), Metadata: metadata}); err != nil {
 		return ErrPolicyStorage
+	}
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+		item := automergequeue.AutoMergeItem(fmt.Sprintf("gate-scope:%s:%d:%s", resolved.scope.Type, resolved.scope.ID, rand.Text()))
+		db.AfterCommit(ctx, func() { automergequeue.AddToQueue(item) })
 	}
 	return nil
 }

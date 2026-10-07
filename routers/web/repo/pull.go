@@ -1076,7 +1076,10 @@ func MergePullRequest(ctx *context.Context) {
 	}
 
 	// start with merging by checking
-	if err := pull_service.CheckPullMergeable(ctx, ctx.Doer, &ctx.Repo.Permission, pr, mergeCheckType, repo_model.MergeStyle(form.Do), form.ForceMerge); err != nil {
+	if err := pull_service.CheckPullMergeableForRequest(ctx, ctx.Doer, &ctx.Repo.Permission, pr, mergeCheckType, repo_model.MergeStyle(form.Do), pull_service.MergeOptions{Force: form.ForceMerge, BypassReason: form.BypassReason, BypassCategories: form.BypassCategories}, form.MergeCommitID); err != nil {
+		if common.WriteExecutionError(ctx.Base, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, pull_service.ErrIsClosed):
 			if issue.IsPull {
@@ -1109,7 +1112,7 @@ func MergePullRequest(ctx *context.Context) {
 
 	// handle manually-merged mark
 	if manuallyMerged {
-		if err := pull_service.MergedManually(ctx, pr, ctx.Doer, ctx.Repo.GitRepo, form.MergeCommitID); err != nil {
+		if err := pull_service.MergedManually(ctx, pr, ctx.Doer, ctx.Repo.GitRepo, form.MergeCommitID, pull_service.MergeOptions{Force: form.ForceMerge, BypassReason: form.BypassReason, BypassCategories: form.BypassCategories}); err != nil {
 			if common.WriteExecutionError(ctx.Base, err) {
 				return
 			}
@@ -1154,7 +1157,7 @@ func MergePullRequest(ctx *context.Context) {
 			_ = pull_model.DeleteScheduledAutoMerge(ctx, pr.ID)
 		}
 		// schedule auto merge
-		scheduled, err := automerge.ScheduleAutoMerge(ctx, ctx.Doer, pr, repo_model.MergeStyle(form.Do), message, deleteBranchAfterMerge, automerge.ScheduleOptions{ReplaceExisting: setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce})
+		scheduled, err := automerge.ScheduleAutoMerge(ctx, ctx.Doer, pr, repo_model.MergeStyle(form.Do), message, deleteBranchAfterMerge, automerge.ScheduleOptions{ReplaceExisting: setting.EnterpriseAuthz.Enabled && setting.EnterpriseAuthz.Enforce, MergeOptions: pull_service.MergeOptions{Force: form.ForceMerge, BypassReason: form.BypassReason, BypassCategories: form.BypassCategories}})
 		if err != nil {
 			if common.WriteExecutionError(ctx.Base, err) {
 				return
@@ -1170,7 +1173,7 @@ func MergePullRequest(ctx *context.Context) {
 		}
 	}
 
-	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false, pull_service.MergeOptions{Force: form.ForceMerge}); err != nil {
+	if err := pull_service.Merge(ctx, pr, ctx.Doer, repo_model.MergeStyle(form.Do), form.HeadCommitID, message, false, pull_service.MergeOptions{Force: form.ForceMerge, BypassReason: form.BypassReason, BypassCategories: form.BypassCategories}); err != nil {
 		if common.WriteExecutionError(ctx.Base, err) {
 			return
 		}

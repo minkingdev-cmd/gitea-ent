@@ -30,7 +30,17 @@ func TestPolicyUniquenessAndCleanup(t *testing.T) {
 	copyDecision := *decision
 	copyDecision.ID = 0
 	require.Error(t, db.Insert(ctx, &copyDecision))
+	rule := &ProtectedPathRule{ScopeType: ScopeRepo, ScopeID: 1, OwnerID: 2, RequiredRoleID: role.ID, ConfigJSON: `{"path_pattern":"**","required_role_id":1,"check_contexts":[],"enabled":true}`, Enabled: true, Revision: 1, CreatedBy: 2, UpdatedBy: 2}
+	require.NoError(t, db.Insert(ctx, rule))
+	evaluation := &MergeGateEvaluation{OperationID: "history", Attempt: 1, Phase: "admission", RepoID: 1, PullID: 1}
+	require.NoError(t, db.Insert(ctx, evaluation))
 	require.NoError(t, DeleteScope(ctx, Scope{Type: ScopeRepo, ID: 1}))
+	unittest.AssertNotExistsBean(t, &ProtectedPathRule{ScopeType: ScopeRepo, ScopeID: 1}, unittest.Cond("deleted=?", false))
+	storedRule := unittest.AssertExistsAndLoadBean(t, &ProtectedPathRule{ID: rule.ID})
+	require.True(t, storedRule.Deleted)
+	require.False(t, storedRule.Enabled)
+	require.EqualValues(t, 2, storedRule.Revision)
+	unittest.AssertExistsAndLoadBean(t, &MergeGateEvaluation{ID: evaluation.ID})
 	unittest.AssertNotExistsBean(t, &RoleDefinition{ID: role.ID})
 	unittest.AssertNotExistsBean(t, &RolePermission{RoleID: role.ID})
 	unittest.AssertNotExistsBean(t, &SubjectRoleBinding{ID: binding.ID})

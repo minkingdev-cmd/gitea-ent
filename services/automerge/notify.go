@@ -12,6 +12,7 @@ import (
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/log"
 	"gitea.dev/modules/repository"
+	"gitea.dev/modules/setting"
 	"gitea.dev/services/automergequeue"
 	notify_service "gitea.dev/services/notify"
 	pull_service "gitea.dev/services/pull"
@@ -30,7 +31,7 @@ func NewNotifier() notify_service.Notifier {
 
 func (n *automergeNotifier) PullRequestReview(ctx context.Context, pr *issues_model.PullRequest, review *issues_model.Review, comment *issues_model.Comment, mentions []*user_model.User) {
 	// as a missing / blocking reviews could have blocked a pending automerge let's recheck
-	if review.Type == issues_model.ReviewTypeApprove {
+	if review.Type == issues_model.ReviewTypeApprove || setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
 		automergequeue.StartAutoMergeCheckByPullHead(ctx, pr)
 	}
 }
@@ -49,7 +50,7 @@ func (n *automergeNotifier) PullReviewDismiss(ctx context.Context, doer *user_mo
 }
 
 func (n *automergeNotifier) CreateCommitStatus(ctx context.Context, repo *repo_model.Repository, commit *repository.PushCommit, sender *user_model.User, status *git_model.CommitStatus) {
-	if !status.State.IsSuccess() {
+	if !status.State.IsSuccess() && (!setting.EnterpriseMergeGate.Enabled || !setting.EnterpriseMergeGate.Enforce) {
 		return
 	}
 

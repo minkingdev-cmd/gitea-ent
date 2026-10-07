@@ -212,7 +212,7 @@ func TestEvaluateSnapshotExplainsUnmatchedPermissionsWithoutPrivateContext(t *te
 	require.Equal(t, "condition_not_matched", decision.Reason)
 	var snapshot roleSnapshot
 	require.NoError(t, json.Unmarshal([]byte(decision.Snapshot), &snapshot))
-	require.Equal(t, 2, snapshot.CatalogVersion)
+	require.Equal(t, 3, snapshot.CatalogVersion)
 	require.Equal(t, repository.OwnerID, snapshot.OwnerID)
 	require.Equal(t, "access-token:42", snapshot.Credential.Reference)
 	require.Len(t, snapshot.Roles, 1)

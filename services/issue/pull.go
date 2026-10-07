@@ -5,6 +5,7 @@ package issue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -37,7 +38,11 @@ func IsCodeOwnerFile(f string) bool {
 }
 
 // Get all code owner rules for a given pr + repo combination.
-func getCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_model.PullRequest) ([]*issues_model.CodeOwnerRule, error) {
+func getCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_model.PullRequest, strict ...bool) ([]*issues_model.CodeOwnerRule, error) {
+	return getCodeOwnerRulesAt(ctx, repo, pr, git.BranchPrefix+pr.BaseBranch, strict...)
+}
+
+func getCodeOwnerRulesAt(ctx context.Context, repo *git.Repository, pr *issues_model.PullRequest, baseRef string, strict ...bool) ([]*issues_model.CodeOwnerRule, error) {
 	if err := pr.LoadBaseRepo(ctx); err != nil {
 		return nil, err
 	}
@@ -52,7 +57,7 @@ func getCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_mod
 		return nil, nil
 	}
 
-	commit, err := repo.GetBranchCommit(ctx, pr.BaseBranch)
+	commit, err := repo.GetCommit(ctx, baseRef)
 	if err != nil {
 		return nil, err
 	}
@@ -62,6 +67,9 @@ func getCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_mod
 	for _, file := range codeOwnerFiles {
 		blob, err := commit.GetBlobByPath(ctx, repo, file)
 		if err != nil {
+			if len(strict) > 0 && strict[0] && !git.IsErrNotExist(err) {
+				return nil, err
+			}
 			continue // no CODEOWNERS at this path, try the next candidate
 		}
 		// A truncated CODEOWNERS would silently drop rules, so fail closed rather
@@ -83,7 +91,16 @@ func getCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_mod
 		return nil, nil
 	}
 
-	rules, warnings := issues_model.GetCodeOwnersFromContent(ctx, data)
+	var rules []*issues_model.CodeOwnerRule
+	var warnings []string
+	if len(strict) > 0 && strict[0] {
+		rules, warnings, err = issues_model.GetCodeOwnersFromContentWithError(ctx, data)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		rules, warnings = issues_model.GetCodeOwnersFromContent(ctx, data)
+	}
 	for _, w := range warnings {
 		log.Warn("CODEOWNERS parsing for PR %s#%d: %s", pr.BaseRepo.FullName(), pr.ID, w)
 	}
@@ -97,8 +114,8 @@ func getCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_mod
 // Get the matching code owner rules for a given pr + repo combination. The returned
 // complete flag is false when rule matching was cut short by the match budget, so
 // the returned slice is only a partial set of the matching rules.
-func getMatchingCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_model.PullRequest) (matchingRules []*issues_model.CodeOwnerRule, complete bool, err error) {
-	rules, err := getCodeOwnerRules(ctx, repo, pr)
+func getMatchingCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *issues_model.PullRequest, strict ...bool) (matchingRules []*issues_model.CodeOwnerRule, complete bool, err error) {
+	rules, err := getCodeOwnerRules(ctx, repo, pr, strict...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -119,6 +136,10 @@ func getMatchingCodeOwnerRules(ctx context.Context, repo *git.Repository, pr *is
 		return nil, false, err
 	}
 
+	return matchCodeOwnerRules(rules, changedFiles, pr, strict...)
+}
+
+func matchCodeOwnerRules(rules []*issues_model.CodeOwnerRule, changedFiles []string, pr *issues_model.PullRequest, strict ...bool) (matchingRules []*issues_model.CodeOwnerRule, complete bool, err error) {
 	matchingRules = make([]*issues_model.CodeOwnerRule, 0)
 	complete = true
 
@@ -134,7 +155,10 @@ ruleLoop:
 				complete = false
 				break ruleLoop
 			}
-			matched, _ := rule.Rule.MatchString(f) // err only happens when timeouts, any error can be considered as not matched
+			matched, matchErr := rule.Rule.MatchString(f)
+			if matchErr != nil && len(strict) > 0 && strict[0] {
+				return nil, false, matchErr
+			}
 			if matched != rule.Negative {
 				matchingRules = append(matchingRules, rule)
 				break
@@ -146,35 +170,69 @@ ruleLoop:
 }
 
 func HasAllRequiredCodeownerReviews(ctx context.Context, pb *git_model.ProtectedBranch, pr *issues_model.PullRequest) bool {
+	allowed, err := hasAllRequiredCodeownerReviews(ctx, pb, pr, false)
+	return allowed && err == nil
+}
+
+func HasAllRequiredCodeownerReviewsWithError(ctx context.Context, pb *git_model.ProtectedBranch, pr *issues_model.PullRequest) (bool, error) {
+	return hasAllRequiredCodeownerReviews(ctx, pb, pr, true)
+}
+
+func HasAllRequiredCodeownerReviewsAt(ctx context.Context, pb *git_model.ProtectedBranch, pr *issues_model.PullRequest, repo *git.Repository, baseSHA string, paths []string) (bool, error) {
 	if !pb.BlockOnCodeownerReviews {
-		return true
+		return true, nil
+	}
+	if repo == nil || paths == nil || !git.IsStringValidObjectID(nil, baseSHA) || git.IsEmptyCommitID(baseSHA) {
+		return false, errors.New("codeowner_context_incomplete")
+	}
+	rules, err := getCodeOwnerRulesAt(ctx, repo, pr, baseSHA, true)
+	if err != nil {
+		return false, err
+	}
+	matching, complete, err := matchCodeOwnerRules(rules, paths, pr, true)
+	if err != nil {
+		return false, err
+	}
+	if !complete {
+		return false, errors.New("codeowner_matching_incomplete")
+	}
+	return hasCodeownerReviews(ctx, pb, pr, matching)
+}
+
+func hasAllRequiredCodeownerReviews(ctx context.Context, pb *git_model.ProtectedBranch, pr *issues_model.PullRequest, strict bool) (bool, error) {
+	if !pb.BlockOnCodeownerReviews {
+		return true, nil
 	}
 
 	if err := pr.LoadBaseRepo(ctx); err != nil {
 		log.Error("HasAllRequiredCodeownerReviews: failed to load base repository for PR %d: %v", pr.ID, err)
-		return false
+		return false, err
 	}
 
 	repo, closer, err := git.RepositoryFromContextOrOpen(ctx, pr.BaseRepo)
 	if err != nil {
 		log.Error("HasAllRequiredCodeownerReviews: failed to open base repository for PR %d: %v", pr.ID, err)
-		return false
+		return false, err
 	}
 
 	defer closer.Close()
 
-	matchingRules, complete, err := getMatchingCodeOwnerRules(ctx, repo, pr)
+	matchingRules, complete, err := getMatchingCodeOwnerRules(ctx, repo, pr, strict)
 	if err != nil {
 		log.Error("HasAllRequiredCodeownerReviews: failed to match code owner rules for PR %d: %v", pr.ID, err)
-		return false
+		return false, err
 	}
 	// Rule matching was truncated by the match budget, so matchingRules is only a
 	// partial set. Fail closed rather than let an un-evaluated rule pass the gate.
 	if !complete {
-		return false
+		return false, errors.New("codeowner_matching_incomplete")
 	}
+	return hasCodeownerReviews(ctx, pb, pr, matchingRules)
+}
+
+func hasCodeownerReviews(ctx context.Context, pb *git_model.ProtectedBranch, pr *issues_model.PullRequest, matchingRules []*issues_model.CodeOwnerRule) (bool, error) {
 	if len(matchingRules) == 0 {
-		return true
+		return true, nil
 	}
 
 	// OfficialOnly is intentionally false here: a code owner's approval satisfies this gate
@@ -189,7 +247,7 @@ func HasAllRequiredCodeownerReviews(ctx context.Context, pb *git_model.Protected
 	})
 	if err != nil {
 		log.Warn("Failed to get approving reviews for PR review %d, error: %v", pr.ID, err)
-		return false
+		return false, err
 	}
 
 	if pb.IgnoreStaleApprovals {
@@ -216,7 +274,7 @@ func HasAllRequiredCodeownerReviews(ctx context.Context, pb *git_model.Protected
 			if !ok {
 				if err := t.LoadMembers(ctx); err != nil {
 					log.Error("HasAllRequiredCodeownerReviews: failed to load members of team %d for PR %d: %v", t.ID, pr.ID, err)
-					return false
+					return false, err
 				}
 				members = t.Members
 				teamMembersByID[t.ID] = members
@@ -243,11 +301,11 @@ func HasAllRequiredCodeownerReviews(ctx context.Context, pb *git_model.Protected
 		})
 
 		if !hasRuleApproval {
-			return false
+			return false, nil
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 func PullRequestCodeOwnersReview(ctx context.Context, pr *issues_model.PullRequest) ([]*ReviewRequestNotifier, error) {

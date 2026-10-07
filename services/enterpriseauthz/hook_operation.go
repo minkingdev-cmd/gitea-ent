@@ -53,6 +53,7 @@ type hookOperationPayload struct {
 	ExpiresUnix   int64                  `json:"expires_unix"`
 	Attribution   audit.Attribution      `json:"attribution"`
 	Owned         []hookOwnedObservation `json:"owned,omitempty"`
+	MergeGate     *mergeGateHookBinding  `json:"merge_gate,omitempty"`
 }
 
 func (o *HookOperation) Source() string { return o.payload.RequestSource }
@@ -89,6 +90,13 @@ func NewHookOperationTicket(ctx context.Context, input EvaluateInput, owned []Ho
 	ceiling.Reference = safeCredentialReference(ceiling.Reference)
 	ceiling.Actions = slices.Clone(ceiling.Actions)
 	operation := HookOperation{payload: hookOperationPayload{Version: 1, OperationID: state.id, ActorID: input.Actor.ID, RepoID: input.Repo.ID, RequestSource: input.ConditionContext.Source, Ceiling: ceiling, ActorExtHash: hookBranchHash(ext), ExpiresUnix: hookOperationNow().Add(24 * time.Hour).Unix(), Attribution: audit.AttributionFromContext(ctx)}}
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce && slices.ContainsFunc(owned, func(entry HookOwnedObservation) bool { return entry.Action == authz.MergePullRequest }) {
+		binding, ok := ctx.Value(mergeGateHookKey{}).(mergeGateHookBinding)
+		if !ok || binding.OperationID != state.id || binding.RepoID != input.Repo.ID || binding.ActorID != input.Actor.ID || binding.BranchHash != hookBranchHash(input.ConditionContext.Branch) {
+			return ""
+		}
+		operation.payload.MergeGate = &binding
+	}
 	for _, entry := range owned {
 		if _, valid := authz.LookupAction(entry.Action); !valid || entry.Branch == "" {
 			reportObservationFailure(state.id, input.Repo.ID, input.Action, "invalid_observation_context")

@@ -13,6 +13,10 @@ import (
 )
 
 func requirePullCodeFeatures(ctx context.Context, pr *issues_model.PullRequest) error {
+	return checkPullFeatures(ctx, pr, authz_service.RequireCargoIndexFeature)
+}
+
+func checkPullFeatures(ctx context.Context, pr *issues_model.PullRequest, guard func(context.Context, *repo_model.Repository) error) error {
 	if !setting.EnterpriseAuthz.Enabled {
 		return nil
 	}
@@ -24,7 +28,7 @@ func requirePullCodeFeatures(ctx context.Context, pr *issues_model.PullRequest) 
 		if err != nil {
 			return err
 		}
-		if err := authz_service.RequireCargoIndexFeature(ctx, repo); err != nil {
+		if err := guard(ctx, repo); err != nil {
 			return err
 		}
 		if pr.BaseRepoID == pr.HeadRepoID {

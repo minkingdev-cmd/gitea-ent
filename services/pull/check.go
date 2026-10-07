@@ -425,7 +425,24 @@ func manuallyMerged(ctx context.Context, pr *issues_model.PullRequest) bool {
 		return false
 	}
 
-	merger, err := getMergerForManuallyMergedPullRequest(ctx, pr)
+	var merger *user_model.User
+	var receiveCeiling authz_service.CredentialCeiling
+	if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+		proof, proofErr := prepareManualMergeGateGit(ctx, pr, commit.ID.String(), true)
+		if proofErr != nil {
+			if err := recordUnprovenManualMerge(ctx, pr, commit.ID.String()); err != nil {
+				log.Error("Enterprise manual merge evidence unavailable: %v", err)
+			}
+			log.Warn("Enterprise manual merge provenance unavailable")
+			return false
+		}
+		merger, err = user_model.GetUserByID(ctx, proof.PusherID)
+		if err == nil {
+			receiveCeiling, err = authz_service.MergeGateReceiveCredential(ctx, proof.CredentialAttribution, proof.PusherID, pr.BaseRepo)
+		}
+	} else {
+		merger, err = getMergerForManuallyMergedPullRequest(ctx, pr)
+	}
 	if err != nil {
 		log.Error("%-v getMergerForManuallyMergedPullRequest: %v", pr, err)
 		return false
@@ -437,7 +454,11 @@ func manuallyMerged(ctx context.Context, pr *issues_model.PullRequest) bool {
 			return false
 		}
 		defer gitRepo.Close()
-		ctx, _ = authz_service.WithObservationContext(ctx, authz_service.EvaluateInput{Actor: merger, Repo: pr.BaseRepo, Credential: authz_service.CredentialCeiling{Read: true, Write: true}, Action: authz.MergePullRequest, ConditionContext: authz.ConditionContext{Source: "auto_merge", Branch: pr.BaseBranch, BranchKnown: true}})
+		ceiling := authz_service.CredentialCeiling{Read: true, Write: true}
+		if setting.EnterpriseMergeGate.Enabled && setting.EnterpriseMergeGate.Enforce {
+			ceiling = receiveCeiling
+		}
+		ctx, _ = authz_service.WithObservationContext(ctx, authz_service.EvaluateInput{Actor: merger, Repo: pr.BaseRepo, Credential: ceiling, Action: authz.MergePullRequest, ConditionContext: authz.ConditionContext{Source: "auto_merge", Branch: pr.BaseBranch, BranchKnown: true}})
 		if err := mergedManuallyLocked(ctx, pr, merger, gitRepo, commit.ID.String(), true); err != nil {
 			log.Error("%-v manual merge execution: %v", pr, err)
 			return false

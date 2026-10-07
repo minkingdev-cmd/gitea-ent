@@ -324,7 +324,11 @@ Loop:
 			if protectedBranch == nil {
 				return false, nil, nil, &ErrWontSign{approved}
 			}
-			if issues_model.GetGrantedApprovalsCount(ctx, protectedBranch, pr) < 1 {
+			approvals, err := issues_model.GetGrantedApprovalsCountWithError(ctx, protectedBranch, pr)
+			if err != nil {
+				return false, nil, nil, err
+			}
+			if approvals < 1 {
 				return false, nil, nil, &ErrWontSign{approved}
 			}
 		case baseSigned:
@@ -353,11 +357,15 @@ Loop:
 // AllHeadCommitsVerified checks that every new commit in the PR head has a
 // verified signature.
 func AllHeadCommitsVerified(ctx context.Context, pr *issues_model.PullRequest, gitRepo *git.Repository) (bool, error) {
-	baseCommit, err := gitRepo.GetCommit(ctx, pr.BaseBranch)
+	return AllCommitsVerifiedAt(ctx, gitRepo, pr.BaseBranch, pr.GetGitHeadRefName())
+}
+
+func AllCommitsVerifiedAt(ctx context.Context, gitRepo *git.Repository, baseRef, headRef string) (bool, error) {
+	baseCommit, err := gitRepo.GetCommit(ctx, baseRef)
 	if err != nil {
 		return false, err
 	}
-	headCommit, err := gitRepo.GetCommit(ctx, pr.GetGitHeadRefName())
+	headCommit, err := gitRepo.GetCommit(ctx, headRef)
 	if err != nil {
 		return false, err
 	}

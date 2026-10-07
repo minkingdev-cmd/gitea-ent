@@ -818,6 +818,11 @@ func requireTransferExecution(ctx context.Context, repo *repo_model.Repository) 
 }
 
 func lockTransferPurpose(ctx context.Context, doer *user_model.User, repo *repo_model.Repository, targetOwnerID int64) error {
+	if setting.EnterpriseMergeGate.Enabled {
+		if err := authz_model.LockFeatures(ctx, []authz.FeatureKey{authz.FeaturePullRequests}); err != nil {
+			return err
+		}
+	}
 	ids := []int64{repo.OwnerID, targetOwnerID}
 	if doer.ID > 0 {
 		ids = append(ids, doer.ID)

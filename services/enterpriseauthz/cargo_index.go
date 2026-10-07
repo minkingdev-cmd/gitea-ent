@@ -166,3 +166,40 @@ func recordCargoIndexShadowCandidate(ctx context.Context, repoID int64, policy *
 		record()
 	}
 }
+
+func CheckCargoIndexFeature(ctx context.Context, repo *repo_model.Repository) error {
+	if !setting.EnterpriseAuthz.Enabled || repo.InternalUsage != repo_model.InternalUsageCargoIndex {
+		return nil
+	}
+	read := func(tx context.Context) error {
+		owner, err := user_model.GetUserByID(tx, repo.OwnerID)
+		if err != nil {
+			return ErrPolicyStorage
+		}
+		ownerScope := authz_model.Scope{Type: authz_model.ScopeSystem}
+		if owner.IsOrganization() {
+			ownerScope = authz_model.Scope{Type: authz_model.ScopeOrg, ID: owner.ID}
+		}
+		for _, scope := range []authz_model.Scope{{Type: authz_model.ScopeRepo, ID: repo.ID}, ownerScope} {
+			policy, err := GetFeaturePolicy(tx, authz.FeaturePackages, scope)
+			if err != nil {
+				return ErrPolicyStorage
+			}
+			if setting.EnterpriseAuthz.Enforce && policy.Effective.State == authz.FeatureDisabled {
+				return util.ErrPermissionDenied
+			}
+		}
+		denied, err := authz_model.CandidateDeniedCargoIndexRepositoryIDs(tx, repo.ID)
+		if err != nil {
+			return ErrPolicyStorage
+		}
+		if setting.EnterpriseAuthz.Enforce && len(denied) > 0 {
+			return util.ErrPermissionDenied
+		}
+		return nil
+	}
+	if db.InTransaction(ctx) {
+		return read(ctx)
+	}
+	return db.WithIndependentReadTx(ctx, read)
+}

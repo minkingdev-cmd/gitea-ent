@@ -19,6 +19,7 @@ import (
 )
 
 type CredentialCeiling struct {
+	PublicOnly     bool           `json:"public_only,omitempty"`
 	Read           bool           `json:"read"`
 	Write          bool           `json:"write"`
 	NativeOnly     bool           `json:"native_only"`

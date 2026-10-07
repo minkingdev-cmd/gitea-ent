@@ -468,6 +468,11 @@ func WithRepoFeatureConfiguration(ctx context.Context, repoID int64, units []rep
 		return apply(ctx)
 	}
 	return db.WithTx(ctx, func(tx context.Context) error {
+		if setting.EnterpriseMergeGate.Enabled {
+			if err := LockMergeGatePolicyScopes(tx, authz_model.Scope{Type: authz_model.ScopeRepo, ID: repoID}); err != nil {
+				return err
+			}
+		}
 		if err := authz_model.LockScope(tx, authz_model.Scope{Type: authz_model.ScopeRepo, ID: repoID}); err != nil {
 			return err
 		}

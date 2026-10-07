@@ -85,3 +85,15 @@ func TestMergePullRequestForm(t *testing.T) {
 		assert.Equal(t, expected, m)
 	})
 }
+
+func TestMergePullRequestFormPreservesBypassFields(t *testing.T) {
+	var form MergePullRequestForm
+	require.NoError(t, json.Unmarshal([]byte(`{"do":"merge","force_merge":true,"bypass_reason":"approved incident","bypass_categories":["required_check","sensitive_path_check"]}`), &form))
+	raw, err := json.Marshal(form)
+	require.NoError(t, err)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(raw, &result))
+	require.Equal(t, "approved incident", result["bypass_reason"])
+	require.Equal(t, []any{"required_check", "sensitive_path_check"}, result["bypass_categories"])
+	require.Equal(t, true, result["force_merge"])
+}

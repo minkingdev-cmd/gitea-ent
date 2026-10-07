@@ -79,6 +79,9 @@ func testMain(m *testing.M) int {
 func TestMain(m *testing.M) {
 	// -test.list must skip InitIntegrationTest, which requires a database.
 	flag.Parse()
+	if os.Getenv("GITEA_TEST_MERGE_GATE_PROCESS") != "" {
+		os.Exit(mergeGateProcessMain(m))
+	}
 	if flag.Lookup("test.list").Value.String() != "" {
 		os.Exit(m.Run())
 	}

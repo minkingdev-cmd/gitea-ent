@@ -384,7 +384,7 @@ func updatePullReviewCommentResolve(ctx *context.APIContext, isResolve bool) {
 		return
 	}
 
-	if err = issues_model.MarkConversation(ctx, comment, ctx.Doer, isResolve); err != nil {
+	if err = pull_service.ResolveReviewConversation(ctx, comment, ctx.Doer, isResolve); err != nil {
 		ctx.APIErrorInternal(err)
 		return
 	}

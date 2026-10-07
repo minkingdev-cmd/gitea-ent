@@ -31,6 +31,7 @@ import (
 	"gitea.dev/modules/graceful"
 	"gitea.dev/modules/lfs"
 	"gitea.dev/modules/log"
+	"gitea.dev/modules/setting"
 	"gitea.dev/modules/storage"
 	actions_service "gitea.dev/services/actions"
 	asymkey_service "gitea.dev/services/asymkey"
@@ -86,6 +87,14 @@ func deleteRepositoryDirectly(ctx context.Context, repoID int64, ignoreOrgTeams 
 		}
 	}
 
+	if setting.EnterpriseMergeGate.Enabled {
+		if err := authz_model.LockFeatures(ctx, []authz.FeatureKey{authz.FeaturePullRequests}); err != nil {
+			return err
+		}
+		if err := authz_model.LockSubject(ctx, authz_model.SubjectUser, repo.OwnerID); err != nil {
+			return err
+		}
+	}
 	if err := requireRepositoryDelete(ctx, repo); err != nil {
 		return err
 	}
